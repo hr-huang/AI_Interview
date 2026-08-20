@@ -261,6 +261,52 @@ class RuntimeUpdateTest(unittest.TestCase):
                 known_evidence_ids={"evidence_01"},
             )
 
+    def test_new_supporting_cannot_conflict_with_existing_contradicting(self) -> None:
+        seeded = record_requirement_evidence(
+            self.runtime,
+            requirement_id="target_01_req_01",
+            status="contradictory",
+            supporting_evidence_ids=[],
+            contradicting_evidence_ids=["evidence_01"],
+            known_evidence_ids={"evidence_01"},
+        )
+        original = seeded.model_dump()
+
+        with self.assertRaisesRegex(ValueError, "supporting.*contradicting"):
+            record_requirement_evidence(
+                seeded,
+                requirement_id="target_01_req_01",
+                status="contradictory",
+                supporting_evidence_ids=["evidence_01"],
+                contradicting_evidence_ids=[],
+                known_evidence_ids={"evidence_01"},
+            )
+
+        self.assertEqual(seeded.model_dump(), original)
+
+    def test_new_contradicting_cannot_conflict_with_existing_supporting(self) -> None:
+        seeded = record_requirement_evidence(
+            self.runtime,
+            requirement_id="target_01_req_01",
+            status="in_progress",
+            supporting_evidence_ids=["evidence_01"],
+            contradicting_evidence_ids=[],
+            known_evidence_ids={"evidence_01"},
+        )
+        original = seeded.model_dump()
+
+        with self.assertRaisesRegex(ValueError, "contradicting.*supporting"):
+            record_requirement_evidence(
+                seeded,
+                requirement_id="target_01_req_01",
+                status="contradictory",
+                supporting_evidence_ids=[],
+                contradicting_evidence_ids=["evidence_01"],
+                known_evidence_ids={"evidence_01"},
+            )
+
+        self.assertEqual(seeded.model_dump(), original)
+
     def test_record_evidence_deep_copies_evidence_lists(self) -> None:
         updated = record_requirement_evidence(
             self.runtime,

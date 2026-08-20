@@ -40,7 +40,7 @@ class InterviewRuntimeState(BaseModel):
     stop_reason: str | None = None
 
     @model_validator(mode="after")
-    def validate_stop_fields(self) -> "InterviewRuntimeState":
+    def validate_runtime_invariants(self) -> "InterviewRuntimeState":
         for key, progress in self.requirement_progress.items():
             if key != progress.requirement_id:
                 raise ValueError(

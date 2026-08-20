@@ -162,11 +162,27 @@ def record_requirement_evidence(
     supporting_ids = set(supporting_evidence_ids)
     contradicting_ids = set(contradicting_evidence_ids)
     overlap = supporting_ids & contradicting_ids
+    progress = runtime_state.requirement_progress[requirement_id]
+    existing_supporting_ids = set(progress.supporting_evidence_ids)
+    existing_contradicting_ids = set(progress.contradicting_evidence_ids)
+    supporting_conflicts = supporting_ids & existing_contradicting_ids
+    contradicting_conflicts = contradicting_ids & existing_supporting_ids
+
+    conflict_messages: list[str] = []
+    conflict_ids = set(overlap)
     if overlap:
-        evidence_ids = ", ".join(sorted(overlap))
+        conflict_messages.append("本次 supporting 与 contradicting 输入冲突")
+    if supporting_conflicts:
+        conflict_ids.update(supporting_conflicts)
+        conflict_messages.append("新 supporting 与既有 contradicting 冲突")
+    if contradicting_conflicts:
+        conflict_ids.update(contradicting_conflicts)
+        conflict_messages.append("新 contradicting 与既有 supporting 冲突")
+
+    if conflict_messages:
+        evidence_ids = ", ".join(sorted(conflict_ids))
         raise ValueError(
-            "同一 evidence_id 不能同时出现在 supporting 与 "
-            f"contradicting 输入中: {evidence_ids}"
+            f"{'；'.join(conflict_messages)}: {evidence_ids}"
         )
 
     referenced_ids = supporting_ids | contradicting_ids
