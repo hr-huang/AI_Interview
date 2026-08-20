@@ -14,10 +14,18 @@ Resume Understanding   Job Understanding
           ├─ CompetencyModel
           └─ ClaimRegistry
                  ↓
+          Interview Planner
+                 ↓
+           InterviewPlan
+                 ↓
                 END
 ```
 
-**InterviewPlanner / Supervisor / QuestionGenerator / Evidence 等后续阶段故意没有提前实现**，留给后续按小步学习继续写。
+此外，项目已经提供 `InterviewRuntimeState` Schema 与确定性 Service，供下一阶段
+Interview Graph 使用；它尚未接入当前 Pre-Interview Graph，也不表示 Supervisor 或
+动态面试循环已经实现。计时在候选人真正进入面试时初始化，不在生成计划时启动。
+
+**Supervisor / QuestionGenerator / Evidence 等后续阶段故意没有提前实现**，留给后续按小步学习继续写。
 
 ## 这版最重要的优化
 

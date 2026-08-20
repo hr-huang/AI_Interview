@@ -19,6 +19,7 @@ from profile_agent.schemas.competency_schema import CompetencyModel
 from profile_agent.schemas.interview_schema import InterviewPlan
 from profile_agent.schemas.job_schema import JobProfile
 from profile_agent.schemas.resume_schema import ResumeProfile
+from profile_agent.schemas.runtime_schema import InterviewRuntimeState
 
 
 class MainState(TypedDict, total=False):
@@ -46,3 +47,7 @@ class MainState(TypedDict, total=False):
     # 没有则 Node 默认 30.
 
     interview_plan: InterviewPlan
+
+    # 6) 动态面试运行状态
+    # 在候选人真正开始面试时初始化，不在 Pre-Interview Graph 中启动计时。
+    runtime_state: InterviewRuntimeState
