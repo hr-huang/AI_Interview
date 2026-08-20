@@ -9,6 +9,9 @@ from profile_agent.schemas.interview_schema import (
 from profile_agent.services.runtime_state_service import (
     calculate_remaining_seconds,
     initialize_runtime_state,
+    record_question_asked,
+    record_requirement_evidence,
+    request_stop,
 )
 
 
@@ -113,6 +116,103 @@ class RuntimeInitializationTest(unittest.TestCase):
         )
 
         self.assertEqual(remaining, 0)
+
+
+class RuntimeUpdateTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.plan = make_plan()
+        self.runtime = initialize_runtime_state(self.plan)
+
+    def test_record_question_updates_primary_requirement(self) -> None:
+        updated = record_question_asked(
+            self.plan,
+            self.runtime,
+            target_id="target_01",
+            primary_requirement_id="target_01_req_01",
+        )
+
+        self.assertEqual(updated.question_count, 1)
+        self.assertEqual(updated.current_target_id, "target_01")
+        self.assertEqual(updated.visited_target_ids, ["target_01"])
+        self.assertEqual(
+            updated.requirement_progress["target_01_req_01"].attempt_count,
+            1,
+        )
+        self.assertEqual(
+            updated.requirement_progress["target_01_req_01"].status,
+            "in_progress",
+        )
+        self.assertEqual(self.runtime.question_count, 0)
+
+    def test_unknown_requirement_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "不存在的 requirement_id"):
+            record_question_asked(
+                self.plan,
+                self.runtime,
+                target_id="target_01",
+                primary_requirement_id="target_99_req_01",
+            )
+
+    def test_mismatched_progress_key_is_rejected(self) -> None:
+        self.runtime.requirement_progress[
+            "target_01_req_01"
+        ].requirement_id = "target_01_req_02"
+
+        with self.assertRaisesRegex(ValueError, "key.*requirement_id"):
+            record_requirement_evidence(
+                self.runtime,
+                requirement_id="target_01_req_01",
+                status="in_progress",
+                supporting_evidence_ids=[],
+                contradicting_evidence_ids=[],
+                known_evidence_ids=set(),
+            )
+
+    def test_question_limit_is_enforced(self) -> None:
+        self.runtime.question_count = self.plan.max_questions
+
+        with self.assertRaisesRegex(ValueError, "达到问题数量上限"):
+            record_question_asked(
+                self.plan,
+                self.runtime,
+                target_id="target_01",
+                primary_requirement_id="target_01_req_01",
+            )
+
+    def test_evidence_is_validated_deduplicated_and_linked(self) -> None:
+        updated = record_requirement_evidence(
+            self.runtime,
+            requirement_id="target_01_req_01",
+            status="sufficient",
+            supporting_evidence_ids=["evidence_01", "evidence_01"],
+            contradicting_evidence_ids=[],
+            known_evidence_ids={"evidence_01"},
+        )
+
+        progress = updated.requirement_progress["target_01_req_01"]
+        self.assertEqual(progress.status, "sufficient")
+        self.assertEqual(progress.supporting_evidence_ids, ["evidence_01"])
+
+    def test_unknown_evidence_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "不存在的 evidence_id"):
+            record_requirement_evidence(
+                self.runtime,
+                requirement_id="target_01_req_01",
+                status="in_progress",
+                supporting_evidence_ids=["evidence_missing"],
+                contradicting_evidence_ids=[],
+                known_evidence_ids=set(),
+            )
+
+    def test_request_stop_sets_consistent_fields(self) -> None:
+        updated = request_stop(self.runtime, "time_exhausted")
+
+        self.assertTrue(updated.stop_requested)
+        self.assertEqual(updated.stop_reason, "time_exhausted")
+
+    def test_blank_stop_reason_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "stop reason 不能为空"):
+            request_stop(self.runtime, "  ")
 
 
 if __name__ == "__main__":
