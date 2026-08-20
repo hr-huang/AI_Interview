@@ -86,10 +86,6 @@ class InterviewPolicy(BaseModel):
     # 但 Claim 不应该单独机械生成一道题，
     # 应优先挂载到相关能力 Target 中共同验证。
 
-    prioritize_core_competencies: bool = True
-    # 时间有限时，优先保证 core competency。
-
-
 # ============================================================
 # 4. LLM 输出阶段使用的 EvidenceRequirement
 #
