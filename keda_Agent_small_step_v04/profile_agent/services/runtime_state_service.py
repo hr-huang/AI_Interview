@@ -92,9 +92,16 @@ def record_question_asked(
     runtime_state: InterviewRuntimeState,
     target_id: str,
     primary_requirement_id: str,
+    now: datetime | None = None,
 ) -> InterviewRuntimeState:
     requirement_to_target = _requirement_to_target(plan)
     _assert_requirement_progress_consistency(runtime_state)
+
+    if runtime_state.stop_requested:
+        raise ValueError("stop_requested=True，不能继续记录问题")
+
+    if calculate_remaining_seconds(plan, runtime_state, now=now) <= 0:
+        raise ValueError("面试时间已耗尽，不能继续记录问题")
 
     if primary_requirement_id not in requirement_to_target:
         raise ValueError(
@@ -105,6 +112,12 @@ def record_question_asked(
     if target_id != expected_target_id:
         raise ValueError(
             f"requirement {primary_requirement_id} 不属于 target {target_id}"
+        )
+
+    if primary_requirement_id not in runtime_state.requirement_progress:
+        raise ValueError(
+            "RuntimeState 缺少 requirement_progress: "
+            f"{primary_requirement_id}"
         )
 
     if runtime_state.question_count >= plan.max_questions:
@@ -146,9 +159,17 @@ def record_requirement_evidence(
     if requirement_id not in runtime_state.requirement_progress:
         raise ValueError(f"不存在的 requirement_id: {requirement_id}")
 
-    referenced_ids = set(supporting_evidence_ids) | set(
-        contradicting_evidence_ids
-    )
+    supporting_ids = set(supporting_evidence_ids)
+    contradicting_ids = set(contradicting_evidence_ids)
+    overlap = supporting_ids & contradicting_ids
+    if overlap:
+        evidence_ids = ", ".join(sorted(overlap))
+        raise ValueError(
+            "同一 evidence_id 不能同时出现在 supporting 与 "
+            f"contradicting 输入中: {evidence_ids}"
+        )
+
+    referenced_ids = supporting_ids | contradicting_ids
     missing_ids = referenced_ids - known_evidence_ids
     if missing_ids:
         missing = ", ".join(sorted(missing_ids))

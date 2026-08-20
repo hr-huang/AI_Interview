@@ -41,6 +41,13 @@ class InterviewRuntimeState(BaseModel):
 
     @model_validator(mode="after")
     def validate_stop_fields(self) -> "InterviewRuntimeState":
+        for key, progress in self.requirement_progress.items():
+            if key != progress.requirement_id:
+                raise ValueError(
+                    "requirement_progress key 与 requirement_id 不一致: "
+                    f"{key} != {progress.requirement_id}"
+                )
+
         if self.stop_requested and not (self.stop_reason or "").strip():
             raise ValueError("stop_requested=True 时必须提供 stop_reason")
 

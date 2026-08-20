@@ -10,6 +10,24 @@ from profile_agent.schemas.runtime_schema import (
 
 
 class RuntimeSchemaTest(unittest.TestCase):
+    def test_invalid_requirement_status_is_rejected(self) -> None:
+        with self.assertRaises(ValidationError):
+            RequirementProgress(
+                requirement_id="target_01_req_01",
+                status="invalid_status",
+            )
+
+    def test_requirement_progress_key_must_match_nested_id(self) -> None:
+        with self.assertRaisesRegex(ValidationError, "key.*requirement_id"):
+            InterviewRuntimeState(
+                started_at=datetime.now(timezone.utc),
+                requirement_progress={
+                    "target_01_req_01": RequirementProgress(
+                        requirement_id="target_01_req_02"
+                    )
+                },
+            )
+
     def test_requirement_progress_has_independent_mutable_defaults(self) -> None:
         first = RequirementProgress(requirement_id="target_01_req_01")
         second = RequirementProgress(requirement_id="target_01_req_02")

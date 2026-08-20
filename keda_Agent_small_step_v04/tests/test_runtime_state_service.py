@@ -144,6 +144,63 @@ class RuntimeUpdateTest(unittest.TestCase):
         )
         self.assertEqual(self.runtime.question_count, 0)
 
+    def test_record_question_rejects_when_stop_was_requested(self) -> None:
+        stopped = request_stop(self.runtime, "manual_stop")
+
+        with self.assertRaisesRegex(ValueError, "stop_requested"):
+            record_question_asked(
+                self.plan,
+                stopped,
+                target_id="target_01",
+                primary_requirement_id="target_01_req_01",
+            )
+
+    def test_record_question_rejects_when_interview_time_is_exhausted(self) -> None:
+        now = self.runtime.started_at + timedelta(
+            minutes=self.plan.duration_minutes
+        )
+
+        with self.assertRaisesRegex(ValueError, "时间已耗尽"):
+            record_question_asked(
+                self.plan,
+                self.runtime,
+                target_id="target_01",
+                primary_requirement_id="target_01_req_01",
+                now=now,
+            )
+
+    def test_record_question_rejects_missing_runtime_progress(self) -> None:
+        runtime = self.runtime.model_copy(update={"requirement_progress": {}})
+
+        with self.assertRaisesRegex(ValueError, "requirement_progress"):
+            record_question_asked(
+                self.plan,
+                runtime,
+                target_id="target_01",
+                primary_requirement_id="target_01_req_01",
+            )
+
+    def test_record_question_deep_copies_nested_runtime_fields(self) -> None:
+        updated = record_question_asked(
+            self.plan,
+            self.runtime,
+            target_id="target_01",
+            primary_requirement_id="target_01_req_01",
+        )
+
+        original_progress = self.runtime.requirement_progress[
+            "target_01_req_01"
+        ]
+        updated_progress = updated.requirement_progress["target_01_req_01"]
+        self.assertEqual(self.runtime.visited_target_ids, [])
+        self.assertEqual(original_progress.attempt_count, 0)
+        self.assertIsNot(
+            self.runtime.visited_target_ids,
+            updated.visited_target_ids,
+        )
+        self.assertIsNot(original_progress, updated_progress)
+
+
     def test_unknown_requirement_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "不存在的 requirement_id"):
             record_question_asked(
@@ -192,6 +249,42 @@ class RuntimeUpdateTest(unittest.TestCase):
         progress = updated.requirement_progress["target_01_req_01"]
         self.assertEqual(progress.status, "sufficient")
         self.assertEqual(progress.supporting_evidence_ids, ["evidence_01"])
+
+    def test_evidence_id_cannot_be_both_supporting_and_contradicting(self) -> None:
+        with self.assertRaisesRegex(ValueError, "supporting.*contradicting"):
+            record_requirement_evidence(
+                self.runtime,
+                requirement_id="target_01_req_01",
+                status="contradictory",
+                supporting_evidence_ids=["evidence_01"],
+                contradicting_evidence_ids=["evidence_01"],
+                known_evidence_ids={"evidence_01"},
+            )
+
+    def test_record_evidence_deep_copies_evidence_lists(self) -> None:
+        updated = record_requirement_evidence(
+            self.runtime,
+            requirement_id="target_01_req_01",
+            status="in_progress",
+            supporting_evidence_ids=["evidence_01"],
+            contradicting_evidence_ids=["evidence_02"],
+            known_evidence_ids={"evidence_01", "evidence_02"},
+        )
+
+        original_progress = self.runtime.requirement_progress[
+            "target_01_req_01"
+        ]
+        updated_progress = updated.requirement_progress["target_01_req_01"]
+        self.assertEqual(original_progress.supporting_evidence_ids, [])
+        self.assertEqual(original_progress.contradicting_evidence_ids, [])
+        self.assertIsNot(
+            original_progress.supporting_evidence_ids,
+            updated_progress.supporting_evidence_ids,
+        )
+        self.assertIsNot(
+            original_progress.contradicting_evidence_ids,
+            updated_progress.contradicting_evidence_ids,
+        )
 
     def test_unknown_evidence_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "不存在的 evidence_id"):
