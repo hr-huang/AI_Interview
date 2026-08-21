@@ -169,7 +169,7 @@ competency_02
 
 ```powershell
 py -m venv .venv
-.venv\Scripts\Activate.ps1
+.\.venv\Scripts\Activate.ps1
 python -m pip install -e .
 copy .env.example .env
 # 编辑 .env，填写 DEEPSEEK_API_KEY
