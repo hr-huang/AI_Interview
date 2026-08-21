@@ -1,0 +1,231 @@
+{
+  "role_family": "ai_application_engineering",
+  "display_name": "AI Agent / AI应用工程师",
+  "version": "2026-H2",
+  "valid_from": "2026-07-01",
+  "knowledge_as_of": "2026-08-21",
+  "source_refs": [
+    "WEF-Future-of-Jobs-2025",
+    "Microsoft-Work-Trend-Index-2025",
+    "LinkedIn-Labor-Market-Report-2026",
+    "curated-enterprise-jd-sample-2026-h2"
+  ],
+  "dimensions": [
+    {
+      "id": "role_dim_01",
+      "name": "AI应用与Agent编排",
+      "weight": 0.25,
+      "is_gating": true,
+      "minimum_criteria": [
+        {
+          "id": "d01_min_01",
+          "text": "拆分节点/状态/工具边界"
+        },
+        {
+          "id": "d01_min_02",
+          "text": "解释状态流转/路由/人工介入"
+        }
+      ],
+      "excellence_signals": [
+        {
+          "id": "d01_exc_01",
+          "text": "比较单Agent/Workflow/多Agent",
+          "score_adjustment": 2
+        },
+        {
+          "id": "d01_exc_02",
+          "text": "新场景迁移优化",
+          "score_adjustment": 3
+        }
+      ],
+      "critical_errors": [
+        {
+          "id": "d01_err_01",
+          "text": "无差别拆成多Agent",
+          "score_adjustment": -5
+        }
+      ],
+      "accepted_alternatives": []
+    },
+    {
+      "id": "role_dim_02",
+      "name": "业务理解与任务建模",
+      "weight": 0.15,
+      "is_gating": true,
+      "minimum_criteria": [
+        {
+          "id": "d02_min_01",
+          "text": "澄清目标/输入/输出/约束"
+        },
+        {
+          "id": "d02_min_02",
+          "text": "定义成功标准和失败边界"
+        }
+      ],
+      "excellence_signals": [
+        {
+          "id": "d02_exc_01",
+          "text": "识别不适合LLM的步骤",
+          "score_adjustment": 2
+        },
+        {
+          "id": "d02_exc_02",
+          "text": "模糊需求转可交付规格",
+          "score_adjustment": 3
+        }
+      ],
+      "critical_errors": [
+        {
+          "id": "d02_err_01",
+          "text": "无验收标准直接选模型",
+          "score_adjustment": -5
+        }
+      ],
+      "accepted_alternatives": []
+    },
+    {
+      "id": "role_dim_03",
+      "name": "Context、RAG与工具集成",
+      "weight": 0.15,
+      "is_gating": false,
+      "minimum_criteria": [
+        {
+          "id": "d03_min_01",
+          "text": "区分上下文/检索/状态/记忆"
+        },
+        {
+          "id": "d03_min_02",
+          "text": "校验工具参数/权限/结果"
+        }
+      ],
+      "excellence_signals": [
+        {
+          "id": "d03_exc_01",
+          "text": "设计检索评测与引用",
+          "score_adjustment": 2
+        },
+        {
+          "id": "d03_exc_02",
+          "text": "处理预算/污染/过期知识",
+          "score_adjustment": 3
+        }
+      ],
+      "critical_errors": [
+        {
+          "id": "d03_err_01",
+          "text": "未校验检索结果进入高风险工具",
+          "score_adjustment": -5
+        }
+      ],
+      "accepted_alternatives": []
+    },
+    {
+      "id": "role_dim_04",
+      "name": "AI原生工程交付",
+      "weight": 0.15,
+      "is_gating": false,
+      "minimum_criteria": [
+        {
+          "id": "d04_min_01",
+          "text": "清晰规格并审查AI结果"
+        },
+        {
+          "id": "d04_min_02",
+          "text": "用测试/日志/实验验证"
+        }
+      ],
+      "excellence_signals": [
+        {
+          "id": "d04_exc_01",
+          "text": "发现依赖/边界/安全问题",
+          "score_adjustment": 2
+        },
+        {
+          "id": "d04_exc_02",
+          "text": "建立规格到验收流程",
+          "score_adjustment": 3
+        }
+      ],
+      "critical_errors": [
+        {
+          "id": "d04_err_01",
+          "text": "未经理解测试直接交付",
+          "score_adjustment": -5
+        }
+      ],
+      "accepted_alternatives": []
+    },
+    {
+      "id": "role_dim_05",
+      "name": "可靠性、评测与安全",
+      "weight": 0.2,
+      "is_gating": true,
+      "minimum_criteria": [
+        {
+          "id": "d05_min_01",
+          "text": "超时/重试/降级/恢复"
+        },
+        {
+          "id": "d05_min_02",
+          "text": "模型输出和工具调用评测边界"
+        }
+      ],
+      "excellence_signals": [
+        {
+          "id": "d05_exc_01",
+          "text": "可重试分类/幂等/补偿",
+          "score_adjustment": 2
+        },
+        {
+          "id": "d05_exc_02",
+          "text": "效果/成本/延迟/安全评测",
+          "score_adjustment": 3
+        }
+      ],
+      "critical_errors": [
+        {
+          "id": "d05_err_01",
+          "text": "模型直接触发高风险操作",
+          "score_adjustment": -5
+        }
+      ],
+      "accepted_alternatives": []
+    },
+    {
+      "id": "role_dim_06",
+      "name": "系统思维与持续进化",
+      "weight": 0.1,
+      "is_gating": false,
+      "minimum_criteria": [
+        {
+          "id": "d06_min_01",
+          "text": "比较成本/性能/复杂度/扩展性"
+        },
+        {
+          "id": "d06_min_02",
+          "text": "根据失败和新约束调整"
+        }
+      ],
+      "excellence_signals": [
+        {
+          "id": "d06_exc_01",
+          "text": "区分工程原则与热点",
+          "score_adjustment": 2
+        },
+        {
+          "id": "d06_exc_02",
+          "text": "持续评测复盘演进",
+          "score_adjustment": 3
+        }
+      ],
+      "critical_errors": [
+        {
+          "id": "d06_err_01",
+          "text": "只按热度选型且无取舍",
+          "score_adjustment": -5
+        }
+      ],
+      "accepted_alternatives": []
+    }
+  ]
+}
