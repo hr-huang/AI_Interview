@@ -16,10 +16,18 @@ from typing import TypedDict
 
 from profile_agent.schemas.claim_schema import ClaimRegistry
 from profile_agent.schemas.competency_schema import CompetencyModel
-from profile_agent.schemas.interview_schema import InterviewPlan
+from profile_agent.schemas.interview_schema import (
+    GeneratedQuestion,
+    InterviewAction,
+    InterviewPlan,
+)
 from profile_agent.schemas.job_schema import JobProfile
 from profile_agent.schemas.resume_schema import ResumeProfile
-from profile_agent.schemas.runtime_schema import InterviewRuntimeState
+from profile_agent.schemas.runtime_schema import (
+    Evidence,
+    InterviewRuntimeState,
+    InterviewTurn,
+)
 
 
 class MainState(TypedDict, total=False):
@@ -51,3 +59,8 @@ class MainState(TypedDict, total=False):
     # 6) 动态面试运行状态
     # 在候选人真正开始面试时初始化，不在 Pre-Interview Graph 中启动计时。
     runtime_state: InterviewRuntimeState
+    interview_turns: list[InterviewTurn]
+    evidences: list[Evidence]
+    next_action: InterviewAction
+    current_question: GeneratedQuestion | None
+    current_turn_id: str | None

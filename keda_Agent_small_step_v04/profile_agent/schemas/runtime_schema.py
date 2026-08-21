@@ -10,6 +10,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from profile_agent.schemas.interview_schema import QuestionMode
+
 
 RequirementStatus = Literal[
     "not_started",
@@ -18,6 +20,56 @@ RequirementStatus = Literal[
     "contradictory",
     "skipped",
 ]
+
+
+class InterviewTurn(BaseModel):
+    id: str
+    sequence_number: int = Field(ge=1)
+    target_id: str
+    primary_requirement_id: str
+    question_mode: QuestionMode
+    question: str
+    answer: str | None = None
+    asked_at: datetime
+    answered_at: datetime | None = None
+
+
+class Evidence(BaseModel):
+    id: str
+    turn_id: str
+    requirement_ids: list[str] = Field(min_length=1)
+    related_claim_ids: list[str] = Field(default_factory=list)
+    polarity: Literal["supporting", "contradicting"]
+    strength: Literal["weak", "medium", "strong"]
+    observation: str
+    source_excerpt: str
+
+
+class EvidenceDraft(BaseModel):
+    requirement_ids: list[str] = Field(min_length=1)
+    related_claim_ids: list[str] = Field(default_factory=list)
+    polarity: Literal["supporting", "contradicting"]
+    strength: Literal["weak", "medium", "strong"]
+    observation: str
+    source_excerpt: str
+
+
+class RequirementAssessment(BaseModel):
+    requirement_id: str
+    recommended_status: Literal[
+        "in_progress",
+        "sufficient",
+        "contradictory",
+    ]
+    rationale: str
+
+
+class TurnAssessment(BaseModel):
+    answer_relevance: Literal["low", "medium", "high"]
+    evidence_drafts: list[EvidenceDraft] = Field(default_factory=list)
+    requirement_assessments: list[RequirementAssessment] = Field(
+        default_factory=list
+    )
 
 
 class RequirementProgress(BaseModel):
@@ -55,3 +107,8 @@ class InterviewRuntimeState(BaseModel):
             raise ValueError("stop_requested=False 时 stop_reason 必须为 None")
 
         return self
+
+
+class AnswerProcessingResult(BaseModel):
+    new_evidences: list[Evidence]
+    runtime_state: InterviewRuntimeState

@@ -1,6 +1,6 @@
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 # ============================================================
@@ -15,6 +15,29 @@ QuestionMode = Literal[
     "coding",              # 代码 / 伪代码 / 实现思路
     "follow_up",           # 根据上一轮回答动态追问
 ]
+
+
+class AskAction(BaseModel):
+    action: Literal["ask"] = "ask"
+    target_id: str
+    primary_requirement_id: str
+    question_mode: QuestionMode
+    reason: str
+
+
+class FinishAction(BaseModel):
+    action: Literal["finish"] = "finish"
+    reason: str
+
+
+InterviewAction = Annotated[
+    AskAction | FinishAction,
+    Field(discriminator="action"),
+]
+
+
+class GeneratedQuestion(BaseModel):
+    text: str
 
 
 # ============================================================
