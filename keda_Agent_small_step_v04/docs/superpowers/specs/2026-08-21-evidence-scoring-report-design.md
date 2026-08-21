@@ -117,8 +117,8 @@ RoleCompetencyProfile(
     version="2026-H2",
     valid_from="2026-07-01",
     knowledge_as_of="2026-08-21",
-    dimensions=[...],
-    source_refs=[...],
+    dimensions=SIX_AI_APPLICATION_DIMENSIONS,
+    source_refs=CURATED_ROLE_SOURCE_REFS,
 )
 ```
 
@@ -136,6 +136,10 @@ ScoringBlueprintBuilder
 RubricMatcher (LLM structured output)
         ↓
 RubricMatchValidator (Python)
+        ↓
+RequirementAssessmentBuilder (Python only)
+        ↓
+RequirementAssessment
         ↓
 ScoreEngine (Python only)
         ↓
@@ -195,11 +199,67 @@ Python 必须验证：
 - 不允许报告或评分引用未输入的事实；
 - 重复匹配不能重复贡献分数或置信度。
 
-非法匹配不能进入 ScoreEngine。
+非法匹配不能进入 RequirementAssessmentBuilder。
+
+### 6.4 RequirementAssessmentBuilder
+
+`RubricMatch` 表示单条 Evidence 命中了哪些 Rubric 规则，但不负责解释同一 Requirement 下多条正向、负向和迁移 Evidence 合起来意味着什么。`RequirementAssessmentBuilder` 以 Requirement 为单位聚合经过验证的匹配，并生成唯一的评估事实快照：
+
+```python
+RequirementAssessment(
+    requirement_id="target_01_req_01",
+    dimension_id="role_dim_01",
+    level="L0",
+    satisfied_minimum_criterion_ids=[
+        "criterion_state_design",
+        "criterion_node_join",
+    ],
+    matched_excellence_signal_ids=[],
+    unresolved_critical_error_ids=["error_no_recovery"],
+    accepted_alternative_ids=[],
+    supporting_evidence_ids=["evidence_001", "evidence_002"],
+    limiting_evidence_ids=["evidence_003"],
+    transfer_evidence_ids=[],
+    quality={
+        "correctness": "strong",
+        "specificity": "medium",
+        "reasoning": "medium",
+        "tradeoff_awareness": "weak",
+        "transferability": "unverified",
+    },
+    coverage=1.0,
+    confidence="medium",
+    assessment_reasons=[
+        {
+            "reason_type": "strength",
+            "rubric_ids": ["criterion_state_design", "criterion_node_join"],
+            "evidence_ids": ["evidence_001", "evidence_002"],
+        },
+        {
+            "reason_type": "critical_error",
+            "rubric_ids": ["error_no_recovery"],
+            "evidence_ids": ["evidence_003"],
+        },
+    ],
+)
+```
+
+该对象是评分链路中“这个 Requirement 已经证明了什么”的唯一事实来源。构建规则如下：
+
+- 只消费通过 `RubricMatchValidator` 的 Match；不得补写未匹配的 Evidence ID；
+- 同一 `(evidence_id, requirement_id)` 只贡献一次；内容重复且验证方式相同的 Evidence 不提高覆盖率或置信度；
+- supporting Evidence 至少命中 minimum criterion、excellence signal 或 accepted alternative；
+- limiting Evidence 必须命中明确 critical error，或提供与已满足规则直接冲突的负向事实；未提及某一点不能成为 limiting Evidence；
+- transfer Evidence 必须来自不同的 question mode 或独立场景，并明确展示成功迁移；
+- 每个质量轴按 `unverified < weak < medium < strong` 对去重后的有效 supporting matches 取最高已验证值；正反冲突不暗中改写质量值，而是保留双方并降低 confidence；
+- coverage、confidence、level 和 assessment reasons 均由固定 Python 规则生成；LLM 不得直接生成或覆盖这些字段；
+- `RequirementAssessment` 不包含任何数值分数。
+
+`RequirementAssessmentBuilder` 与 `ScoreEngine` 的边界是：前者负责证据汇总、质量聚合和等级判定；后者只负责等级到基准分的映射、规则调整、维度聚合、岗位覆盖率和适配裁决。
 
 ## 7. 等级与分数算法
 
-### 7.1 Requirement 等级
+### 7.1 RequirementAssessment 等级
 
 | 等级 | 含义 | 基准展示分 |
 |---|---|---:|
@@ -210,7 +270,7 @@ Python 必须验证：
 | `L3` | 能处理主要边界、风险和权衡 | 82 |
 | `L4` | 能在独立迁移场景中优化并形成系统方法 | 95 |
 
-确定性等级门槛：
+`RequirementAssessmentBuilder` 使用以下确定性等级门槛：
 
 ```text
 无有效 Evidence
@@ -237,9 +297,23 @@ L3 + 至少一条独立迁移场景 Evidence
 
 不同但合理的替代方案可以通过 `accepted_alternative_ids` 满足最低充分条件。
 
+等级一旦写入 `RequirementAssessment`，`ScoreEngine` 不得重新解释原始 `RubricMatch` 或自行改变等级。
+
 ### 7.2 等级内微调
 
-Role Pack 可以为优秀信号和限制信号声明整数调整值。Requirement 展示分为等级基准分加已验证调整值，最终调整限制在 `[-5, +5]`。微调只改变同一等级内的展示位置，不得跨越等级门槛。
+Role Pack 可以为优秀信号和限制信号声明整数调整值。`ScoreEngine` 只读取 `RequirementAssessment` 中经过验证的 signal/error ID：Requirement 展示分为等级基准分加已验证调整值，最终调整限制在 `[-5, +5]`。微调只改变同一等级内的展示位置，不得跨越等级门槛。
+
+```python
+RequirementScore(
+    requirement_id="target_01_req_01",
+    dimension_id="role_dim_01",
+    base_score=20,
+    adjustment=-5,
+    display_score=15,
+)
+```
+
+`RequirementScore` 是纯数值结果，不再重复保存 level、quality、coverage、confidence 或 Evidence 列表；这些字段以同 ID 的 `RequirementAssessment` 为唯一来源。`ScoreSnapshot` 同时保存 assessments 与 requirement scores，供解释和数值展示分别读取。
 
 ### 7.3 能力维度分数
 
@@ -313,8 +387,8 @@ RadarDimensionResult(
     level="L3",
     coverage=0.85,
     confidence="high",
-    score_reasons=[...],
-    requirement_breakdown=[...],
+    score_reasons=dimension_score_reasons,
+    requirement_breakdown=dimension_requirement_scores,
 )
 ```
 
@@ -378,6 +452,7 @@ RAG 支持 Role Pack 构建、专业问题生成、Rubric 语义匹配和提升�
 ## 11. 异常与冲突处理
 
 - RubricMatcher 输出非法 ID：校验失败，重试一次；仍失败则本次评估失败，不静默给分。
+- RequirementAssessment 引用了未验证 Match、未知 Rubric ID 或来源不合法的 Evidence：评估失败，不进入 ScoreEngine。
 - Evidence 不足：标记 `UNVERIFIED`，不生成负向结论。
 - 正反 Evidence 冲突：保留双方，降低置信度并在报告中说明熟悉场景与迁移场景的差异。
 - ReportWriter 失败：使用确定性模板，不丢失 ScoreSnapshot。
@@ -397,6 +472,9 @@ RAG 支持 Role Pack 构建、专业问题生成、Rubric 语义匹配和提升�
 - Evidence 顺序变化不改变结果；
 - 重复 Evidence 不提高置信度；
 - 独立验证方式提高置信度；
+- RequirementAssessment 的每个 Evidence ID 都能追溯到合法 RubricMatch；
+- RequirementAssessmentBuilder 对相同 Match 集合产生完全相同的 level、quality、coverage 和 confidence；
+- ScoreEngine 不读取原始 RubricMatch，且不重新判断 Requirement level；
 - 关键错误限制适配等级；
 - 未验证项不会被写成劣势；
 - 报告与 ScoreSnapshot 完全一致。
@@ -416,6 +494,7 @@ RAG 支持 Role Pack 构建、专业问题生成、Rubric 语义匹配和提升�
 → 面试计划
 → 模糊回答与动态追问
 → 强弱和负向 Evidence
+→ RequirementAssessment 汇总已证明项、限制项与未验证项
 → 六项能力分数
 → 岗位匹配度
 → 每个雷达维度可解释原因
@@ -429,11 +508,12 @@ RAG 支持 Role Pack 构建、专业问题生成、Rubric 语义匹配和提升�
 1. 冻结 RoleCompetencyProfile、ScoringBlueprint 和 Report Schema；
 2. 建立 AI Agent 2026-H2 Role Pack；
 3. 实现 RubricMatcher 与严格校验；
-4. 实现纯 Python ScoreEngine；
-5. 实现 ReportWriter 与 ReportValidator；
-6. 产出结构化雷达数据和 AssessmentReport；
-7. 再实现雷达图、Web 报告页与 PDF 展示；
-8. 增加 RAG、拟人度和端到端比赛演示。
+4. 实现纯 Python RequirementAssessmentBuilder；
+5. 实现只消费 RequirementAssessment 的纯 Python ScoreEngine；
+6. 实现 ReportWriter 与 ReportValidator；
+7. 产出结构化雷达数据和 AssessmentReport；
+8. 再实现雷达图、Web 报告页与 PDF 展示；
+9. 增加 RAG、拟人度和端到端比赛演示。
 
 ## 14. 本阶段明确不做
 
