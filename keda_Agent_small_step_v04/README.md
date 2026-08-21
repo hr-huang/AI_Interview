@@ -1,6 +1,11 @@
-# keda Profile Agent — Pre-Interview v0.4
+# keda Profile Agent — Pre-Interview + Interview v0.5
 
-这一版只实现到：
+当前版本已经实现两个彼此独立的 Graph：
+
+- `PreInterviewGraph`：读取 Resume + JD，生成静态的 `InterviewPlan` 与 `ClaimRegistry`；它不启动计时，也不进入候选人互动循环。
+- `InterviewGraph`：在候选人真正开始面试时读取前者的结果，初始化 Runtime，启动 Supervisor 驱动的提问、回答和结束循环。
+
+整体流程是：
 
 ```text
 Resume + JD
@@ -14,18 +19,38 @@ Resume Understanding   Job Understanding
           ├─ CompetencyModel
           └─ ClaimRegistry
                  ↓
-          Interview Planner
-                 ↓
-           InterviewPlan
-                 ↓
-                END
+           Interview Planner
+                  ↓
+      InterviewPlan + ClaimRegistry
+                  ↓ 候选人开始面试
+           独立 InterviewGraph
+                  ↓
+       Supervisor → QuestionGenerator
+           ↑              ↓
+           └─ AnswerProcessor ← 候选人回答
+                  ↓
+                Finish
 ```
 
-此外，项目已经提供 `InterviewRuntimeState` Schema 与确定性 Service，供下一阶段
-Interview Graph 使用；它尚未接入当前 Pre-Interview Graph，也不表示 Supervisor 或
-动态面试循环已经实现。计时在候选人真正进入面试时初始化，不在生成计划时启动。
+`InterviewPlan` 是静态的“考前计划”；`InterviewRuntimeState`、`InterviewTurn` 和
+`Evidence` 是面试过程中的动态数据。计时在候选人真正进入 `InterviewGraph` 时初始化，
+不在生成计划时启动。
 
-**Supervisor / QuestionGenerator / Evidence 等后续阶段故意没有提前实现**，留给后续按小步学习继续写。
+## 动态面试中的职责
+
+- **Planner = 考什么**：根据 `CompetencyModel` 和 `ClaimRegistry` 规划要验证的 Target、Evidence Requirement、优先级和推荐题型。
+- **Supervisor = 下一步怎么考**：确定下一步考哪个 requirement、使用哪种 `question_mode`，以及何时结束。
+- **QuestionGenerator = 生成什么**：根据 Supervisor 的 `AskAction` 生成展示给候选人的真实问题文本。
+- **AnswerProcessor = 如何解释回答**：一次 LLM 调用同时提取 Evidence 并评估回答；随后由 Python 确定性地更新 `InterviewRuntimeState`。
+
+展示问题前，Graph 会先记录 `question_count`、对应 requirement 的
+`attempt_count` 和未回答的 `InterviewTurn`，再进入 interrupt。这样 checkpoint 中已经
+明确记录“这道题已经正式问出”，重连或恢复时不会重复计数，也能让题数和时间预算规则
+在真正展示问题之前生效。
+
+默认的 `build_interview_graph()` 使用 `InMemorySaver`。它只在当前 Python 进程内保存
+thread checkpoint，进程重启后不会保留，也不是生产环境的持久化方案；生产部署需要替换
+为持久化 checkpointer。
 
 ## 这版最重要的优化
 
@@ -138,22 +163,43 @@ competency_02
 
 后续 InterviewPlan/Evidence 可以稳定引用。
 
-## 推荐运行方式
+## Windows 启动方式
 
-```bash
-pip install -e .
-copy .env.example .env   # Windows 也可手工复制
-# 在 .env 填 DEEPSEEK_API_KEY
+以下命令在项目根目录执行。虚拟环境可选，但推荐使用：
+
+```powershell
+py -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install -e .
+copy .env.example .env
+# 编辑 .env，填写 DEEPSEEK_API_KEY
 python check_without_llm.py
 python run_pre_interview.py
+python run_interview_demo.py
 ```
 
-其中 `check_without_llm.py` 不调用任何模型，建议先运行它确认本地 package/import 正常。
+如果使用 `cmd.exe`，激活命令为 `.venv\Scripts\activate.bat`。其中：
+
+- `check_without_llm.py` 是不调用模型的结构自检；
+- `run_pre_interview.py` 只运行并展示 Pre-InterviewGraph 的静态结果；
+- `run_interview_demo.py` 会自动先运行 Pre-InterviewGraph，再启动独立的 InterviewGraph，不需要手工复制任何 Python 对象。
+
+离线测试命令如下，不需要真实 API：
+
+```powershell
+python -m unittest tests.test_interview_demo
+python -m unittest discover -s tests -p "test_*.py"
+python -m compileall profile_agent tests run_interview_demo.py
+```
+
+真实 demo 会调用模型：Pre-Interview 的结构化解析、问题生成和回答处理都可能产生 API
+费用，并可能因 key、网络、限流或模型返回而启动失败。`tests/test_interview_demo.py`
+使用 Fake graph 和 Fake input/output 验证 CLI 循环，不需要真实 API。
 
 ## 当前设计边界
 
 - `CompetencyModel`：能力验证地图。
 - `ClaimRegistry`：具体简历声明的验证生命周期。
 - 两者**没有合成同一个对象**。
-- 但后续 InterviewPlanner 必须把它们合流规划，不能 Competency 自己出一套题、Claim 又自己出一套题。
+- `InterviewPlanner` 会把两者合流规划，不能 Competency 自己出一套题、Claim 又自己出一套题。
 - Claim 不是一种题型；它应尽可能通过正常的项目深挖/场景/追问等问题顺带获得 Evidence。
