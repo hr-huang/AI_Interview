@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Callable, Sequence
+from datetime import datetime, timezone
 import os
 from pathlib import Path
 import sys
@@ -123,6 +124,7 @@ def main(
     *,
     runner: Callable[..., Sequence[Any]] | None = None,
     artifact_writer: Callable[..., Path] | None = None,
+    now_provider: Callable[[], datetime] | None = None,
 ) -> int:
     """Run selected report cases and return a stable process exit code."""
 
@@ -130,6 +132,8 @@ def main(
         runner = run_report_calibration_case
     if artifact_writer is None:
         artifact_writer = write_report_calibration_artifacts
+    if now_provider is None:
+        now_provider = lambda: datetime.now(timezone.utc)
 
     parser = _build_parser()
     try:
@@ -149,10 +153,14 @@ def main(
         return 2
 
     calibration_failed = False
+    session_timestamp = now_provider().astimezone(timezone.utc).strftime(
+        "%Y%m%dT%H%M%SZ"
+    )
+    session_root = args.artifact_root / session_timestamp
     try:
         for case in cases:
             runs = list(runner(case, runs=args.runs))
-            artifact_writer(args.artifact_root, case, runs)
+            artifact_writer(session_root, case, runs)
             for run in runs:
                 _print_run_summary(case.id, run)
             if not all(_run_passed(run) for run in runs):

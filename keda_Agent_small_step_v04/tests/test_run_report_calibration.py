@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
@@ -56,13 +57,22 @@ class RunReportCalibrationCliTest(unittest.TestCase):
                 ["--case", "C04", "--runs", "3", "--artifact-root", "tmp-artifacts"],
                 runner=fake_runner,
                 artifact_writer=fake_writer,
+                now_provider=lambda: datetime(
+                    2026,
+                    8,
+                    22,
+                    9,
+                    30,
+                    45,
+                    tzinfo=timezone.utc,
+                ),
             )
 
         self.assertEqual(code, 0)
         self.assertEqual(calls, [("C04", 3)])
         self.assertEqual(
             artifact_calls,
-            [(Path("tmp-artifacts"), "C04", 3)],
+            [(Path("tmp-artifacts/20260822T093045Z"), "C04", 3)],
         )
 
     def test_all_selects_all_six_cases_without_network(self) -> None:
