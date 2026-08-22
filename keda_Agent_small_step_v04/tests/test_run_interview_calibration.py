@@ -48,7 +48,7 @@ class RunInterviewCalibrationCliTest(unittest.TestCase):
             writer_calls.append((root, case.id, len(runs)))
             return root / case.id
 
-        with patch.dict(os.environ, {"MIMO_API_KEY": "test-key"}, clear=False):
+        with patch.dict(os.environ, {"QWEN_API_KEY": "test-key"}, clear=False):
             code = main(
                 ["--case", "C03", "--runs", "2", "--artifact-root", "tmp-artifacts"],
                 runner=runner,
@@ -73,7 +73,7 @@ class RunInterviewCalibrationCliTest(unittest.TestCase):
             return _run(case.id, run_number)
 
         with (
-            patch.dict(os.environ, {"MIMO_API_KEY": "test-key"}, clear=False),
+            patch.dict(os.environ, {"QWEN_API_KEY": "test-key"}, clear=False),
             patch("run_interview_calibration.write_interview_calibration_artifacts"),
         ):
             code = main(["--case", "ALL"], runner=runner, now_provider=lambda: self.NOW)
@@ -86,7 +86,7 @@ class RunInterviewCalibrationCliTest(unittest.TestCase):
 
         output = io.StringIO()
         with (
-            patch.dict(os.environ, {"MIMO_API_KEY": "secret-key"}, clear=False),
+            patch.dict(os.environ, {"QWEN_API_KEY": "secret-key"}, clear=False),
             patch("run_interview_calibration.write_interview_calibration_artifacts"),
             redirect_stdout(output),
             redirect_stderr(output),
@@ -107,9 +107,9 @@ class RunInterviewCalibrationCliTest(unittest.TestCase):
         from run_interview_calibration import main
 
         runner = Mock()
-        with patch.dict(os.environ, {"MIMO_API_KEY": ""}, clear=False):
+        with patch.dict(os.environ, {"QWEN_API_KEY": ""}, clear=False):
             missing_key_code = main(["--case", "C03"], runner=runner)
-        with patch.dict(os.environ, {"MIMO_API_KEY": "test-key"}, clear=False):
+        with patch.dict(os.environ, {"QWEN_API_KEY": "test-key"}, clear=False):
             invalid_runs_code = main(["--runs", "0"], runner=runner)
 
         self.assertEqual(missing_key_code, 2)

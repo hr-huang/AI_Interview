@@ -12,7 +12,11 @@
 from __future__ import annotations
 
 import os
+import json
 from collections.abc import Callable
+from datetime import datetime, timezone
+from pathlib import Path
+from threading import Lock
 from typing import TypeVar
 
 from dotenv import load_dotenv
@@ -27,6 +31,10 @@ load_dotenv()
 
 SchemaT = TypeVar("SchemaT", bound=BaseModel)
 ResultT = TypeVar("ResultT")
+_TRACE_LOCK = Lock()
+_DEFAULT_QWEN_MODEL = "qwen3.8-max"
+_DEFAULT_QWEN_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+_DEFAULT_TRACE_PATH = "artifacts/calibration/llm-traces.jsonl"
 
 
 class LLMProviderError(RuntimeError):
@@ -46,12 +54,12 @@ class LLM:
     def _build_model(self) -> ChatOpenAI:
         """根据环境变量创建真实 ChatOpenAI 模型对象."""
 
-        api_key = os.getenv("MIMO_API_KEY", "").strip()
+        api_key = os.getenv("QWEN_API_KEY", "").strip()
         if not api_key:
-            raise ValueError("没有配置 MIMO_API_KEY, 请先在项目根目录 .env 中填写")
+            raise ValueError("没有配置 QWEN_API_KEY, 请先在项目根目录 .env 中填写")
 
-        model_name = os.getenv("MIMO_MODEL", "mimo-v2.5").strip()
-        base_url = os.getenv("MIMO_BASE_URL", "https://api.xiaomimimo.com/v1").strip()
+        model_name = os.getenv("QWEN_MODEL", "").strip() or _DEFAULT_QWEN_MODEL
+        base_url = os.getenv("QWEN_BASE_URL", "").strip() or _DEFAULT_QWEN_BASE_URL
 
         return ChatOpenAI(
             model=model_name,
@@ -74,7 +82,23 @@ class LLM:
     def invoke(self, messages):
         """普通 LangChain 调用, 返回 AIMessage."""
 
-        return self._invoke_provider(lambda: self.model.invoke(messages))
+        try:
+            response = self._invoke_provider(lambda: self.model.invoke(messages))
+        except BaseException as error:
+            self._write_trace(
+                call_type="text",
+                status="error",
+                messages=messages,
+                error=error,
+            )
+            raise
+        self._write_trace(
+            call_type="text",
+            status="ok",
+            messages=messages,
+            response=response,
+        )
+        return response
 
     @staticmethod
     def _invoke_provider(operation: Callable[[], ResultT]) -> ResultT:
@@ -85,11 +109,65 @@ class LLM:
         except APIStatusError as exc:
             if exc.status_code == 402:
                 raise LLMProviderError(
-                    "MiMo API 余额不足（HTTP 402）。"
-                    "请充值 MiMo 账户，或在项目根目录 .env 中更换"
-                    "有余额的 MIMO_API_KEY 后重试。"
+                    "Qwen API 余额不足（HTTP 402）。"
+                    "请充值阿里云百炼账户，或在项目根目录 .env 中更换"
+                    "有余额的 QWEN_API_KEY 后重试。"
                 ) from exc
             raise
+
+    @staticmethod
+    def _jsonable(value):
+        if isinstance(value, BaseModel):
+            return value.model_dump(mode="json")
+        if isinstance(value, dict):
+            return {str(key): LLM._jsonable(item) for key, item in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [LLM._jsonable(item) for item in value]
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            return value
+        if hasattr(value, "model_dump"):
+            return value.model_dump(mode="json")
+        if hasattr(value, "content"):
+            return {"content": LLM._jsonable(value.content)}
+        return str(value)
+
+    def _write_trace(
+        self,
+        *,
+        call_type: str,
+        status: str,
+        messages,
+        schema: type[BaseModel] | None = None,
+        attempt: int = 1,
+        response=None,
+        error: BaseException | None = None,
+    ) -> None:
+        trace_path = Path(
+            os.getenv("LLM_TRACE_PATH", "").strip() or _DEFAULT_TRACE_PATH
+        )
+        record = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "provider": "qwen",
+            "model": os.getenv("QWEN_MODEL", "").strip() or _DEFAULT_QWEN_MODEL,
+            "call_type": call_type,
+            "schema": schema.__name__ if schema is not None else None,
+            "attempt": attempt,
+            "status": status,
+            "messages": self._jsonable(messages),
+            "response": self._jsonable(response) if response is not None else None,
+            "error_type": type(error).__name__ if error is not None else None,
+            "error": str(error) if error is not None else None,
+            "raw_output": getattr(error, "llm_output", None) if error is not None else None,
+        }
+        line = json.dumps(record, ensure_ascii=False, default=str)
+        for variable in ("QWEN_API_KEY", "MIMO_API_KEY", "DEEPSEEK_API_KEY"):
+            secret = os.getenv(variable, "").strip()
+            if secret:
+                line = line.replace(secret, "[REDACTED]")
+        with _TRACE_LOCK:
+            trace_path.parent.mkdir(parents=True, exist_ok=True)
+            with trace_path.open("a", encoding="utf-8") as handle:
+                handle.write(line + "\n")
 
     def structured(self, messages, schema: type[SchemaT]) -> SchemaT:
         """按 Pydantic Schema 获取结构化输出.
@@ -113,10 +191,18 @@ class LLM:
         retry_messages = messages
         for attempt in range(2):
             try:
-                return self._invoke_provider(
+                result = self._invoke_provider(
                     lambda: structured_model.invoke(retry_messages)
                 )
-            except OutputParserException:
+            except OutputParserException as error:
+                self._write_trace(
+                    call_type="structured",
+                    status="parse_error",
+                    messages=retry_messages,
+                    schema=schema,
+                    attempt=attempt + 1,
+                    error=error,
+                )
                 if attempt == 1:
                     raise
                 retry_messages = messages + [
@@ -125,6 +211,26 @@ class LLM:
                         "上一轮输出未通过结构校验。请重新生成，只返回严格符合目标 Schema 的 JSON，不要解释。",
                     )
                 ]
+            except BaseException as error:
+                self._write_trace(
+                    call_type="structured",
+                    status="error",
+                    messages=retry_messages,
+                    schema=schema,
+                    attempt=attempt + 1,
+                    error=error,
+                )
+                raise
+            else:
+                self._write_trace(
+                    call_type="structured",
+                    status="ok",
+                    messages=retry_messages,
+                    schema=schema,
+                    attempt=attempt + 1,
+                    response=result,
+                )
+                return result
 
         raise AssertionError("结构化输出重试循环意外结束")
 

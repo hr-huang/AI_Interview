@@ -34,7 +34,7 @@ CASE_CHOICES = ("ALL", *CASE_IDS)
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="运行真实 MiMo 动态面试路径校准")
+    parser = argparse.ArgumentParser(description="运行真实 Qwen3.8 Max 动态面试路径校准")
     parser.add_argument("--case", choices=CASE_CHOICES, default="ALL")
     parser.add_argument("--runs", type=int, default=1)
     parser.add_argument(
