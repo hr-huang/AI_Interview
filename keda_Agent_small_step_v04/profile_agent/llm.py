@@ -69,6 +69,7 @@ class LLM:
             max_tokens=int(os.getenv("LLM_MAX_TOKENS", "8192")),
             top_p=float(os.getenv("LLM_TOP_P", "0.95")),
             timeout=float(os.getenv("QWEN_TIMEOUT", "600")),
+            extra_body={"enable_thinking": False},
         )
 
     @property

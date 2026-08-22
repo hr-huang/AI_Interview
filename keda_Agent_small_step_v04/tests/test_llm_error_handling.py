@@ -82,6 +82,7 @@ class LLMErrorHandlingTests(unittest.TestCase):
         )
         self.assertEqual(kwargs["max_tokens"], 8192)
         self.assertEqual(kwargs["timeout"], 600.0)
+        self.assertEqual(kwargs["extra_body"], {"enable_thinking": False})
 
     def test_structured_http_402_is_translated_to_actionable_chinese_error(self) -> None:
         wrapper = LLM()
