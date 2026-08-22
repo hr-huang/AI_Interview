@@ -81,6 +81,7 @@ class LLMErrorHandlingTests(unittest.TestCase):
             "https://dashscope.aliyuncs.com/compatible-mode/v1",
         )
         self.assertEqual(kwargs["max_tokens"], 8192)
+        self.assertEqual(kwargs["timeout"], 600.0)
 
     def test_structured_http_402_is_translated_to_actionable_chinese_error(self) -> None:
         wrapper = LLM()

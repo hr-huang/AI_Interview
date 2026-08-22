@@ -52,7 +52,7 @@ def _validate_provider_config() -> None:
         "LLM_TEMPERATURE": "0.2",
         "LLM_MAX_TOKENS": "8192",
         "LLM_TOP_P": "0.95",
-        "LLM_TIMEOUT": "120",
+        "QWEN_TIMEOUT": "600",
     }
     for name, default in numeric_defaults.items():
         raw_value = os.getenv(name, default).strip()
