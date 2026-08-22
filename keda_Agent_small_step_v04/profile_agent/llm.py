@@ -16,6 +16,7 @@ from collections.abc import Callable
 from typing import TypeVar
 
 from dotenv import load_dotenv
+from langchain_core.exceptions import OutputParserException
 from langchain_openai import ChatOpenAI
 from openai import APIStatusError
 from pydantic import BaseModel
@@ -109,7 +110,23 @@ class LLM:
             schema,
             method="json_mode",
         )
-        return self._invoke_provider(lambda: structured_model.invoke(messages))
+        retry_messages = messages
+        for attempt in range(2):
+            try:
+                return self._invoke_provider(
+                    lambda: structured_model.invoke(retry_messages)
+                )
+            except OutputParserException:
+                if attempt == 1:
+                    raise
+                retry_messages = messages + [
+                    (
+                        "human",
+                        "上一轮输出未通过结构校验。请重新生成，只返回严格符合目标 Schema 的 JSON，不要解释。",
+                    )
+                ]
+
+        raise AssertionError("结构化输出重试循环意外结束")
 
 
 # 全项目共享一个轻量 Wrapper; 真实客户端仍然是懒加载的.

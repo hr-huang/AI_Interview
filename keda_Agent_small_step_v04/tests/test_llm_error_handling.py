@@ -7,6 +7,7 @@ import unittest
 from unittest.mock import patch
 
 from httpx import Request, Response
+from langchain_core.exceptions import OutputParserException
 from openai import APIStatusError
 from pydantic import BaseModel
 
@@ -42,6 +43,20 @@ class ExampleSchema(BaseModel):
     value: str
 
 
+class FlakyStructuredModel:
+    def __init__(self) -> None:
+        self.calls = []
+
+    def with_structured_output(self, schema, method):
+        return self
+
+    def invoke(self, messages):
+        self.calls.append(messages)
+        if len(self.calls) == 1:
+            raise OutputParserException("invalid structured output")
+        return ExampleSchema(value="recovered")
+
+
 class LLMErrorHandlingTests(unittest.TestCase):
     def test_build_model_requires_mimo_api_key(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
@@ -74,6 +89,17 @@ class LLMErrorHandlingTests(unittest.TestCase):
             self.assertIn("MIMO_API_KEY", str(exc))
         else:
             self.fail("预期 HTTP 402 被转换为可操作的运行时错误")
+
+    def test_structured_output_parser_failure_is_retried_once_with_correction(self) -> None:
+        wrapper = LLM()
+        model = FlakyStructuredModel()
+        wrapper._model = model  # type: ignore[assignment]
+
+        result = wrapper.structured([("system", "return json")], ExampleSchema)
+
+        self.assertEqual(result, ExampleSchema(value="recovered"))
+        self.assertEqual(len(model.calls), 2)
+        self.assertIn("上一轮输出未通过结构校验", model.calls[1][-1][1])
 
 if __name__ == "__main__":
     unittest.main()
