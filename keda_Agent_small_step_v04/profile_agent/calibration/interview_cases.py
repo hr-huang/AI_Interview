@@ -161,13 +161,13 @@ def _c03() -> InterviewCalibrationCase:
                     "订单",
                 ],
                 "在已有订单项目中，我把状态、节点和工具边界拆开，路由由状态机控制，失败通过重试和人工介入恢复；比较过单 Agent 和 Workflow 后选择了 Workflow。",
-                max_uses=2,
+                max_uses=10,
             ),
             _rule(
                 "C03_transfer",
                 ["迁移", "新场景", "适配", "泛化", "陌生", "受监管"],
                 "迁移到受监管的新场景时，我会原样复制现有流程，不新增合规边界、权限校验或重新评测。",
-                max_uses=2,
+                max_uses=10,
             ),
             _rule(
                 "C03_unverified",
