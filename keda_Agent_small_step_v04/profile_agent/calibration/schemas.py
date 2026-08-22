@@ -54,6 +54,14 @@ class ReportCalibrationExpectation(CalibrationModel):
                 raise ValueError(
                     f"required/forbidden rubric hit 冲突: {sorted(conflict)}"
                 )
+        level_ids = set(self.requirement_level_ranges)
+        unverified_ids = set(self.expected_unverified_requirements)
+        state_conflicts = sorted(level_ids & unverified_ids)
+        if state_conflicts:
+            raise ValueError(
+                "Requirement 不能同时要求数值等级和 UNVERIFIED: "
+                f"{state_conflicts}"
+            )
         return self
 
 

@@ -21,6 +21,15 @@ class CalibrationSchemaTest(unittest.TestCase):
                 forbidden_rubric_hits={"req_01": ["role_dim_01_min_01"]},
             )
 
+    def test_expectation_rejects_level_and_unverified_conflict(self) -> None:
+        with self.assertRaises(ValidationError):
+            ReportCalibrationExpectation(
+                requirement_level_ranges={
+                    "req_01": LevelRange(min_level="L1", max_level="L1")
+                },
+                expected_unverified_requirements=["req_01"],
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
