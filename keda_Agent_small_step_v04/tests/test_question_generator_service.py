@@ -148,6 +148,20 @@ class QuestionGeneratorServiceTest(unittest.TestCase):
         self.assertIn("不要评分", prompt)
         self.assertIn("不要列出多个问题", prompt)
 
+    def test_prompt_pins_generated_question_to_the_exact_root_json_shape(self) -> None:
+        fake_llm = FakeLLM(GeneratedQuestion(text="请描述你的实现方案。"))
+
+        generate_question(
+            action=make_action(),
+            plan=make_plan(),
+            llm_client=fake_llm,
+        )
+
+        prompt = "\n".join(content for _, content in fake_llm.calls[0][0])
+        self.assertIn('JSON 根对象必须严格是 {"text": "问题文本"}', prompt)
+        self.assertIn('不要返回 {"GeneratedQuestion": ...}', prompt)
+        self.assertIn("根对象只能包含 text", prompt)
+
     def test_rejects_unknown_target_before_calling_llm(self) -> None:
         fake_llm = FakeLLM(GeneratedQuestion(text="不应生成"))
 

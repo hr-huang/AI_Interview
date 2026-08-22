@@ -20,7 +20,9 @@ _SYSTEM_PROMPT = """
 - 不要泄露答案、标准答案、推导过程或预期结论；
 - 不要评分，不评价候选人表现；
 - 不要列出多个问题，不生成问题清单；
-- 只输出 GeneratedQuestion.text 中的问题文本。
+- JSON 根对象必须严格是 {"text": "问题文本"}；
+- 根对象只能包含 text；
+- 不要返回 {"GeneratedQuestion": ...}，也不要增加任何外层包装。
 """.strip()
 
 
