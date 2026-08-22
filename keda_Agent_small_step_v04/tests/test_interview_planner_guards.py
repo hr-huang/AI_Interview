@@ -55,6 +55,10 @@ class InterviewPlannerGuardTest(unittest.TestCase):
         self.assertIn('正确示例: "target_type": "problem_solving", "preferred_modes": ["scenario"]', system_prompt)
         self.assertIn('错误示例: "target_type": "scenario"', system_prompt)
         self.assertIn("targets 数量绝不能超过 InterviewPolicy.max_targets", system_prompt)
+        self.assertIn(
+            "至少一个 Evidence Requirement 必须验证新场景迁移或适配",
+            system_prompt,
+        )
 
     def test_build_plan_rejects_more_targets_than_policy_allows(self) -> None:
         with patch.object(
