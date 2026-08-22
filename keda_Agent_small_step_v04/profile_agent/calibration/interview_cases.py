@@ -150,7 +150,7 @@ def _c03() -> InterviewCalibrationCase:
         [
             _rule(
                 "C03_project",
-                ["Agent", "Workflow", "状态", "节点", "编排", "项目"],
+                ["Workflow", "状态", "节点", "编排", "项目", "订单"],
                 "在已有订单项目中，我把状态、节点和工具边界拆开，路由由状态机控制，失败通过重试和人工介入恢复；比较过单 Agent 和 Workflow 后选择了 Workflow。",
                 max_uses=2,
             ),
@@ -162,7 +162,23 @@ def _c03() -> InterviewCalibrationCase:
             ),
             _rule(
                 "C03_unverified",
-                ["RAG", "Context", "记忆", "交付", "测试", "成本", "性能", "安全"],
+                [
+                    "RAG",
+                    "Context",
+                    "记忆",
+                    "交付",
+                    "测试",
+                    "成本",
+                    "性能",
+                    "安全",
+                    "业务目标",
+                    "AI任务",
+                    "业务问题",
+                    "量化",
+                    "验收",
+                    "监控",
+                    "评测",
+                ],
                 "我没有这方面的真实实践，无法提供可验证的实现或结果。",
                 max_uses=6,
             ),

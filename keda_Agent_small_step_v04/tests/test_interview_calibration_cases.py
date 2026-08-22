@@ -40,9 +40,12 @@ class InterviewCalibrationCasesTest(unittest.TestCase):
     def test_c03_freezes_strong_project_and_weak_transfer(self) -> None:
         case = self.by_id["C03"]
         answers = {rule.id: rule.answer for rule in case.answer_rules}
+        terms = {rule.id: rule.match_any for rule in case.answer_rules}
 
         self.assertIn("状态", answers["C03_project"])
         self.assertIn("原样复制", answers["C03_transfer"])
+        self.assertNotIn("Agent", terms["C03_project"])
+        self.assertIn("业务目标", terms["C03_unverified"])
         self.assertIn("transfer", case.path_expectation.required_topics)
         level_range = case.path_expectation.radar_level_ranges["role_dim_01"]
         self.assertEqual((level_range.min_level, level_range.max_level), ("L2", "L3"))

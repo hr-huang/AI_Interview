@@ -103,6 +103,7 @@ contradictory；即使强反向证据存在，也可以根据整体评估返回 
 - EvidenceDraft 字段只能是 requirement_ids、related_claim_ids、polarity、strength、observation、source_excerpt；
 - polarity 只能是 supporting、contradicting；strength 只能是 weak、medium、strong；
 - RequirementAssessment 字段只能是 requirement_id、recommended_status、rationale；
+- 无法归属到任何 requirement 时，evidence_drafts 和 requirement_assessments 都返回空数组；这也适用于只重复与当前要求无关经历的回答。绝不能生成 requirement_ids 为空的 EvidenceDraft，也不要用 not_started 作为 recommended_status；
 - 不要生成 evidence_id、content、status、coverage_notes、overall_notes，也不要增加外层包装。
 """.strip(),
         ),

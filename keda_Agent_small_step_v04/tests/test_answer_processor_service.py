@@ -174,6 +174,7 @@ class AnswerProcessorServiceTest(unittest.TestCase):
         self.assertIn('RequirementAssessment 字段只能是 requirement_id、recommended_status、rationale', prompt)
         self.assertIn('strength 只能是 weak、medium、strong', prompt)
         self.assertIn('不要生成 evidence_id、content、status、coverage_notes、overall_notes', prompt)
+        self.assertIn('无法归属到任何 requirement 时，evidence_drafts 和 requirement_assessments 都返回空数组', prompt)
 
     def test_one_evidence_can_update_multiple_requirements(self) -> None:
         fake_llm = FakeLLM(
