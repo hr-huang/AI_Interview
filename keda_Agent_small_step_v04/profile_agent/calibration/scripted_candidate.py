@@ -65,7 +65,9 @@ def select_scripted_answer(
 
     if not candidates:
         raise ScriptedAnswerSelectionError(
-            "没有脚本回答可匹配 requirement " + action.primary_requirement_id
+            "没有脚本回答可匹配 requirement "
+            + action.primary_requirement_id
+            + f"；description={requirement.description}；reason={action.reason}"
         )
 
     _, _, selected = min(candidates)

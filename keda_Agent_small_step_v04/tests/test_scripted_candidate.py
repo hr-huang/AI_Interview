@@ -141,16 +141,18 @@ class ScriptedCandidateTest(unittest.TestCase):
         self.assertEqual((answer, rule_id), ("first answer", "first"))
 
     def test_no_semantic_match_raises_clear_error(self) -> None:
-        with self.assertRaisesRegex(
-            ScriptedAnswerSelectionError,
-            "req_transfer",
-        ):
+        with self.assertRaises(ScriptedAnswerSelectionError) as context:
             select_scripted_answer(
                 payload=_payload(reason="验证迁移能力"),
                 plan=self.plan,
                 rules=[_rule("safety", ["安全授权"], "安全回答")],
                 usage_counts={},
             )
+
+        message = str(context.exception)
+        self.assertIn("req_transfer", message)
+        self.assertIn("迁移到新场景", message)
+        self.assertIn("验证迁移能力", message)
 
     def test_unknown_or_duplicate_requirement_is_rejected(self) -> None:
         with self.assertRaisesRegex(ScriptedAnswerSelectionError, "不存在"):
