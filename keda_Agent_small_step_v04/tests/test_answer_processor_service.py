@@ -176,6 +176,8 @@ class AnswerProcessorServiceTest(unittest.TestCase):
         self.assertIn('不要生成 evidence_id、content、status、coverage_notes、overall_notes', prompt)
         self.assertIn('无法归属到任何 requirement 时，evidence_drafts 和 requirement_assessments 都返回空数组', prompt)
         self.assertIn('recommended_status 必须使用 contradictory，绝不能使用 contradicting', prompt)
+        self.assertIn('source_excerpt 必须逐字复制回答中的一段连续原文', prompt)
+        self.assertIn('禁止使用省略号、改写或拼接', prompt)
 
     def test_one_evidence_can_update_multiple_requirements(self) -> None:
         fake_llm = FakeLLM(

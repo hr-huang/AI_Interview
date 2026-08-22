@@ -101,6 +101,7 @@ contradictory；即使强反向证据存在，也可以根据整体评估返回 
 - 根对象必须严格包含 answer_relevance、evidence_drafts、requirement_assessments；
 - answer_relevance 只能是 low、medium、high；
 - EvidenceDraft 字段只能是 requirement_ids、related_claim_ids、polarity、strength、observation、source_excerpt；
+- source_excerpt 必须逐字复制回答中的一段连续原文；禁止使用省略号、改写或拼接不同片段；
 - polarity 只能是 supporting、contradicting；strength 只能是 weak、medium、strong；
 - RequirementAssessment 字段只能是 requirement_id、recommended_status、rationale；
 - 注意两个相近枚举不要混淆：EvidenceDraft.polarity 使用 contradicting；recommended_status 必须使用 contradictory，绝不能使用 contradicting；
