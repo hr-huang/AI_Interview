@@ -98,6 +98,36 @@ class InterviewCalibrationAssertionsTest(unittest.TestCase):
 
         self.assertFalse(by_code["required_topic:transfer"].passed)
 
+    def test_evidence_may_cover_a_known_requirement_from_another_target(self) -> None:
+        case = get_interview_calibration_case("C03")
+        final_state = _final_state("C03")
+        turns = list(final_state["interview_turns"])
+        evidences = list(final_state["evidences"])
+        source_target = turns[0].target_id
+        cross_target_requirement = next(
+            requirement.id
+            for target in final_state["interview_plan"].targets
+            if target.id != source_target
+            for requirement in target.evidence_requirements
+        )
+        evidences[0] = evidences[0].model_copy(
+            update={"requirement_ids": [cross_target_requirement]}
+        )
+        final_state["evidences"] = evidences
+
+        by_code = _assertion_map(
+            evaluate_interview_path(
+                case,
+                final_state,
+                ["C03_project", "C03_transfer"],
+            )
+        )
+
+        self.assertTrue(
+            by_code["evidence_provenance"].passed,
+            by_code["evidence_provenance"].message,
+        )
+
     def test_question_answer_and_rule_usage_failures_are_separate(self) -> None:
         case = get_interview_calibration_case("C03")
         case = case.model_copy(

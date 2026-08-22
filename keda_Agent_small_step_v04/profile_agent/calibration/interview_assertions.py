@@ -61,9 +61,11 @@ def _evidence_provenance_valid(
     if len(turns_by_id) != len(turns):
         return False, "InterviewTurn ID 存在重复。"
 
-    requirement_ids_by_target = {
-        target.id: {item.id for item in target.evidence_requirements}
+    plan_target_ids = {target.id for target in plan.targets}
+    plan_requirement_ids = {
+        item.id
         for target in plan.targets
+        for item in target.evidence_requirements
     }
     evidence_ids = [evidence.id for evidence in evidences]
     if len(evidence_ids) != len(set(evidence_ids)):
@@ -73,9 +75,10 @@ def _evidence_provenance_valid(
         turn = turns_by_id.get(evidence.turn_id)
         if turn is None:
             return False, f"{evidence.id} 引用了未知 Turn。"
-        valid_requirement_ids = requirement_ids_by_target.get(turn.target_id, set())
-        if not set(evidence.requirement_ids).issubset(valid_requirement_ids):
-            return False, f"{evidence.id} 的 Requirement 来源与 Turn 不一致。"
+        if turn.target_id not in plan_target_ids:
+            return False, f"{evidence.id} 对应 Turn 引用了计划外 Target。"
+        if not set(evidence.requirement_ids).issubset(plan_requirement_ids):
+            return False, f"{evidence.id} 引用了计划外 Requirement。"
         answer = turn.answer or ""
         if not evidence.source_excerpt or evidence.source_excerpt not in answer:
             return False, f"{evidence.id} 的 source_excerpt 无法回溯到回答。"
