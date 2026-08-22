@@ -39,8 +39,15 @@ _SYSTEM_PROMPT = """
   未提及、没有说明、信息缺失或无法确认都不是 critical error，应保持未验证。
 - 不同但合理的推理方式可以使用 accepted alternative ID。
 - 未匹配的 Evidence 是允许的，不要为了覆盖率强行匹配。
+- 同一 Evidence 与 Requirement 只能输出一条聚合记录；把命中的 ID 分别放入
+  matched_minimum_criteria、matched_excellence_signals、
+  matched_critical_errors、accepted_alternative_ids 四个数组。
+- 每条记录必须包含完整 quality 对象，其五个字段只能使用
+  unverified、weak、medium、strong。
+- 不要输出 rubric_element_id 或 element_type。
 
-请只返回符合 RubricMatchBatch 的 JSON 结构。
+请只返回符合 RubricMatchBatch 的 JSON 结构。正确结构示例：
+{"matches":[{"evidence_id":"ev_01","requirement_id":"req_01","matched_minimum_criteria":["d01_min_01"],"matched_excellence_signals":[],"matched_critical_errors":[],"accepted_alternative_ids":[],"quality":{"correctness":"strong","specificity":"strong","reasoning":"medium","tradeoff_awareness":"medium","transferability":"unverified"}}]}
 """.strip()
 
 

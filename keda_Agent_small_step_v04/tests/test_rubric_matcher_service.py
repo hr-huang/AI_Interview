@@ -253,6 +253,18 @@ class RubricMatcherServiceTest(unittest.TestCase):
             RubricMatchBatch(matches=[make_match()]).model_dump(),
         )
 
+    def test_prompt_pins_aggregated_match_shape_for_mimo(self) -> None:
+        _, fake_llm = self.call_service(
+            RubricMatchBatch(matches=[make_match()])
+        )
+
+        messages, _ = fake_llm.calls[0]
+        prompt = "\n".join(content for _, content in messages)
+        self.assertIn("同一 Evidence 与 Requirement 只能输出一条聚合记录", prompt)
+        self.assertIn('"matched_minimum_criteria"', prompt)
+        self.assertIn('"quality"', prompt)
+        self.assertIn("不要输出 rubric_element_id 或 element_type", prompt)
+
     def test_unknown_evidence_id_is_rejected(self) -> None:
         with self.assertRaises(RubricMatchValidationError):
             self.call_service(
