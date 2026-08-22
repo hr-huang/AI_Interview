@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from profile_agent.schemas.claim_schema import ClaimRegistry
 from profile_agent.schemas.interview_schema import InterviewPlan
@@ -91,6 +91,135 @@ class ReportCalibrationRun(CalibrationModel):
     rubric_matches: RubricMatchBatch
     report: AssessmentReport
     assertions: list[CalibrationAssertion]
+
+    @property
+    def passed(self) -> bool:
+        return all(item.passed for item in self.assertions)
+
+
+class ScriptedAnswerRule(CalibrationModel):
+    id: str
+    match_any: list[str]
+    answer: str
+    max_uses: int = Field(default=1, gt=0)
+
+    @field_validator("id", "answer")
+    @classmethod
+    def validate_nonempty_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("字段不能为空")
+        return value
+
+    @field_validator("match_any")
+    @classmethod
+    def validate_match_terms(cls, value: list[str]) -> list[str]:
+        terms = [term.strip() for term in value]
+        if not terms or any(not term for term in terms):
+            raise ValueError("match_any 必须包含至少一个非空语义词")
+        if len(terms) != len(set(terms)):
+            raise ValueError("match_any 不能包含重复语义词")
+        return terms
+
+
+class InterviewPathExpectation(CalibrationModel):
+    required_topics: dict[str, list[str]] = Field(default_factory=dict)
+    forbidden_repeated_topics: list[str] = Field(default_factory=list)
+    radar_level_ranges: dict[str, LevelRange] = Field(default_factory=dict)
+    expected_unverified_dimensions: list[str] = Field(default_factory=list)
+    required_critical_dimensions: list[str] = Field(default_factory=list)
+    job_match_published: bool | None = None
+    max_questions: int = Field(gt=0)
+
+    @field_validator("required_topics")
+    @classmethod
+    def validate_required_topics(
+        cls,
+        value: dict[str, list[str]],
+    ) -> dict[str, list[str]]:
+        topics: dict[str, list[str]] = {}
+        for raw_topic, raw_terms in value.items():
+            topic = raw_topic.strip()
+            terms = [term.strip() for term in raw_terms]
+            if not topic or not terms or any(not term for term in terms):
+                raise ValueError("required_topics 必须使用非空主题和语义词")
+            if topic in topics:
+                raise ValueError(f"required_topics 主题重复: {topic}")
+            topics[topic] = terms
+        return topics
+
+    @field_validator(
+        "forbidden_repeated_topics",
+        "expected_unverified_dimensions",
+        "required_critical_dimensions",
+    )
+    @classmethod
+    def validate_nonempty_unique_list(cls, value: list[str]) -> list[str]:
+        items = [item.strip() for item in value]
+        if any(not item for item in items):
+            raise ValueError("列表项不能为空")
+        if len(items) != len(set(items)):
+            raise ValueError("列表项不能重复")
+        return items
+
+    @model_validator(mode="after")
+    def reject_topic_overlap(self) -> "InterviewPathExpectation":
+        overlap = sorted(
+            set(self.required_topics) & set(self.forbidden_repeated_topics)
+        )
+        if overlap:
+            raise ValueError(f"required/forbidden path topic 冲突: {overlap}")
+        return self
+
+
+class InterviewCalibrationCase(CalibrationModel):
+    id: str
+    title: str
+    resume_text: str
+    jd_text: str
+    target_role: str
+    answer_rules: list[ScriptedAnswerRule] = Field(min_length=1)
+    path_expectation: InterviewPathExpectation
+
+    @field_validator("id", "title", "resume_text", "jd_text", "target_role")
+    @classmethod
+    def validate_nonempty_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("字段不能为空")
+        return value
+
+    @model_validator(mode="after")
+    def reject_duplicate_rule_ids(self) -> "InterviewCalibrationCase":
+        rule_ids = [rule.id for rule in self.answer_rules]
+        if len(rule_ids) != len(set(rule_ids)):
+            raise ValueError("ScriptedAnswerRule ID 不能重复")
+        return self
+
+
+class InterviewCalibrationRun(CalibrationModel):
+    case_id: str
+    run_number: int = Field(gt=0)
+    initial_state: dict[str, Any]
+    final_state: dict[str, Any]
+    selected_rule_ids: list[str]
+    assertions: list[CalibrationAssertion]
+
+    @field_validator("case_id")
+    @classmethod
+    def validate_case_id(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("case_id 不能为空")
+        return value
+
+    @field_validator("selected_rule_ids")
+    @classmethod
+    def validate_selected_rule_ids(cls, value: list[str]) -> list[str]:
+        rule_ids = [rule_id.strip() for rule_id in value]
+        if any(not rule_id for rule_id in rule_ids):
+            raise ValueError("selected_rule_ids 不能包含空值")
+        return rule_ids
 
     @property
     def passed(self) -> bool:
