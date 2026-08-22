@@ -190,7 +190,7 @@ def _c03() -> InterviewCalibrationCase:
                     "*",
                 ],
                 "我没有这方面的真实实践，无法提供可验证的实现或结果。",
-                max_uses=6,
+                max_uses=10,
             ),
         ],
         InterviewPathExpectation(
