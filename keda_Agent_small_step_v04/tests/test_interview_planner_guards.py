@@ -30,6 +30,29 @@ def make_oversized_draft() -> InterviewPlanDraft:
 
 
 class InterviewPlannerGuardTest(unittest.TestCase):
+    def test_prompt_forbids_question_modes_in_target_type(self) -> None:
+        captured_messages = []
+
+        def fake_structured(messages, _schema):
+            captured_messages.extend(messages)
+            return InterviewPlanDraft(targets=[])
+
+        with patch.object(
+            interview_planner_service.llm,
+            "structured",
+            side_effect=fake_structured,
+        ):
+            interview_planner_service.build_interview_plan(
+                competency_model=CompetencyModel(),
+                claim_registry=ClaimRegistry(),
+                duration_minutes=30,
+            )
+
+        system_prompt = captured_messages[0][1]
+        self.assertIn("target_type 严禁使用任何 QuestionMode", system_prompt)
+        self.assertIn("project_deep_dive 只能出现在 preferred_modes", system_prompt)
+        self.assertIn("scenario 只能出现在 preferred_modes", system_prompt)
+
     def test_build_plan_rejects_more_targets_than_policy_allows(self) -> None:
         with patch.object(
             interview_planner_service.llm,

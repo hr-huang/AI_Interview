@@ -394,6 +394,16 @@ def build_interview_plan(
 
 重要: evidence_requirements 必须是对象数组, 每个对象包含 description 字段, 不能是字符串数组!
 
+重要: TargetType 与 QuestionMode 是两套完全不同的枚举:
+
+- target_type 只能是 knowledge、implementation、debugging、system_design、problem_solving、experience_verification。
+- target_type 严禁使用任何 QuestionMode。
+- foundation、project_deep_dive、scenario、coding、follow_up 都只能出现在 preferred_modes。
+- project_deep_dive 只能出现在 preferred_modes，不能写入 target_type。
+- scenario 只能出现在 preferred_modes，不能写入 target_type。
+
+输出前逐个检查每个 target，若 target_type 不属于上述六个 TargetType，必须自行修正后再输出。
+
 
 ==================================================
 一、Competency 是主要规划依据
