@@ -187,6 +187,7 @@ def _c03() -> InterviewCalibrationCase:
                     "验收",
                     "监控",
                     "评测",
+                    "*",
                 ],
                 "我没有这方面的真实实践，无法提供可验证的实现或结果。",
                 max_uses=6,

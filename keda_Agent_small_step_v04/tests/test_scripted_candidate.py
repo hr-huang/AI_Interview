@@ -140,6 +140,25 @@ class ScriptedCandidateTest(unittest.TestCase):
 
         self.assertEqual((answer, rule_id), ("first answer", "first"))
 
+    def test_explicit_fallback_is_used_only_when_no_semantic_rule_matches(self) -> None:
+        fallback = _rule("fallback", ["*"], "无相关实践", max_uses=2)
+
+        answer, rule_id = select_scripted_answer(
+            payload=_payload(reason="验证完全不同的能力"),
+            plan=self.plan,
+            rules=[fallback],
+            usage_counts={},
+        )
+        self.assertEqual((answer, rule_id), ("无相关实践", "fallback"))
+
+        answer, rule_id = select_scripted_answer(
+            payload=_payload(),
+            plan=self.plan,
+            rules=[fallback, _rule("transfer", ["迁移"], "迁移回答")],
+            usage_counts={},
+        )
+        self.assertEqual((answer, rule_id), ("迁移回答", "transfer"))
+
     def test_no_semantic_match_raises_clear_error(self) -> None:
         with self.assertRaises(ScriptedAnswerSelectionError) as context:
             select_scripted_answer(

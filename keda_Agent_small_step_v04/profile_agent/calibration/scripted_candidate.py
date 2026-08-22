@@ -56,14 +56,21 @@ def select_scripted_answer(
 
     haystack = f"{requirement.description}\n{action.reason}".casefold()
     candidates: list[tuple[int, int, ScriptedAnswerRule]] = []
+    fallbacks: list[tuple[int, ScriptedAnswerRule]] = []
     for index, rule in enumerate(rules):
         if usage_counts.get(rule.id, 0) >= rule.max_uses:
+            continue
+        if "*" in rule.match_any:
+            fallbacks.append((index, rule))
             continue
         hit_count = sum(term.casefold() in haystack for term in rule.match_any)
         if hit_count:
             candidates.append((-hit_count, index, rule))
 
     if not candidates:
+        if fallbacks:
+            _, selected = min(fallbacks)
+            return selected.answer, selected.id
         raise ScriptedAnswerSelectionError(
             "没有脚本回答可匹配 requirement "
             + action.primary_requirement_id
