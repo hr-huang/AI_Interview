@@ -114,20 +114,12 @@ class ReportCalibrationCasesTest(unittest.TestCase):
 
         self.assertEqual(cases["C02"].expectation.job_match_published, False)
         self.assertEqual(
-            set(cases["C02"].expectation.requirement_level_ranges),
+            set(cases["C02"].expectation.expected_unverified_requirements),
             {"req_01", "req_02", "req_03", "req_04", "req_05"},
         )
-        self.assertTrue(
-            all(
-                level_range.min_level == level_range.max_level == "L1"
-                for level_range in cases[
-                    "C02"
-                ].expectation.requirement_level_ranges.values()
-            )
-        )
         self.assertEqual(
-            cases["C02"].expectation.expected_unverified_requirements,
-            [],
+            cases["C02"].expectation.requirement_level_ranges,
+            {},
         )
 
         self.assertEqual(

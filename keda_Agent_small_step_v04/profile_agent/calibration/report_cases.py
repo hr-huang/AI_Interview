@@ -422,10 +422,7 @@ def _build_c02(profile: RoleCompetencyProfile) -> ReportCalibrationCase:
                 requirement_ids,
                 "excellence_signals",
             ),
-            requirement_level_ranges={
-                requirement_id: _level_range("L1", "L1")
-                for requirement_id in requirement_ids
-            },
+            expected_unverified_requirements=requirement_ids,
             job_match_published=False,
         ),
     )
