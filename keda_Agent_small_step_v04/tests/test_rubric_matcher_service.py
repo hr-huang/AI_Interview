@@ -265,6 +265,17 @@ class RubricMatcherServiceTest(unittest.TestCase):
         self.assertIn('"quality"', prompt)
         self.assertIn("不要输出 rubric_element_id 或 element_type", prompt)
 
+    def test_prompt_defines_strong_quality_without_exhaustive_answer(self) -> None:
+        _, fake_llm = self.call_service(
+            RubricMatchBatch(matches=[make_match()])
+        )
+
+        messages, _ = fake_llm.calls[0]
+        prompt = "\n".join(content for _, content in messages)
+        self.assertIn("strong 不要求穷举全部参考点", prompt)
+        self.assertIn("明确说明为什么这样设计", prompt)
+        self.assertIn("明确比较收益、代价或风险", prompt)
+
     def test_unknown_evidence_id_is_rejected(self) -> None:
         with self.assertRaises(RubricMatchValidationError):
             self.call_service(

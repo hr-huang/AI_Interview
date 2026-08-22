@@ -46,8 +46,18 @@ _SYSTEM_PROMPT = """
   unverified、weak、medium、strong。
 - 不要输出 rubric_element_id 或 element_type。
 
+quality 标尺：
+- unverified：证据没有涉及该轴，不能因缺失而判 weak。
+- weak：内容明显错误、空泛，或与问题只有表面关联。
+- medium：方向正确且相关，但缺少具体机制、因果解释或明确取舍。
+- strong：证据正确、具体并足以独立核验。strong 不要求穷举全部参考点；
+  specificity 在给出明确机制、边界或验证方法时可为 strong；reasoning 在明确说明为什么这样设计
+  以及因果链时可为 strong；tradeoff_awareness 在明确比较收益、代价或风险时可为 strong。
+- transferability 只有证据显示候选人在独立新场景中成功迁移时才可为 strong；仅讨论假设方案
+  不等于迁移成功。
+
 请只返回符合 RubricMatchBatch 的 JSON 结构。正确结构示例：
-{"matches":[{"evidence_id":"ev_01","requirement_id":"req_01","matched_minimum_criteria":["d01_min_01"],"matched_excellence_signals":[],"matched_critical_errors":[],"accepted_alternative_ids":[],"quality":{"correctness":"strong","specificity":"strong","reasoning":"medium","tradeoff_awareness":"medium","transferability":"unverified"}}]}
+{"matches":[{"evidence_id":"ev_01","requirement_id":"req_01","matched_minimum_criteria":["d01_min_01"],"matched_excellence_signals":[],"matched_critical_errors":[],"accepted_alternative_ids":[],"quality":{"correctness":"strong","specificity":"strong","reasoning":"strong","tradeoff_awareness":"strong","transferability":"unverified"}}]}
 """.strip()
 
 
