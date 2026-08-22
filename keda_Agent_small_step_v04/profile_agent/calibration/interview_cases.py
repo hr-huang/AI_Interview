@@ -150,7 +150,16 @@ def _c03() -> InterviewCalibrationCase:
         [
             _rule(
                 "C03_project",
-                ["Workflow", "状态", "节点", "编排", "项目", "订单"],
+                [
+                    "Workflow",
+                    "工作流",
+                    "动态路由",
+                    "状态",
+                    "节点",
+                    "编排",
+                    "项目",
+                    "订单",
+                ],
                 "在已有订单项目中，我把状态、节点和工具边界拆开，路由由状态机控制，失败通过重试和人工介入恢复；比较过单 Agent 和 Workflow 后选择了 Workflow。",
                 max_uses=2,
             ),

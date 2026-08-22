@@ -45,6 +45,8 @@ class InterviewCalibrationCasesTest(unittest.TestCase):
         self.assertIn("状态", answers["C03_project"])
         self.assertIn("原样复制", answers["C03_transfer"])
         self.assertNotIn("Agent", terms["C03_project"])
+        self.assertIn("工作流", terms["C03_project"])
+        self.assertIn("动态路由", terms["C03_project"])
         self.assertIn("业务目标", terms["C03_unverified"])
         self.assertIn("transfer", case.path_expectation.required_topics)
         level_range = case.path_expectation.radar_level_ranges["role_dim_01"]
