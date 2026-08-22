@@ -96,6 +96,14 @@ requirement_id。只能引用输入中存在的 requirement_id 和 claim_id；�
 每个 requirement_assessment 都必须能被本轮至少一个 evidence_draft 的
 requirement_ids 直接关联。recommended_status 只能使用 in_progress、sufficient、
 contradictory；即使强反向证据存在，也可以根据整体评估返回 sufficient。
+
+输出 JSON 契约：
+- 根对象必须严格包含 answer_relevance、evidence_drafts、requirement_assessments；
+- answer_relevance 只能是 low、medium、high；
+- EvidenceDraft 字段只能是 requirement_ids、related_claim_ids、polarity、strength、observation、source_excerpt；
+- polarity 只能是 supporting、contradicting；strength 只能是 weak、medium、strong；
+- RequirementAssessment 字段只能是 requirement_id、recommended_status、rationale；
+- 不要生成 evidence_id、content、status、coverage_notes、overall_notes，也不要增加外层包装。
 """.strip(),
         ),
         (

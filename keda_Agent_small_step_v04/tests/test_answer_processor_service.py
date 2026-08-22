@@ -152,6 +152,29 @@ class AnswerProcessorServiceTest(unittest.TestCase):
         self.assertEqual(progress.status, "sufficient")
         self.assertEqual(progress.supporting_evidence_ids, ["evidence_001"])
 
+    def test_prompt_pins_turn_assessment_field_names_and_enums(self) -> None:
+        fake_llm = FakeLLM(
+            self.assessment(
+                drafts=[self.draft(requirements=[REQ_01])],
+                requirements=[self.requirement(REQ_01)],
+            )
+        )
+
+        process_answer(
+            self.plan,
+            self.runtime,
+            self.turn,
+            [],
+            llm_client=fake_llm,
+        )
+
+        prompt = "\n".join(content for _, content in fake_llm.calls[0][0])
+        self.assertIn('根对象必须严格包含 answer_relevance、evidence_drafts、requirement_assessments', prompt)
+        self.assertIn('EvidenceDraft 字段只能是 requirement_ids、related_claim_ids、polarity、strength、observation、source_excerpt', prompt)
+        self.assertIn('RequirementAssessment 字段只能是 requirement_id、recommended_status、rationale', prompt)
+        self.assertIn('strength 只能是 weak、medium、strong', prompt)
+        self.assertIn('不要生成 evidence_id、content、status、coverage_notes、overall_notes', prompt)
+
     def test_one_evidence_can_update_multiple_requirements(self) -> None:
         fake_llm = FakeLLM(
             self.assessment(
