@@ -371,6 +371,8 @@ def build_interview_plan(
 3. InterviewPolicy
 4. 本次可用面试时间
 
+硬约束: targets 数量绝不能超过 InterviewPolicy.max_targets。必须读取输入中的具体数值，合并相近目标后再输出。
+
 
 你的输出是 InterviewPlanDraft, JSON 字段必须严格使用以下定义:
 
