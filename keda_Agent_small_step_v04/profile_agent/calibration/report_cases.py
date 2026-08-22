@@ -509,7 +509,8 @@ def _build_c04(profile: RoleCompetencyProfile) -> ReportCalibrationCase:
             question="请说明状态所有权和并行节点的 join 语义。",
             answer=(
                 "共享状态的 owner 放在编排器，节点只读写自己声明的字段；join 以 correlation id 聚合，"
-                "超时、重复和部分失败都有明确状态，人工接管可以从检查点恢复。"
+                "超时、重复和部分失败都有明确状态，人工接管可以从检查点恢复。相比让所有节点任意写"
+                "共享状态，这会多一些字段映射代码，但能避免并发覆盖，也更容易重放和定位失败。"
             ),
         ),
         _turn(
@@ -520,7 +521,8 @@ def _build_c04(profile: RoleCompetencyProfile) -> ReportCalibrationCase:
             question="请说明失败恢复、评测和人工接管。",
             answer=(
                 "失败按超时、可重试和不可重试分类，保存 checkpoint 后恢复；写入使用幂等键，"
-                "风险动作进入人工确认，并用回放集分别评测模型输出和工具调用。"
+                "风险动作进入人工确认，并用回放集分别评测模型输出和工具调用。只重试可恢复错误是"
+                "为了避免放大业务错误；高风险动作宁可增加一些延迟，也不让模型绕过人工授权。"
             ),
         ),
     ]

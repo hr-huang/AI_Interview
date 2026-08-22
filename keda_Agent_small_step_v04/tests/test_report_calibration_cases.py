@@ -141,6 +141,9 @@ class ReportCalibrationCasesTest(unittest.TestCase):
             {"req_01", "req_05"},
         )
         self.assertTrue(cases["C04"].expectation.required_rubric_hits["req_01"])
+        c04_answers = "\n".join(turn.answer or "" for turn in cases["C04"].turns)
+        self.assertIn("相比", c04_answers)
+        self.assertIn("宁可", c04_answers)
         self.assertTrue(
             all(
                 "_exc_" not in criterion_id
