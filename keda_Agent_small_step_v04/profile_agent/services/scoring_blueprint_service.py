@@ -33,6 +33,13 @@ Role Dimension，并返回 ScoringBlueprintDraft。你只负责语义绑定，�
 - 只输出 ScoringBlueprintDraft；不要输出 ScoringBlueprint、权重、分数、等级、
   覆盖率、置信度或岗位匹配度。
 - 不得评分，不得生成任何数值评分字段。
+- JSON 根对象只能包含 "bindings"，不要添加 scoring_blueprint_draft 外层字段。
+- bindings 中每一项必须完整包含 "requirement_id"、
+  "primary_dimension_id" 和 "rubric_id"，其中 "rubric_id" 必须复制
+  "primary_dimension_id" 的值。
+
+正确结构示例：
+{"bindings":[{"requirement_id":"req_01","primary_dimension_id":"role_dim_01","rubric_id":"role_dim_01"}]}
 """.strip()
 
 

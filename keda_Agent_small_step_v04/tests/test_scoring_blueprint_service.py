@@ -163,6 +163,19 @@ class ScoringBlueprintServiceTest(unittest.TestCase):
         self.assertIn("每个 Requirement 恰好绑定一次", prompt)
         self.assertIn("不得评分", prompt)
 
+    def test_prompt_pins_exact_root_json_shape_for_mimo(self) -> None:
+        fake_llm = FakeLLM(make_draft())
+
+        build_scoring_blueprint(
+            make_plan(), make_role_profile(), llm_client=fake_llm
+        )
+
+        messages, _ = fake_llm.calls[0]
+        prompt = "\n".join(content for _, content in messages)
+        self.assertIn('根对象只能包含 "bindings"', prompt)
+        self.assertIn('"rubric_id"', prompt)
+        self.assertIn("不要添加 scoring_blueprint_draft 外层字段", prompt)
+
     def test_binds_every_plan_requirement_exactly_once(self) -> None:
         result = build_scoring_blueprint(
             make_plan(), make_role_profile(), llm_client=FakeLLM(make_draft())
