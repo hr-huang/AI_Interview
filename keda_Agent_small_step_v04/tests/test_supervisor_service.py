@@ -230,7 +230,9 @@ class SupervisorContextTest(unittest.TestCase):
         runtime = make_runtime(plan)
         turns = [make_turn(index, "target_01_req_01") for index in range(1, 8)]
 
-        context = build_supervisor_context(plan, runtime, turns, [])
+        context = build_supervisor_context(
+            plan, runtime, turns, [], now=STARTED_AT
+        )
 
         self.assertEqual(
             [turn.sequence_number for turn in context.recent_turns],
@@ -259,9 +261,9 @@ class SupervisorContextTest(unittest.TestCase):
         )
 
         with self.assertRaisesRegex(ValueError, "requirement.*完全一致"):
-            build_supervisor_context(plan, missing, [], [])
+            build_supervisor_context(plan, missing, [], [], now=STARTED_AT)
         with self.assertRaisesRegex(ValueError, "requirement.*完全一致"):
-            build_supervisor_context(plan, extra, [], [])
+            build_supervisor_context(plan, extra, [], [], now=STARTED_AT)
 
     def test_context_rejects_progress_key_that_disagrees_with_nested_requirement_id(self) -> None:
         plan = make_plan()
@@ -269,7 +271,7 @@ class SupervisorContextTest(unittest.TestCase):
         runtime.requirement_progress["target_01_req_01"].requirement_id = "other_req"
 
         with self.assertRaisesRegex(ValueError, "key.*requirement_id"):
-            build_supervisor_context(plan, runtime, [], [])
+            build_supervisor_context(plan, runtime, [], [], now=STARTED_AT)
 
     def test_context_uses_custom_attempt_limit_for_candidate_filtering(self) -> None:
         plan = make_plan()
@@ -280,6 +282,7 @@ class SupervisorContextTest(unittest.TestCase):
             runtime,
             [],
             [],
+            now=STARTED_AT,
             max_attempts=1,
         )
 
@@ -304,7 +307,7 @@ class CandidateSelectionTest(unittest.TestCase):
             attempts={"req_limited": 2},
         )
 
-        context = build_supervisor_context(plan, runtime, [], [])
+        context = build_supervisor_context(plan, runtime, [], [], now=STARTED_AT)
 
         self.assertEqual(
             [candidate.requirement_id for candidate in context.candidates],
@@ -333,6 +336,7 @@ class CandidateSelectionTest(unittest.TestCase):
             [],
             [],
             claim_registry=make_claim_registry(),
+            now=STARTED_AT,
         )
 
         self.assertEqual(
@@ -355,7 +359,7 @@ class CandidateSelectionTest(unittest.TestCase):
         plan = make_plan(targets=targets)
         runtime = make_runtime(plan)
 
-        context = build_supervisor_context(plan, runtime, [], [])
+        context = build_supervisor_context(plan, runtime, [], [], now=STARTED_AT)
 
         self.assertEqual(
             [candidate.requirement_id for candidate in context.candidates],
@@ -404,7 +408,7 @@ class SupervisorDecisionTest(unittest.TestCase):
     def test_question_exhaustion_finishes_before_coverage_and_candidate_checks(self) -> None:
         plan = make_plan()
         runtime = make_runtime(plan, question_count=plan.max_questions)
-        context = build_supervisor_context(plan, runtime, [], [])
+        context = build_supervisor_context(plan, runtime, [], [], now=STARTED_AT)
 
         action = decide_next_action(context)
 
@@ -419,7 +423,7 @@ class SupervisorDecisionTest(unittest.TestCase):
             ]
         )
         runtime = make_runtime(plan, statuses={"must_req": "sufficient"})
-        context = build_supervisor_context(plan, runtime, [], [])
+        context = build_supervisor_context(plan, runtime, [], [], now=STARTED_AT)
 
         action = decide_next_action(context)
 
@@ -432,7 +436,7 @@ class SupervisorDecisionTest(unittest.TestCase):
             plan,
             statuses={"target_01_req_01": "skipped"},
         )
-        context = build_supervisor_context(plan, runtime, [], [])
+        context = build_supervisor_context(plan, runtime, [], [], now=STARTED_AT)
 
         action = decide_next_action(context)
 
@@ -454,7 +458,7 @@ class SupervisorDecisionTest(unittest.TestCase):
             statuses={"req_01": "in_progress"},
             attempts={"req_01": 1},
         )
-        context = build_supervisor_context(plan, runtime, [], [])
+        context = build_supervisor_context(plan, runtime, [], [], now=STARTED_AT)
 
         action = decide_next_action(context)
 
@@ -476,7 +480,7 @@ class SupervisorDecisionTest(unittest.TestCase):
             statuses={"req_01": "in_progress"},
             attempts={"req_01": 0},
         )
-        context = build_supervisor_context(plan, runtime, [], [])
+        context = build_supervisor_context(plan, runtime, [], [], now=STARTED_AT)
 
         action = decide_next_action(context)
 
@@ -498,7 +502,7 @@ class SupervisorDecisionTest(unittest.TestCase):
             statuses={"req_01": "not_started"},
             attempts={"req_01": 1},
         )
-        context = build_supervisor_context(plan, runtime, [], [])
+        context = build_supervisor_context(plan, runtime, [], [], now=STARTED_AT)
 
         action = decide_next_action(context)
 
@@ -523,6 +527,7 @@ class SupervisorDecisionTest(unittest.TestCase):
             [],
             [],
             claim_registry=make_claim_registry(),
+            now=STARTED_AT,
         )
 
         action = decide_next_action(context)
@@ -541,7 +546,7 @@ class SupervisorDecisionTest(unittest.TestCase):
             ]
         )
         runtime = make_runtime(plan)
-        context = build_supervisor_context(plan, runtime, [], [])
+        context = build_supervisor_context(plan, runtime, [], [], now=STARTED_AT)
 
         action = decide_next_action(context)
 
@@ -559,7 +564,7 @@ class SupervisorDecisionTest(unittest.TestCase):
             ]
         )
         runtime = make_runtime(plan)
-        context = build_supervisor_context(plan, runtime, [], [])
+        context = build_supervisor_context(plan, runtime, [], [], now=STARTED_AT)
 
         action = decide_next_action(context)
 
@@ -569,7 +574,7 @@ class SupervisorDecisionTest(unittest.TestCase):
     def test_decision_exposes_selected_target_and_primary_requirement(self) -> None:
         plan = make_plan()
         runtime = make_runtime(plan)
-        context = build_supervisor_context(plan, runtime, [], [])
+        context = build_supervisor_context(plan, runtime, [], [], now=STARTED_AT)
 
         action = decide_next_action(context)
 
