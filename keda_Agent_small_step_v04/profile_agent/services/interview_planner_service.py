@@ -402,6 +402,10 @@ def build_interview_plan(
 - project_deep_dive 只能出现在 preferred_modes，不能写入 target_type。
 - scenario 只能出现在 preferred_modes，不能写入 target_type。
 
+字段对照示例（同一个场景题验证问题解决能力）:
+- 正确示例: "target_type": "problem_solving", "preferred_modes": ["scenario"]
+- 错误示例: "target_type": "scenario"
+
 输出前逐个检查每个 target，若 target_type 不属于上述六个 TargetType，必须自行修正后再输出。
 
 

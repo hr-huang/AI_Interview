@@ -52,6 +52,8 @@ class InterviewPlannerGuardTest(unittest.TestCase):
         self.assertIn("target_type 严禁使用任何 QuestionMode", system_prompt)
         self.assertIn("project_deep_dive 只能出现在 preferred_modes", system_prompt)
         self.assertIn("scenario 只能出现在 preferred_modes", system_prompt)
+        self.assertIn('正确示例: "target_type": "problem_solving", "preferred_modes": ["scenario"]', system_prompt)
+        self.assertIn('错误示例: "target_type": "scenario"', system_prompt)
 
     def test_build_plan_rejects_more_targets_than_policy_allows(self) -> None:
         with patch.object(
