@@ -12,10 +12,12 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from typing import TypeVar
 
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
+from openai import APIStatusError
 from pydantic import BaseModel
 
 # 从当前项目环境加载 .env.
@@ -23,6 +25,11 @@ from pydantic import BaseModel
 load_dotenv()
 
 SchemaT = TypeVar("SchemaT", bound=BaseModel)
+ResultT = TypeVar("ResultT")
+
+
+class LLMProviderError(RuntimeError):
+    """大模型供应商返回的可操作错误."""
 
 
 class LLM:
@@ -38,12 +45,12 @@ class LLM:
     def _build_model(self) -> ChatOpenAI:
         """根据环境变量创建真实 ChatOpenAI 模型对象."""
 
-        api_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
+        api_key = os.getenv("MIMO_API_KEY", "").strip()
         if not api_key:
-            raise ValueError("没有配置 DEEPSEEK_API_KEY, 请先在项目根目录 .env 中填写")
+            raise ValueError("没有配置 MIMO_API_KEY, 请先在项目根目录 .env 中填写")
 
-        model_name = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash").strip()
-        base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com").strip()
+        model_name = os.getenv("MIMO_MODEL", "mimo-v2.5").strip()
+        base_url = os.getenv("MIMO_BASE_URL", "https://api.xiaomimimo.com/v1").strip()
 
         return ChatOpenAI(
             model=model_name,
@@ -66,7 +73,22 @@ class LLM:
     def invoke(self, messages):
         """普通 LangChain 调用, 返回 AIMessage."""
 
-        return self.model.invoke(messages)
+        return self._invoke_provider(lambda: self.model.invoke(messages))
+
+    @staticmethod
+    def _invoke_provider(operation: Callable[[], ResultT]) -> ResultT:
+        """调用模型并将已知的供应商错误转换为可操作提示."""
+
+        try:
+            return operation()
+        except APIStatusError as exc:
+            if exc.status_code == 402:
+                raise LLMProviderError(
+                    "MiMo API 余额不足（HTTP 402）。"
+                    "请充值 MiMo 账户，或在项目根目录 .env 中更换"
+                    "有余额的 MIMO_API_KEY 后重试。"
+                ) from exc
+            raise
 
     def structured(self, messages, schema: type[SchemaT]) -> SchemaT:
         """按 Pydantic Schema 获取结构化输出.
@@ -77,7 +99,7 @@ class LLM:
         自己处理 json.loads()、字段缺失等细节.
         """
 
-        # DeepSeek API 不支持 function_calling, 只能用 json_mode
+        # MiMo API 使用 OpenAI-compatible 接口, 这里继续使用 json_mode
         # json_mode 要求 prompt 中必须包含 "json" 关键词
         messages = list(messages)
         if messages and messages[0][0] == "system":
@@ -87,7 +109,7 @@ class LLM:
             schema,
             method="json_mode",
         )
-        return structured_model.invoke(messages)
+        return self._invoke_provider(lambda: structured_model.invoke(messages))
 
 
 # 全项目共享一个轻量 Wrapper; 真实客户端仍然是懒加载的.
