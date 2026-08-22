@@ -59,6 +59,7 @@ class InterviewPlannerGuardTest(unittest.TestCase):
             "至少一个 Evidence Requirement 必须验证新场景迁移或适配",
             system_prompt,
         )
+        self.assertIn("迁移 Requirement 必须放在 high、must_cover 的核心 Target", system_prompt)
 
     def test_build_plan_rejects_more_targets_than_policy_allows(self) -> None:
         with patch.object(

@@ -582,6 +582,8 @@ require_independent_problem_solving=True
 至少一个 Evidence Requirement 必须验证新场景迁移或适配，
 并且该场景不能只是重复候选人简历中的原项目；
 应验证候选人能否把既有方法迁移到陌生、约束不同或受监管的场景。
+迁移 Requirement 必须放在 high、must_cover 的核心 Target，
+不要放进低优先级或 optional 的尾部 Target，以确保有限题数内能够实际验证。
 
 
 ==================================================
