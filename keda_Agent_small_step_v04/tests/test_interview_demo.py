@@ -1,3 +1,4 @@
+import json
 from contextlib import redirect_stderr
 from io import StringIO
 from unittest import TestCase
@@ -8,6 +9,8 @@ from langgraph.types import Command
 
 import run_interview_demo
 from profile_agent.schemas.interview_schema import FinishAction
+from profile_agent.services.assessment_report_service import AssessmentReportStateError
+from tests.report_test_helpers import make_test_report
 
 
 class FakeInterrupt:
@@ -114,6 +117,31 @@ class InterviewDemoSessionTest(TestCase):
 
         self.assertEqual(output, ["问题", "结束原因：完成"])
 
+    def test_session_prints_structured_json_report_when_present(self) -> None:
+        report = make_test_report("中文目标岗位")
+        graph = FakeGraph(
+            [
+                {
+                    "next_action": FinishAction(reason="面试已完成"),
+                    "assessment_report": report,
+                }
+            ]
+        )
+        output: list[str] = []
+
+        run_interview_demo.run_interview_session(
+            graph,
+            {"interview_plan": "plan"},
+            output_fn=output.append,
+            thread_id="report-output",
+        )
+
+        self.assertEqual(output[0], "结束原因：面试已完成")
+        self.assertEqual(output[1], "评估报告：")
+        self.assertEqual(json.loads(output[2]), report.model_dump(mode="json"))
+        self.assertIn("中文目标岗位", output[2])
+        self.assertIn('\n  "target_role":', output[2])
+
 
 class InterviewDemoMainTest(TestCase):
     def test_main_runs_pre_interview_then_interview_session(self) -> None:
@@ -183,6 +211,42 @@ class InterviewDemoMainTest(TestCase):
 
         self.assertEqual(exit_code, 1)
         self.assertIn("启动失败", stderr.getvalue())
+
+    def test_main_reports_expected_report_value_error_as_startup_failure(self) -> None:
+        error = AssessmentReportStateError("面试报告阶段不可用")
+        fake_pre_graph = type(
+            "FakePreGraph",
+            (),
+            {"invoke": lambda _self, _state: {"interview_plan": "plan"}},
+        )()
+        stderr = StringIO()
+
+        with (
+            patch.object(run_interview_demo, "pre_interview_graph", fake_pre_graph),
+            patch.object(run_interview_demo, "build_interview_graph", return_value=object()),
+            patch.object(run_interview_demo, "run_interview_session", side_effect=error),
+            redirect_stderr(stderr),
+        ):
+            exit_code = run_interview_demo.main()
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("启动失败：面试报告阶段不可用", stderr.getvalue())
+
+    def test_main_does_not_swallow_unexpected_report_value_error(self) -> None:
+        error = ValueError("programming bug")
+        fake_pre_graph = type(
+            "FakePreGraph",
+            (),
+            {"invoke": lambda _self, _state: {"interview_plan": "plan"}},
+        )()
+
+        with (
+            patch.object(run_interview_demo, "pre_interview_graph", fake_pre_graph),
+            patch.object(run_interview_demo, "build_interview_graph", return_value=object()),
+            patch.object(run_interview_demo, "run_interview_session", side_effect=error),
+        ):
+            with self.assertRaisesRegex(ValueError, "programming bug"):
+                run_interview_demo.main()
 
 
 if __name__ == "__main__":

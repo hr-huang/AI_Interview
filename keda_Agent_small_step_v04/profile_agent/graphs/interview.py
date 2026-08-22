@@ -21,11 +21,15 @@ from profile_agent.schemas.interview_schema import (
     FinishAction,
     GeneratedQuestion,
 )
+from profile_agent.schemas.report_schema import AssessmentReport
 from profile_agent.schemas.runtime_schema import (
     AnswerProcessingResult,
     InterviewTurn,
 )
 from profile_agent.services.answer_processor_service import process_answer
+from profile_agent.services.assessment_report_service import (
+    generate_assessment_report,
+)
 from profile_agent.services.question_generator_service import generate_question
 from profile_agent.services.runtime_state_service import (
     initialize_runtime_state,
@@ -41,6 +45,7 @@ from profile_agent.state.main_state import MainState
 
 QuestionGenerator = Callable[..., GeneratedQuestion]
 AnswerProcessor = Callable[..., AnswerProcessingResult]
+ReportGenerator = Callable[..., AssessmentReport]
 NowProvider = Callable[[], datetime]
 
 
@@ -74,13 +79,15 @@ def build_interview_graph(
     answer_processor: AnswerProcessor | None = None,
     checkpointer: Any | None = None,
     now_provider: NowProvider | None = None,
+    report_generator: ReportGenerator | None = None,
 ):
     """Build the interruptible interview graph.
 
-    ``question_generator`` and ``answer_processor`` default to the real
-    service functions but can be replaced with deterministic fakes.  The
-    compiled graph always has a checkpointer so callers can resume with a
-    ``Command(resume=...)`` using the same configurable ``thread_id``.
+    ``question_generator``, ``answer_processor`` and ``report_generator``
+    default to the real service functions but can be replaced with
+    deterministic fakes.  The compiled graph always has a checkpointer so
+    callers can resume with a ``Command(resume=...)`` using the same
+    configurable ``thread_id``.
     """
 
     question_generator = (
@@ -88,6 +95,11 @@ def build_interview_graph(
     )
     answer_processor = (
         process_answer if answer_processor is None else answer_processor
+    )
+    report_generator = (
+        generate_assessment_report
+        if report_generator is None
+        else report_generator
     )
     now_provider = _utc_now if now_provider is None else now_provider
     checkpointer = InMemorySaver() if checkpointer is None else checkpointer
@@ -234,6 +246,17 @@ def build_interview_graph(
             "runtime_state": result.runtime_state,
         }
 
+    def generate_report_node(state: MainState) -> dict[str, Any]:
+        report = report_generator(
+            plan=state["interview_plan"],
+            runtime_state=state["runtime_state"],
+            turns=list(state.get("interview_turns") or []),
+            evidences=list(state.get("evidences") or []),
+            claim_registry=state.get("claim_registry"),
+            target_role=state.get("target_role"),
+        )
+        return {"assessment_report": AssessmentReport.model_validate(report)}
+
     def route_after_supervisor(state: MainState) -> str:
         action = state.get("next_action")
         if isinstance(action, AskAction):
@@ -248,6 +271,7 @@ def build_interview_graph(
     builder.add_node("generate_question", generate_question_node)
     builder.add_node("wait_for_answer", wait_for_answer)
     builder.add_node("process_answer", process_answer_node)
+    builder.add_node("generate_report", generate_report_node)
 
     builder.add_edge(START, "initialize_interview")
     builder.add_edge("initialize_interview", "supervisor")
@@ -256,12 +280,13 @@ def build_interview_graph(
         route_after_supervisor,
         {
             "ask": "generate_question",
-            "finish": END,
+            "finish": "generate_report",
         },
     )
     builder.add_edge("generate_question", "wait_for_answer")
     builder.add_edge("wait_for_answer", "process_answer")
     builder.add_edge("process_answer", "supervisor")
+    builder.add_edge("generate_report", END)
 
     return builder.compile(checkpointer=checkpointer)
 

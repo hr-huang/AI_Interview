@@ -23,6 +23,7 @@ from profile_agent.schemas.interview_schema import (
 )
 from profile_agent.schemas.job_schema import JobProfile
 from profile_agent.schemas.resume_schema import ResumeProfile
+from profile_agent.schemas.report_schema import AssessmentReport
 from profile_agent.schemas.runtime_schema import (
     Evidence,
     InterviewRuntimeState,
@@ -64,3 +65,6 @@ class MainState(TypedDict, total=False):
     next_action: InterviewAction
     current_question: GeneratedQuestion | None
     current_turn_id: str | None
+
+    # 7) 面试结束后的最终评估报告
+    assessment_report: AssessmentReport

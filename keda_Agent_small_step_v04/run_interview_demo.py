@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 import uuid
 from collections.abc import Callable, Mapping
@@ -12,6 +13,8 @@ from langgraph.types import Command
 from profile_agent.graphs.interview import build_interview_graph
 from profile_agent.graphs.pre_interview import pre_interview_graph
 from profile_agent.schemas.interview_schema import FinishAction
+from profile_agent.schemas.report_schema import AssessmentReport
+from profile_agent.services.assessment_report_service import AssessmentReportStateError
 
 try:
     from profile_agent.llm import LLMProviderError
@@ -119,6 +122,18 @@ def run_interview_session(
     reason = _finish_reason(result)
     if reason is not None:
         output_fn(f"结束原因：{reason}")
+
+    assessment_report = result.get("assessment_report")
+    if assessment_report is not None:
+        report_json = json.dumps(
+            AssessmentReport.model_validate(assessment_report).model_dump(
+                mode="json"
+            ),
+            ensure_ascii=False,
+            indent=2,
+        )
+        output_fn("评估报告：")
+        output_fn(report_json)
     return result
 
 
@@ -142,7 +157,12 @@ def main() -> int:
     try:
         interview_graph = build_interview_graph()
         run_interview_session(interview_graph, pre_interview_result)
-    except (LLMProviderError, ModelError, OpenAIError) as error:
+    except (
+        LLMProviderError,
+        ModelError,
+        OpenAIError,
+        AssessmentReportStateError,
+    ) as error:
         _report_startup_failure(error)
         return 1
     except (EOFError, KeyboardInterrupt):

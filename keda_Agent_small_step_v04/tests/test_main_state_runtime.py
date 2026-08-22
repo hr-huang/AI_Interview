@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
 import unittest
 
+from tests.report_test_helpers import make_test_report
+from profile_agent.schemas.report_schema import AssessmentReport
 from profile_agent.schemas.runtime_schema import InterviewRuntimeState
 from profile_agent.state.main_state import MainState
 
@@ -22,6 +24,16 @@ class MainStateRuntimeTest(unittest.TestCase):
         self.assertNotEqual(
             annotations["runtime_state"],
             annotations["interview_plan"],
+        )
+
+    def test_main_state_accepts_optional_assessment_report(self) -> None:
+        report = make_test_report()
+        state: MainState = {"assessment_report": report}
+
+        self.assertIs(state["assessment_report"], report)
+        self.assertEqual(
+            MainState.__annotations__["assessment_report"],
+            AssessmentReport,
         )
 
 

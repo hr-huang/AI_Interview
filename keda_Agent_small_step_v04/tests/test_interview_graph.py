@@ -5,6 +5,7 @@ from langgraph.types import Command
 
 from profile_agent.graphs.interview import build_interview_graph
 from profile_agent.schemas.claim_schema import ClaimRegistry
+from tests.report_test_helpers import make_test_report
 from profile_agent.schemas.interview_schema import (
     AssessmentTarget,
     AskAction,
@@ -129,8 +130,12 @@ class InterviewGraphTest(unittest.TestCase):
         return build_interview_graph(
             question_generator=self.question_generator,
             answer_processor=self.answer_processor,
+            report_generator=self.report_generator,
             now_provider=lambda: self.NOW,
         )
+
+    def report_generator(self, **kwargs):
+        return make_test_report(kwargs.get("target_role") or "测试岗位")
 
     @staticmethod
     def config(thread_id: str) -> dict:
