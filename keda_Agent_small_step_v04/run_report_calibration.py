@@ -49,7 +49,7 @@ def _validate_provider_config() -> None:
 
     numeric_defaults = {
         "LLM_TEMPERATURE": "0.2",
-        "LLM_MAX_TOKENS": "4096",
+        "LLM_MAX_TOKENS": "8192",
         "LLM_TOP_P": "0.95",
         "LLM_TIMEOUT": "120",
     }

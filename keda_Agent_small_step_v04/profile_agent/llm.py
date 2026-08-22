@@ -57,7 +57,7 @@ class LLM:
             api_key=api_key,
             base_url=base_url,
             temperature=float(os.getenv("LLM_TEMPERATURE", "0.2")),
-            max_tokens=int(os.getenv("LLM_MAX_TOKENS", "4096")),
+            max_tokens=int(os.getenv("LLM_MAX_TOKENS", "8192")),
             top_p=float(os.getenv("LLM_TOP_P", "0.95")),
             timeout=float(os.getenv("LLM_TIMEOUT", "120")),
         )

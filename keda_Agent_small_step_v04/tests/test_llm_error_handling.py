@@ -59,6 +59,7 @@ class LLMErrorHandlingTests(unittest.TestCase):
         self.assertEqual(kwargs["model"], "mimo-v2.5")
         self.assertEqual(kwargs["api_key"], "test-key")
         self.assertEqual(kwargs["base_url"], "https://api.xiaomimimo.com/v1")
+        self.assertEqual(kwargs["max_tokens"], 8192)
 
     def test_structured_http_402_is_translated_to_actionable_chinese_error(self) -> None:
         wrapper = LLM()
