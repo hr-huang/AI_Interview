@@ -52,6 +52,42 @@ Resume Understanding   Job Understanding
 thread checkpoint，进程重启后不会保留，也不是生产环境的持久化方案；生产部署需要替换
 为持久化 checkpointer。
 
+## 面试结束后的 AssessmentReport 阶段
+
+`InterviewGraph` 结束后，原始 `InterviewTurn` / `Evidence` 历史保持不可变，
+`AssessmentReportService` 使用版本化的 `ai_application_engineering / 2026-H2`
+Role Pack 编排以下链路：
+
+```text
+Role Profile
+   ↓
+Scoring Blueprint → Rubric Matches
+   ↓
+RequirementEvidenceAssessmentBuilder（确定性证据汇总）
+   ↓
+Claim Verification → ScoreEngine（确定性数值评分）
+   ↓
+Report Writer / 确定性 fallback
+   ↓
+AssessmentReport
+```
+
+ScoreEngine 是唯一生成 Requirement、能力维度和岗位匹配数值的组件；Radar、PDF 或
+前端只读取 `AssessmentReport`，不重新计算分数。未验证维度保留 `UNVERIFIED` 和
+`score=None`，岗位匹配分仅在覆盖率与 gating 条件同时满足时发布。报告文案失败时
+只降级文案，不丢失 `ScoreSnapshot`。Task 9 的集成测试全部使用 Fake semantic
+services，不调用真实 LLM。
+
+报告阶段的离线验证命令（项目根目录执行）：
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest tests.test_assessment_report_service -v
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+.\.venv\Scripts\python.exe check_without_llm.py
+.\.venv\Scripts\python.exe -m compileall -q profile_agent tests run_pre_interview.py run_interview_demo.py
+git diff --check
+```
+
 ## 这版最重要的优化
 
 ### 1. 正式 Python package，解决导入混乱
