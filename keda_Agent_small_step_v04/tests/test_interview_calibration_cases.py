@@ -43,6 +43,10 @@ class InterviewCalibrationCasesTest(unittest.TestCase):
         terms = {rule.id: rule.match_any for rule in case.answer_rules}
 
         self.assertIn("状态", answers["C03_project"])
+        self.assertIn("order_id", answers["C03_project"])
+        self.assertIn("幂等键", answers["C03_project"])
+        self.assertIn("低置信度", answers["C03_project"])
+        self.assertIn("任务成功率", answers["C03_project"])
         self.assertIn("原样复制", answers["C03_transfer"])
         self.assertNotIn("Agent", terms["C03_project"])
         self.assertIn("工作流", terms["C03_project"])
@@ -54,6 +58,8 @@ class InterviewCalibrationCasesTest(unittest.TestCase):
         for rule_id in ("C03_project", "C03_transfer"):
             rule = next(rule for rule in case.answer_rules if rule.id == rule_id)
             self.assertEqual(rule.max_uses, case.path_expectation.max_questions)
+        rule_ids = [rule.id for rule in case.answer_rules]
+        self.assertLess(rule_ids.index("C03_transfer"), rule_ids.index("C03_project"))
         self.assertIn("transfer", case.path_expectation.required_topics)
         level_range = case.path_expectation.radar_level_ranges["role_dim_01"]
         self.assertEqual((level_range.min_level, level_range.max_level), ("L2", "L3"))
