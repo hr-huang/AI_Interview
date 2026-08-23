@@ -97,6 +97,20 @@ class InterviewCalibrationCasesTest(unittest.TestCase):
         fallback = next(rule for rule in case.answer_rules if "*" in rule.match_any)
         self.assertEqual(fallback.max_uses, case.path_expectation.max_questions)
 
+    def test_c04_key_boundaries_include_architecture_tradeoff_and_recovery_loop(self) -> None:
+        case = self.by_id["C04"]
+        rules = {rule.id: rule for rule in case.answer_rules}
+
+        self.assertIn("单 Agent", rules["C04_agent_boundary"].answer)
+        self.assertIn("多 Agent", rules["C04_agent_boundary"].answer)
+        self.assertIn("补偿", rules["C04_recovery_boundary"].answer)
+        self.assertIn("Schema", rules["C04_recovery_boundary"].answer)
+        self.assertIn("故障注入", rules["C04_recovery_boundary"].answer)
+        self.assertEqual(
+            rules["C04_recovery_boundary"].max_uses,
+            case.path_expectation.max_questions,
+        )
+
     def test_c06_preserves_four_unverified_dimensions(self) -> None:
         case = self.by_id["C06"]
         low_information_answers = [
