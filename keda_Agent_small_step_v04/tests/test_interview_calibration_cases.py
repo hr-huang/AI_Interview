@@ -45,6 +45,15 @@ class InterviewCalibrationCasesTest(unittest.TestCase):
         self.assertTrue(all("具体" not in answer for answer in answers))
         self.assertIn("depth_probe", self.by_id["C02"].path_expectation.required_topics)
 
+    def test_c01_rag_answer_contains_conflict_and_tool_validation_details(self) -> None:
+        case = self.by_id["C01"]
+        answer = next(rule.answer for rule in case.answer_rules if rule.id == "C01_rag")
+
+        self.assertIn("实时状态优先", answer)
+        self.assertIn("时间戳", answer)
+        self.assertIn("Schema", answer)
+        self.assertIn("权限", answer)
+
     def test_c03_freezes_strong_project_and_weak_transfer(self) -> None:
         case = self.by_id["C03"]
         answers = {rule.id: rule.answer for rule in case.answer_rules}
