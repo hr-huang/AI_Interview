@@ -29,6 +29,14 @@ class InterviewCalibrationCasesTest(unittest.TestCase):
                 rule_ids = [rule.id for rule in case.answer_rules]
                 self.assertEqual(len(rule_ids), len(set(rule_ids)))
                 self.assertLessEqual(case.path_expectation.max_questions, 10)
+                fallbacks = [
+                    rule for rule in case.answer_rules if "*" in rule.match_any
+                ]
+                self.assertEqual(len(fallbacks), 1)
+                self.assertEqual(
+                    fallbacks[0].max_uses,
+                    case.path_expectation.max_questions,
+                )
 
     def test_c02_answers_remain_keyword_only(self) -> None:
         answers = [rule.answer for rule in self.by_id["C02"].answer_rules]

@@ -103,6 +103,12 @@ def _c01() -> InterviewCalibrationCase:
                 "我以单流程和小模型作为基线，比较成本、延迟、复杂度和扩展性，只有收益明确才引入多 Agent，并持续用失败样本复盘演进。",
                 max_uses=2,
             ),
+            _rule(
+                "C01_fallback",
+                ["*"],
+                "我会先把目标拆成可验收规格，再用显式状态、受控工具边界和带引用检索实现；所有模型输出与写操作都通过权限校验、幂等、测试和回放日志验证，高风险失败进入降级或人工确认，并持续比较效果、成本和延迟。",
+                max_uses=10,
+            ),
         ],
         InterviewPathExpectation(
             required_topics={
@@ -126,7 +132,7 @@ def _c02() -> InterviewCalibrationCase:
                 [
                     "Agent", "Workflow", "状态", "节点", "业务", "任务", "RAG",
                     "Context", "记忆", "工具", "交付", "测试", "日志", "可靠性",
-                    "恢复", "安全", "评测", "成本", "性能", "取舍", "具体", "验证",
+                    "恢复", "安全", "评测", "成本", "性能", "取舍", "具体", "验证", "*",
                 ],
                 "Agent、RAG、Workflow、Memory、benchmark。",
                 max_uses=10,
@@ -225,9 +231,9 @@ def _c04() -> InterviewCalibrationCase:
             ),
             _rule(
                 "C04_unverified",
-                ["RAG", "Context", "记忆", "成本", "性能", "业务建模"],
+                ["RAG", "Context", "记忆", "成本", "性能", "业务建模", "*"],
                 "我没有足够的独立实践，无法补充可验证细节。",
-                max_uses=4,
+                max_uses=10,
             ),
         ],
         InterviewPathExpectation(
@@ -314,6 +320,12 @@ def _c06() -> InterviewCalibrationCase:
                 ["成本", "性能", "延迟", "复杂度", "演进", "取舍"],
                 "我没有相关实践，无法提供可验证细节。",
                 max_uses=2,
+            ),
+            _rule(
+                "C06_fallback",
+                ["*"],
+                "我没有相关实践，无法提供可验证细节。",
+                max_uses=10,
             ),
         ],
         InterviewPathExpectation(
