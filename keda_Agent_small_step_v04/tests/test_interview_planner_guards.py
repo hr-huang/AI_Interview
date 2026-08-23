@@ -2,9 +2,10 @@ import unittest
 from unittest.mock import patch
 
 from profile_agent.schemas.claim_schema import ClaimRegistry
-from profile_agent.schemas.competency_schema import CompetencyModel
+from profile_agent.schemas.competency_schema import CompetencyItem, CompetencyModel
 from profile_agent.schemas.interview_schema import (
     AssessmentTargetDraft,
+    EvidenceRequirementDraft,
     InterviewPlanDraft,
 )
 from profile_agent.services import interview_planner_service
@@ -48,6 +49,41 @@ def make_timed_draft(minutes: int) -> InterviewPlanDraft:
 
 
 class InterviewPlannerGuardTest(unittest.TestCase):
+    def test_core_competencies_must_be_in_high_must_cover_targets(self) -> None:
+        competency_model = CompetencyModel(
+            competencies=[
+                CompetencyItem(
+                    id="competency_01",
+                    name="系统可靠性",
+                    importance="core",
+                    target_expectation="能够处理失败恢复与安全授权",
+                )
+            ]
+        )
+        draft = make_timed_draft(10)
+        draft.targets[0].competency_ids = ["competency_01"]
+        draft.targets[0].priority = "medium"
+        draft.targets[0].must_cover = False
+
+        with self.assertRaisesRegex(ValueError, "core Competency"):
+            interview_planner_service.validate_core_coverage(
+                draft,
+                competency_model,
+            )
+
+    def test_high_priority_requirements_leave_two_questions_for_followups(self) -> None:
+        draft = make_timed_draft(10)
+        draft.targets[0].evidence_requirements = [
+            EvidenceRequirementDraft(description=f"证据 {index}")
+            for index in range(9)
+        ]
+
+        with self.assertRaisesRegex(ValueError, "动态追问"):
+            interview_planner_service.validate_question_capacity(
+                draft,
+                max_questions=10,
+            )
+
     def test_prompt_forbids_question_modes_in_target_type(self) -> None:
         captured_messages = []
 

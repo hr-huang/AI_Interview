@@ -148,6 +148,50 @@ def validate_target_count(
             f"最大允许: {policy.max_targets}"
         )
 
+
+def validate_core_coverage(
+    draft: InterviewPlanDraft,
+    competency_model: CompetencyModel,
+) -> None:
+    """Ensure every core competency is reachable before optional targets."""
+
+    core_ids = {
+        competency.id
+        for competency in competency_model.competencies
+        if competency.importance == "core"
+    }
+    prioritized_ids = {
+        competency_id
+        for target in draft.targets
+        if target.priority == "high" and target.must_cover
+        for competency_id in target.competency_ids
+    }
+    missing_ids = sorted(core_ids - prioritized_ids)
+    if missing_ids:
+        raise ValueError(
+            "core Competency 必须由 high、must_cover Target 覆盖: "
+            + ", ".join(missing_ids)
+        )
+
+
+def validate_question_capacity(
+    draft: InterviewPlanDraft,
+    max_questions: int,
+) -> None:
+    """Reserve two questions for evidence-driven follow-ups."""
+
+    planned_requirements = sum(
+        len(target.evidence_requirements)
+        for target in draft.targets
+        if target.priority == "high" or target.must_cover
+    )
+    requirement_limit = max(1, max_questions - 2)
+    if planned_requirements > requirement_limit:
+        raise ValueError(
+            "high/must_cover Evidence Requirement 过多，无法为动态追问预留 2 题。"
+            f"当前: {planned_requirements}, 最大允许: {requirement_limit}."
+        )
+
 # ============================================================
 # 检查 LLM 给出的 Target 时间预算是否超出总时间
 # ============================================================
@@ -424,6 +468,9 @@ CompetencyModel 描述:
 
 应优先保证 core competency 得到充分验证.
 
+任何关联 core competency 的 Target 都必须设为 high 且 must_cover；高度相关的
+core competency 应合并进同一 Target，不能把可靠性、安全等核心能力放到可选尾部。
+
 
 ==================================================
 二、Claim 不是独立出题来源
@@ -646,6 +693,15 @@ time_budget_minutes 是初始软预算.
 {available_minutes} 分钟
 
 
+本次最大问题数:
+
+{calculate_max_questions(duration_minutes)} 题
+
+
+所有 high 或 must_cover Target 的 Evidence Requirement 总数不得超过
+{max(1, calculate_max_questions(duration_minutes) - 2)} 个，必须为基于回答的动态追问预留 2 题。
+
+
 CompetencyModel:
 
 {competency_json}
@@ -688,6 +744,11 @@ InterviewPolicy:
         )
         try:
             validate_target_count(draft=draft, policy=policy)
+            validate_core_coverage(draft, competency_model)
+            validate_question_capacity(
+                draft,
+                max_questions=calculate_max_questions(duration_minutes),
+            )
             validate_references(
                 draft=draft,
                 competency_model=competency_model,
