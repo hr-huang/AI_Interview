@@ -53,6 +53,12 @@ class InterviewCalibrationCasesTest(unittest.TestCase):
         self.assertIn("时间戳", answer)
         self.assertIn("Schema", answer)
         self.assertIn("权限", answer)
+        reliability = next(
+            rule for rule in case.answer_rules if rule.id == "C01_reliability"
+        )
+        self.assertIn("合规", reliability.match_any)
+        self.assertIn("审计", reliability.answer)
+        self.assertEqual(reliability.max_uses, case.path_expectation.max_questions)
 
     def test_c03_freezes_strong_project_and_weak_transfer(self) -> None:
         case = self.by_id["C03"]
@@ -89,6 +95,10 @@ class InterviewCalibrationCasesTest(unittest.TestCase):
 
         self.assertEqual(len(unsafe_answers), 1)
         self.assertIn("没有授权、审批或人工确认", unsafe_answers[0])
+        unsafe_rule = next(rule for rule in case.answer_rules if rule.id == "C05_unsafe")
+        self.assertIn("监管", unsafe_rule.match_any)
+        self.assertIn("合规", unsafe_rule.match_any)
+        self.assertIn("安全边界", unsafe_rule.match_any)
         self.assertIn("safety", case.path_expectation.required_topics)
         self.assertEqual(
             case.path_expectation.required_critical_dimensions,
