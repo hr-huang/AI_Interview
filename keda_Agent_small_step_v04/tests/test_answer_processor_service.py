@@ -123,7 +123,7 @@ class AnswerProcessorServiceTest(unittest.TestCase):
             polarity=polarity,
             strength=strength,
             observation="回答给出了可核验的设计事实。",
-            source_excerpt="我会先定义状态，再处理并行节点。",
+            source_excerpt="我会先定义状态",
         )
 
     def requirement(
@@ -340,6 +340,36 @@ class AnswerProcessorServiceTest(unittest.TestCase):
         self.assertIn("上一轮 TurnAssessment 未通过业务校验", correction_prompt)
         self.assertIn("RequirementAssessment 没有本轮 linked evidence", correction_prompt)
         self.assertEqual(result.new_evidences[0].requirement_ids, [REQ_01])
+
+    def test_non_verbatim_excerpt_is_retried_before_evidence_is_persisted(self) -> None:
+        invalid_draft = self.draft(requirements=[REQ_01]).model_copy(
+            update={"source_excerpt": "我会先定义状态...再处理节点"}
+        )
+        valid_draft = self.draft(requirements=[REQ_01])
+        fake_llm = SequencedFakeLLM(
+            [
+                self.assessment(
+                    drafts=[invalid_draft],
+                    requirements=[self.requirement(REQ_01)],
+                ),
+                self.assessment(
+                    drafts=[valid_draft],
+                    requirements=[self.requirement(REQ_01)],
+                ),
+            ]
+        )
+
+        result = process_answer(
+            self.plan,
+            self.runtime,
+            self.turn,
+            [],
+            llm_client=fake_llm,
+        )
+
+        self.assertEqual(len(fake_llm.calls), 2)
+        self.assertIn("source_excerpt 不是回答中的连续原文", fake_llm.calls[1][0][-1][1])
+        self.assertEqual(result.new_evidences[0].source_excerpt, "我会先定义状态")
 
     def test_empty_or_unanswered_turn_is_rejected_before_model_call(self) -> None:
         for answer in (None, "   "):

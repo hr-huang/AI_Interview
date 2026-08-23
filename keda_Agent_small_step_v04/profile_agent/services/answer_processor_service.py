@@ -129,8 +129,14 @@ def _validate_assessment(
     assessment: TurnAssessment,
     requirement_ids: set[str],
     known_claim_ids: set[str],
+    answer_text: str,
 ) -> None:
     for draft in assessment.evidence_drafts:
+        if draft.source_excerpt not in answer_text:
+            raise ValueError(
+                "Evidence source_excerpt 不是回答中的连续原文: "
+                f"{draft.source_excerpt}"
+            )
         unknown_requirements = set(draft.requirement_ids) - requirement_ids
         if unknown_requirements:
             unknown = ", ".join(sorted(unknown_requirements))
@@ -220,6 +226,7 @@ def process_answer(
                 assessment=assessment,
                 requirement_ids=requirement_ids,
                 known_claim_ids=known_claim_ids,
+                answer_text=turn.answer,
             )
         except ValueError as error:
             if semantic_attempt == 1:
