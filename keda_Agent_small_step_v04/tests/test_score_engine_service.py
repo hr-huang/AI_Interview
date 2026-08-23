@@ -108,6 +108,7 @@ def _assessment(
     unresolved_critical_error_ids: list[str] | None = None,
     assessment_reasons: list[ScoreReason] | None = None,
     coverage: float = 1.0,
+    satisfied_minimum_criterion_ids: list[str] | None = None,
 ) -> RequirementEvidenceAssessment:
     return RequirementEvidenceAssessment(
         requirement_id=requirement_id,
@@ -115,7 +116,7 @@ def _assessment(
         level=level,
         coverage=coverage,
         confidence=confidence,
-        satisfied_minimum_criterion_ids=[],
+        satisfied_minimum_criterion_ids=satisfied_minimum_criterion_ids or [],
         matched_excellence_signal_ids=matched_excellence_signal_ids or [],
         unresolved_critical_error_ids=unresolved_critical_error_ids or [],
         accepted_alternative_ids=[],
@@ -128,6 +129,37 @@ def _assessment(
 
 
 class ScoreEngineServiceTest(unittest.TestCase):
+    def test_dimension_uses_collective_rubric_coverage_not_average_level(self) -> None:
+        role_profile = make_role_profile()
+        role_profile.dimensions[0].minimum_criteria.append(_criterion("min_01b"))
+        blueprint = make_blueprint(
+            ("req_01", "role_dim_01", 0.5),
+            ("req_02", "role_dim_01", 0.5),
+        )
+
+        snapshot = calculate_score_snapshot(
+            role_profile,
+            blueprint,
+            [
+                _assessment(
+                    "req_01",
+                    level="L1",
+                    satisfied_minimum_criterion_ids=["min_01"],
+                    matched_excellence_signal_ids=["sig_plus_01"],
+                ),
+                _assessment(
+                    "req_02",
+                    level="L1",
+                    satisfied_minimum_criterion_ids=["min_01b"],
+                    matched_excellence_signal_ids=["sig_plus_02"],
+                ),
+            ],
+        )
+
+        radar = snapshot.radar_dimensions[0]
+        self.assertEqual(radar.level, "L3")
+        self.assertEqual(radar.score, 87)
+
     def test_score_engine_signature_accepts_assessments_not_raw_matches(self) -> None:
         signature = inspect.signature(calculate_score_snapshot)
         parameter_names = set(signature.parameters)

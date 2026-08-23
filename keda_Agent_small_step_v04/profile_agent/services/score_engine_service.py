@@ -267,9 +267,39 @@ def _dimension_reasons(
 
 def _dimension_level(
     members: list[tuple[object, RequirementEvidenceAssessment, RequirementScore]],
+    dimension: CompetencyDimensionRubric,
 ) -> ScoreLevel:
     if not members:
         return "UNVERIFIED"
+
+    assessments = [assessment for _, assessment, _ in members]
+    if any(
+        assessment.level == "L0" or assessment.unresolved_critical_error_ids
+        for assessment in assessments
+    ):
+        return "L0"
+
+    satisfied_minimum_ids = {
+        criterion_id
+        for assessment in assessments
+        for criterion_id in assessment.satisfied_minimum_criterion_ids
+    }
+    if satisfied_minimum_ids:
+        required_minimum_ids = {
+            criterion.id for criterion in dimension.minimum_criteria
+        }
+        if not required_minimum_ids.issubset(satisfied_minimum_ids):
+            return "L1"
+        if any(assessment.level == "L4" for assessment in assessments):
+            return "L4"
+        if any(
+            assessment.level == "L3"
+            or assessment.matched_excellence_signal_ids
+            for assessment in assessments
+        ):
+            return "L3"
+        return "L2"
+
     total_weight = sum(binding.weight_within_dimension for binding, _, _ in members)
     weighted_rank = sum(
         _LEVEL_RANK[assessment.level] * binding.weight_within_dimension
@@ -277,6 +307,48 @@ def _dimension_level(
     ) / total_weight
     rank = max(0, min(4, math.floor(weighted_rank + 1e-9)))
     return _LEVEL_BY_RANK[rank]
+
+
+def _collective_dimension_score(
+    members: list[tuple[object, RequirementEvidenceAssessment, RequirementScore]],
+    dimension: CompetencyDimensionRubric,
+    level: ScoreLevel,
+) -> float | None:
+    if not members or level == "UNVERIFIED":
+        return None
+
+    assessments = [assessment for _, assessment, _ in members]
+    if not any(
+        assessment.satisfied_minimum_criterion_ids for assessment in assessments
+    ):
+        verified_weight = sum(
+            binding.weight_within_dimension for binding, _, _ in members
+        )
+        return _round_score(
+            sum(
+                score.display_score * binding.weight_within_dimension
+                for binding, _, score in members
+            )
+            / verified_weight
+        )
+
+    adjustment_by_id = {
+        item.id: item.score_adjustment
+        for item in dimension.excellence_signals + dimension.critical_errors
+    }
+    adjustment_ids = {
+        signal_id
+        for assessment in assessments
+        for signal_id in (
+            assessment.matched_excellence_signal_ids
+            + assessment.unresolved_critical_error_ids
+        )
+    }
+    adjustment = max(
+        -5,
+        min(5, sum(adjustment_by_id[item_id] for item_id in adjustment_ids)),
+    )
+    return _round_score(max(0, min(100, _LEVEL_BASE[level] + adjustment)))
 
 
 def _dimension_confidence(
@@ -458,16 +530,8 @@ def calculate_score_snapshot(
             if total_weight
             else 0.0
         )
-        score_value = None
-        if members and verified_weight:
-            score_value = _round_score(
-                sum(
-                    item.display_score * binding.weight_within_dimension
-                    for binding, _, item in members
-                )
-                / verified_weight
-            )
-        level = _dimension_level(members)
+        level = _dimension_level(members, dimension)
+        score_value = _collective_dimension_score(members, dimension, level)
         confidence = _dimension_confidence(
             dimension_assessments,
             coverage,
