@@ -667,42 +667,42 @@ InterviewPolicy:
     ]
 
     # --------------------------------------------------------
-    # 5. 让 LLM 负责语义规划
+    # 5-8. 让 LLM 规划，并对 Schema 之外的业务约束纠正一次
     # --------------------------------------------------------
 
-    draft: InterviewPlanDraft = (
-        llm.structured(
-            messages,
+    correction: ValueError | None = None
+    for business_attempt in range(2):
+        attempt_messages = messages
+        if correction is not None:
+            attempt_messages = messages + [
+                (
+                    "human",
+                    "上一轮 InterviewPlanDraft 未通过业务校验："
+                    f"{correction}。请按该错误修正后重新生成完整 Draft，"
+                    "不要解释，只返回 JSON。",
+                )
+            ]
+        draft: InterviewPlanDraft = llm.structured(
+            attempt_messages,
             InterviewPlanDraft,
         )
-    )
-
-    # --------------------------------------------------------
-    # 6. Python 检查 Target 数量是否超过 Policy 上限
-    # --------------------------------------------------------
-
-    validate_target_count(
-        draft=draft,
-        policy=policy,
-    )
-
-    # 7. Python 检查 LLM 有没有乱引用不存在的 ID
-    # --------------------------------------------------------
-
-    validate_references(
-        draft=draft,
-        competency_model=competency_model,
-        claim_registry=claim_registry,
-    )
-
-    # --------------------------------------------------------
-    # 8. Python 检查时间预算
-    # --------------------------------------------------------
-
-    validate_time_budget(
-        draft=draft,
-        available_minutes=available_minutes,
-    )
+        try:
+            validate_target_count(draft=draft, policy=policy)
+            validate_references(
+                draft=draft,
+                competency_model=competency_model,
+                claim_registry=claim_registry,
+            )
+            validate_time_budget(
+                draft=draft,
+                available_minutes=available_minutes,
+            )
+        except ValueError as error:
+            if business_attempt == 1:
+                raise
+            correction = error
+        else:
+            break
 
     # --------------------------------------------------------
     # 9. Python 负责最终编号和硬规则

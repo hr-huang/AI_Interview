@@ -29,6 +29,24 @@ def make_oversized_draft() -> InterviewPlanDraft:
     )
 
 
+def make_timed_draft(minutes: int) -> InterviewPlanDraft:
+    return InterviewPlanDraft(
+        targets=[
+            AssessmentTargetDraft(
+                objective="验证核心能力",
+                target_type="knowledge",
+                competency_ids=[],
+                evidence_requirements=[],
+                related_claim_ids=[],
+                priority="high",
+                must_cover=True,
+                time_budget_minutes=minutes,
+                preferred_modes=["foundation"],
+            )
+        ]
+    )
+
+
 class InterviewPlannerGuardTest(unittest.TestCase):
     def test_prompt_forbids_question_modes_in_target_type(self) -> None:
         captured_messages = []
@@ -73,6 +91,29 @@ class InterviewPlannerGuardTest(unittest.TestCase):
                     claim_registry=ClaimRegistry(),
                     duration_minutes=30,
                 )
+
+    def test_business_validation_failure_is_retried_with_exact_budget_reason(self) -> None:
+        captured_messages = []
+
+        def fake_structured(messages, _schema):
+            captured_messages.append(messages)
+            return make_timed_draft(29 if len(captured_messages) == 1 else 28)
+
+        with patch.object(
+            interview_planner_service.llm,
+            "structured",
+            side_effect=fake_structured,
+        ):
+            plan = interview_planner_service.build_interview_plan(
+                competency_model=CompetencyModel(),
+                claim_registry=ClaimRegistry(),
+                duration_minutes=30,
+            )
+
+        self.assertEqual(len(captured_messages), 2)
+        self.assertIn("上一轮 InterviewPlanDraft 未通过业务校验", captured_messages[1][-1][1])
+        self.assertIn("当前规划: 29 分钟", captured_messages[1][-1][1])
+        self.assertEqual(plan.targets[0].time_budget_minutes, 28)
 
 
 if __name__ == "__main__":
