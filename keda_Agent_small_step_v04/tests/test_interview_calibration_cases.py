@@ -77,6 +77,8 @@ class InterviewCalibrationCasesTest(unittest.TestCase):
             case.path_expectation.required_critical_dimensions,
             ["role_dim_05"],
         )
+        fallback = next(rule for rule in case.answer_rules if "*" in rule.match_any)
+        self.assertEqual(fallback.max_uses, case.path_expectation.max_questions)
 
     def test_c06_preserves_four_unverified_dimensions(self) -> None:
         case = self.by_id["C06"]

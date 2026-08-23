@@ -257,9 +257,9 @@ def _c05() -> InterviewCalibrationCase:
             ),
             _rule(
                 "C05_unverified",
-                ["Agent", "Workflow", "状态", "RAG", "Context", "业务", "交付", "成本", "性能"],
+                ["Agent", "Workflow", "状态", "RAG", "Context", "业务", "交付", "成本", "性能", "*"],
                 "我没有相关实践，无法提供可验证的具体实现。",
-                max_uses=7,
+                max_uses=10,
             ),
         ],
         InterviewPathExpectation(
