@@ -22,7 +22,7 @@ from typing import TypeVar
 from dotenv import load_dotenv
 from langchain_core.exceptions import OutputParserException
 from langchain_openai import ChatOpenAI
-from openai import APIStatusError
+from openai import APIConnectionError, APIStatusError, APITimeoutError
 from pydantic import BaseModel
 
 # 从当前项目环境加载 .env.
@@ -212,6 +212,17 @@ class LLM:
                         "上一轮输出未通过结构校验。请重新生成，只返回严格符合目标 Schema 的 JSON，不要解释。",
                     )
                 ]
+            except (APIConnectionError, APITimeoutError) as error:
+                self._write_trace(
+                    call_type="structured",
+                    status="error",
+                    messages=retry_messages,
+                    schema=schema,
+                    attempt=attempt + 1,
+                    error=error,
+                )
+                if attempt == 1:
+                    raise
             except BaseException as error:
                 self._write_trace(
                     call_type="structured",

@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 from httpx import Request, Response
 from langchain_core.exceptions import OutputParserException
-from openai import APIStatusError
+from openai import APIConnectionError, APIStatusError
 from pydantic import BaseModel
 
 import profile_agent.llm as llm_module
@@ -57,6 +57,22 @@ class FlakyStructuredModel:
         self.calls.append(messages)
         if len(self.calls) == 1:
             raise OutputParserException("invalid structured output")
+        return ExampleSchema(value="recovered")
+
+
+class ConnectionFlakyStructuredModel:
+    def __init__(self) -> None:
+        self.calls = []
+
+    def with_structured_output(self, schema, method):
+        return self
+
+    def invoke(self, messages):
+        self.calls.append(messages)
+        if len(self.calls) == 1:
+            raise APIConnectionError(
+                request=Request("POST", "https://example.invalid/chat/completions")
+            )
         return ExampleSchema(value="recovered")
 
 
@@ -108,6 +124,17 @@ class LLMErrorHandlingTests(unittest.TestCase):
         self.assertEqual(result, ExampleSchema(value="recovered"))
         self.assertEqual(len(model.calls), 2)
         self.assertIn("上一轮输出未通过结构校验", model.calls[1][-1][1])
+
+    def test_structured_connection_failure_is_retried_once_without_prompt_change(self) -> None:
+        wrapper = LLM()
+        model = ConnectionFlakyStructuredModel()
+        wrapper._model = model  # type: ignore[assignment]
+
+        result = wrapper.structured([("system", "return json")], ExampleSchema)
+
+        self.assertEqual(result, ExampleSchema(value="recovered"))
+        self.assertEqual(len(model.calls), 2)
+        self.assertEqual(model.calls[0], model.calls[1])
 
     def test_structured_questions_answers_and_errors_append_to_one_redacted_jsonl_file(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
