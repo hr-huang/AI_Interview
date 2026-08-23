@@ -199,14 +199,34 @@ def process_answer(
         existing_evidences=existing_evidences,
         claim_registry=claim_registry,
     )
-    raw_assessment = llm_client.structured(messages, TurnAssessment)
-    assessment = TurnAssessment.model_validate(raw_assessment)
-
-    _validate_assessment(
-        assessment=assessment,
-        requirement_ids=requirement_ids,
-        known_claim_ids=_known_claim_ids(plan, claim_registry),
-    )
+    known_claim_ids = _known_claim_ids(plan, claim_registry)
+    correction: ValueError | None = None
+    for semantic_attempt in range(2):
+        attempt_messages = messages
+        if correction is not None:
+            attempt_messages = messages + [
+                (
+                    "human",
+                    "上一轮 TurnAssessment 未通过业务校验："
+                    f"{correction}。请修正后重新生成；每个 "
+                    "requirement_assessment 必须由本轮 evidence_drafts 中至少一个 "
+                    "Evidence 的 requirement_ids 直接关联。只返回 JSON。",
+                )
+            ]
+        raw_assessment = llm_client.structured(attempt_messages, TurnAssessment)
+        assessment = TurnAssessment.model_validate(raw_assessment)
+        try:
+            _validate_assessment(
+                assessment=assessment,
+                requirement_ids=requirement_ids,
+                known_claim_ids=known_claim_ids,
+            )
+        except ValueError as error:
+            if semantic_attempt == 1:
+                raise
+            correction = error
+        else:
+            break
 
     next_number = _next_evidence_number(existing_evidences)
     new_evidences: list[Evidence] = []

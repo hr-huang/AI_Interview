@@ -33,6 +33,16 @@ class FakeLLM:
         return self.assessment
 
 
+class SequencedFakeLLM:
+    def __init__(self, assessments: list[TurnAssessment]) -> None:
+        self.assessments = iter(assessments)
+        self.calls: list[tuple[list[tuple[str, str]], type[object]]] = []
+
+    def structured(self, messages, schema):
+        self.calls.append((messages, schema))
+        return next(self.assessments)
+
+
 class AnswerProcessorServiceTest(unittest.TestCase):
     def setUp(self) -> None:
         self.plan = InterviewPlan(
@@ -252,7 +262,7 @@ class AnswerProcessorServiceTest(unittest.TestCase):
                 llm_client=fake_llm,
             )
 
-        self.assertEqual(len(fake_llm.calls), 1)
+        self.assertEqual(len(fake_llm.calls), 2)
 
     def test_unknown_claim_reference_is_rejected(self) -> None:
         fake_llm = FakeLLM(
@@ -305,6 +315,31 @@ class AnswerProcessorServiceTest(unittest.TestCase):
                 [],
                 llm_client=fake_llm,
             )
+
+    def test_semantic_validation_failure_is_retried_once_with_exact_reason(self) -> None:
+        invalid = self.assessment(
+            drafts=[self.draft(requirements=[REQ_01])],
+            requirements=[self.requirement(REQ_02)],
+        )
+        valid = self.assessment(
+            drafts=[self.draft(requirements=[REQ_01])],
+            requirements=[self.requirement(REQ_01)],
+        )
+        fake_llm = SequencedFakeLLM([invalid, valid])
+
+        result = process_answer(
+            self.plan,
+            self.runtime,
+            self.turn,
+            [],
+            llm_client=fake_llm,
+        )
+
+        self.assertEqual(len(fake_llm.calls), 2)
+        correction_prompt = fake_llm.calls[1][0][-1][1]
+        self.assertIn("上一轮 TurnAssessment 未通过业务校验", correction_prompt)
+        self.assertIn("RequirementAssessment 没有本轮 linked evidence", correction_prompt)
+        self.assertEqual(result.new_evidences[0].requirement_ids, [REQ_01])
 
     def test_empty_or_unanswered_turn_is_rejected_before_model_call(self) -> None:
         for answer in (None, "   "):
