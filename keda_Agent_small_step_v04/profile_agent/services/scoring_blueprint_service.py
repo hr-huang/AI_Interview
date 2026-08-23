@@ -30,6 +30,10 @@ Role Dimension，并返回 ScoringBlueprintDraft。你只负责语义绑定，�
 - 每个 Requirement 恰好绑定一次；不能遗漏、重复或新增 Requirement。
 - primary_dimension_id 只能使用输入 Role Profile 中的维度 ID。
 - v1 中 rubric_id 必须严格等于 primary_dimension_id。
+- 选择主要维度时，安全关键约束优先于通用架构表述：Requirement 或所属
+  Target objective 一旦明确考察高风险操作、授权、审批、人工确认或失败恢复，
+  应优先绑定含对应安全/可靠性 rubric 的维度，不能仅因同时出现状态、节点、
+  Agent 架构等泛化词而绑定到通用编排维度。
 - 只输出 ScoringBlueprintDraft；不要输出 ScoringBlueprint、权重、分数、等级、
   覆盖率、置信度或岗位匹配度。
 - 不得评分，不得生成任何数值评分字段。

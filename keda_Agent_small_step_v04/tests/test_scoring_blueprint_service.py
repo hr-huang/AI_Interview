@@ -162,6 +162,8 @@ class ScoringBlueprintServiceTest(unittest.TestCase):
         self.assertIn("拆分节点、状态和工具边界", prompt)
         self.assertIn("每个 Requirement 恰好绑定一次", prompt)
         self.assertIn("不得评分", prompt)
+        self.assertIn("安全关键约束优先于通用架构表述", prompt)
+        self.assertIn("高风险操作、授权、审批、人工确认或失败恢复", prompt)
 
     def test_prompt_pins_exact_root_json_shape_for_mimo(self) -> None:
         fake_llm = FakeLLM(make_draft())
