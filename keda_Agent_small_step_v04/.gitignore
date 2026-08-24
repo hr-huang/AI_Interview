@@ -9,3 +9,8 @@ dist/
 *.egg-info/
 artifacts/calibration/
 .superpowers/
+data/
+web/node_modules/
+web/dist/
+web/playwright-report/
+web/test-results/

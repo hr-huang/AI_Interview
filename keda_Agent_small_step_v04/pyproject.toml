@@ -12,6 +12,15 @@ dependencies = [
     "pydantic>=2.0",
     "langchain-openai>=0.3",
     "langgraph>=0.2",
+    "fastapi>=0.116",
+    "uvicorn[standard]>=0.35",
+    "python-multipart>=0.0.20",
+    "httpx>=0.28",
+    "pymupdf>=1.26",
+    "python-docx>=1.2",
+    "rapidocr>=3.9.0",
+    "onnxruntime>=1.22",
+    "langgraph-checkpoint-sqlite>=3.0.1",
 ]
 
 [tool.setuptools.packages.find]
