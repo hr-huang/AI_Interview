@@ -6,6 +6,7 @@ from fastapi import FastAPI
 
 from profile_agent.web.container import WebContainer
 from profile_agent.web.routers.assessments import router as assessments_router
+from profile_agent.web.routers.demo import router as demo_router
 from profile_agent.web.routers.interviews import router as interviews_router
 
 
@@ -42,4 +43,5 @@ def create_app(container: WebContainer | None = None) -> FastAPI:
     app.state.container_owned = owns_container
     app.include_router(assessments_router, prefix="/api")
     app.include_router(interviews_router, prefix="/api")
+    app.include_router(demo_router, prefix="/api")
     return app

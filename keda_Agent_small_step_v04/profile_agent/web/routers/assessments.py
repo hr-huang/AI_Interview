@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Mapping
 from typing import Any
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from pydantic import BaseModel
 
+from profile_agent.schemas.report_schema import AssessmentReport
 from profile_agent.services.plan_review_service import PlanOverrideSet
 from profile_agent.web.assessment_service import (
     AssessmentService,
@@ -12,6 +15,7 @@ from profile_agent.web.assessment_service import (
     request_fingerprint,
 )
 from profile_agent.web.document_ingestion import MAX_FILE_BYTES
+from profile_agent.web.report_view import ReportViewModel, build_report_view
 from profile_agent.web.schemas import AssessmentRecord, AssessmentStatus
 
 router = APIRouter()
@@ -36,6 +40,29 @@ def _status_payload(record: AssessmentRecord) -> dict[str, Any]:
         "has_plan": record.original_plan is not None,
         "has_final_plan": record.final_plan is not None,
     }
+
+
+def _checkpoint_values(container: Any, assessment_id: str) -> dict[str, Any]:
+    graph = getattr(container, "interview_graph", None)
+    if graph is None:
+        return {}
+    lock = getattr(container, "interview_lock", None)
+    if lock is None:
+        return {}
+    try:
+        with lock:
+            snapshot = graph.get_state(
+                {"configurable": {"thread_id": assessment_id}}
+            )
+    except (AttributeError, KeyError, RuntimeError):
+        return {}
+    if isinstance(snapshot, Mapping):
+        values = snapshot.get("values", snapshot)
+    else:
+        values = getattr(snapshot, "values", {})
+    if isinstance(values, BaseModel):
+        values = values.model_dump(mode="python")
+    return dict(values) if isinstance(values, Mapping) else {}
 
 
 @router.post("/assessments", status_code=202)
@@ -136,6 +163,47 @@ def get_plan(assessment_id: str, request: Request) -> dict[str, Any]:
     except ValueError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
     return payload
+
+
+@router.get(
+    "/assessments/{assessment_id}/report",
+    response_model=ReportViewModel,
+)
+def get_report(assessment_id: str, request: Request) -> ReportViewModel:
+    container = _container(request)
+    try:
+        record = container.repository.get(assessment_id)
+    except KeyError as error:
+        raise _not_found(error) from error
+
+    if record.status is not AssessmentStatus.COMPLETE:
+        raise HTTPException(status_code=409, detail="评估报告尚未完成")
+    if record.report is None:
+        raise HTTPException(status_code=409, detail="评估报告尚未生成")
+    plan_payload = record.final_plan or record.preview_plan or record.original_plan
+    if plan_payload is None:
+        raise HTTPException(status_code=409, detail="评估计划尚未冻结")
+
+    values = _checkpoint_values(container, assessment_id)
+    turns = values.get("interview_turns") or []
+    evidences = values.get("evidences") or []
+    if not turns or not evidences:
+        # A completed report without its graph history cannot satisfy the
+        # evidence-traceability contract.  Do not return a silently degraded
+        # report view.
+        raise HTTPException(status_code=409, detail="报告证据链尚未可读")
+
+    try:
+        return build_report_view(
+            AssessmentReport.model_validate(record.report),
+            plan_payload,
+            turns,
+            evidences,
+            container.role_profile,
+            demo=False,
+        )
+    except (TypeError, ValueError) as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
 
 
 @router.put("/assessments/{assessment_id}/plan-overrides")
