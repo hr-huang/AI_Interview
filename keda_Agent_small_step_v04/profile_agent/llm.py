@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import json
+import time
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
@@ -35,6 +36,10 @@ _TRACE_LOCK = Lock()
 _DEFAULT_QWEN_MODEL = "qwen3.8-max"
 _DEFAULT_QWEN_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 _DEFAULT_TRACE_PATH = "artifacts/calibration/llm-traces.jsonl"
+
+
+def _is_glm_endpoint(base_url: str) -> bool:
+    return "open.bigmodel.cn" in base_url.casefold()
 
 
 class LLMProviderError(RuntimeError):
@@ -60,6 +65,11 @@ class LLM:
 
         model_name = os.getenv("QWEN_MODEL", "").strip() or _DEFAULT_QWEN_MODEL
         base_url = os.getenv("QWEN_BASE_URL", "").strip() or _DEFAULT_QWEN_BASE_URL
+        extra_body = (
+            {"reasoning_effort": "high"}
+            if _is_glm_endpoint(base_url)
+            else {"enable_thinking": False}
+        )
 
         return ChatOpenAI(
             model=model_name,
@@ -69,7 +79,7 @@ class LLM:
             max_tokens=int(os.getenv("LLM_MAX_TOKENS", "8192")),
             top_p=float(os.getenv("LLM_TOP_P", "0.95")),
             timeout=float(os.getenv("QWEN_TIMEOUT", "600")),
-            extra_body={"enable_thinking": False},
+            extra_body=extra_body,
         )
 
     @property
@@ -105,16 +115,34 @@ class LLM:
     def _invoke_provider(operation: Callable[[], ResultT]) -> ResultT:
         """调用模型并将已知的供应商错误转换为可操作提示."""
 
-        try:
-            return operation()
-        except APIStatusError as exc:
-            if exc.status_code == 402:
-                raise LLMProviderError(
-                    "Qwen API 余额不足（HTTP 402）。"
-                    "请充值阿里云百炼账户，或在项目根目录 .env 中更换"
-                    "有余额的 QWEN_API_KEY 后重试。"
-                ) from exc
-            raise
+        retry_delays = (5, 15)
+        for attempt in range(len(retry_delays) + 1):
+            try:
+                return operation()
+            except APIStatusError as exc:
+                body = exc.body if isinstance(exc.body, dict) else {}
+                error_body = body.get("error", {})
+                provider_code = (
+                    str(error_body.get("code", ""))
+                    if isinstance(error_body, dict)
+                    else ""
+                )
+                if provider_code == "1113":
+                    raise LLMProviderError(
+                        "模型 API 余额不足或无可用资源包（业务码 1113）。"
+                        "请充值或绑定可用资源包后重试。"
+                    ) from exc
+                if exc.status_code == 402:
+                    raise LLMProviderError(
+                        "Qwen API 余额不足（HTTP 402）。"
+                        "请充值阿里云百炼账户，或在项目根目录 .env 中更换"
+                        "有余额的 QWEN_API_KEY 后重试。"
+                    ) from exc
+                if exc.status_code != 429 or attempt == len(retry_delays):
+                    raise
+                time.sleep(retry_delays[attempt])
+
+        raise AssertionError("供应商重试循环意外结束")
 
     @staticmethod
     def _jsonable(value):
@@ -148,7 +176,11 @@ class LLM:
         )
         record = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "provider": "qwen",
+            "provider": (
+                "glm"
+                if _is_glm_endpoint(os.getenv("QWEN_BASE_URL", ""))
+                else "qwen"
+            ),
             "model": os.getenv("QWEN_MODEL", "").strip() or _DEFAULT_QWEN_MODEL,
             "call_type": call_type,
             "schema": schema.__name__ if schema is not None else None,
