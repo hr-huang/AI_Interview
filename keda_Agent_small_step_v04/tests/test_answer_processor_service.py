@@ -341,6 +341,54 @@ class AnswerProcessorServiceTest(unittest.TestCase):
         self.assertIn("RequirementAssessment 没有本轮 linked evidence", correction_prompt)
         self.assertEqual(result.new_evidences[0].requirement_ids, [REQ_01])
 
+    def test_cross_target_evidence_is_retried_before_persistence(self) -> None:
+        other_requirement_id = "target_02_req_01"
+        plan = self.plan.model_copy(
+            update={
+                "targets": [
+                    *self.plan.targets,
+                    AssessmentTarget(
+                        id="target_02",
+                        objective="验证可靠性设计能力",
+                        target_type="debugging",
+                        competency_ids=["competency_02"],
+                        evidence_requirements=[
+                            EvidenceRequirement(
+                                id=other_requirement_id,
+                                description="能够解释失败恢复",
+                            )
+                        ],
+                        related_claim_ids=[],
+                        priority="medium",
+                        must_cover=False,
+                        time_budget_minutes=5,
+                        preferred_modes=["scenario"],
+                    ),
+                ]
+            }
+        )
+        invalid = self.assessment(
+            drafts=[self.draft(requirements=[other_requirement_id])],
+            requirements=[self.requirement(other_requirement_id)],
+        )
+        valid = self.assessment(
+            drafts=[self.draft(requirements=[REQ_01])],
+            requirements=[self.requirement(REQ_01)],
+        )
+        fake_llm = SequencedFakeLLM([invalid, valid])
+
+        result = process_answer(
+            plan,
+            initialize_runtime_state(plan),
+            self.turn,
+            [],
+            llm_client=fake_llm,
+        )
+
+        self.assertEqual(len(fake_llm.calls), 2)
+        self.assertIn("不属于当前 turn target", fake_llm.calls[1][0][-1][1])
+        self.assertEqual(result.new_evidences[0].requirement_ids, [REQ_01])
+
     def test_non_verbatim_excerpt_is_retried_before_evidence_is_persisted(self) -> None:
         invalid_draft = self.draft(requirements=[REQ_01]).model_copy(
             update={"source_excerpt": "我会先定义状态...再处理节点"}

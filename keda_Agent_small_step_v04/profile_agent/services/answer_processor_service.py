@@ -45,6 +45,15 @@ def _plan_claim_ids(plan: InterviewPlan) -> set[str]:
     }
 
 
+def _target_requirement_ids(plan: InterviewPlan, target_id: str) -> set[str]:
+    for target in plan.targets:
+        if target.id == target_id:
+            return {
+                requirement.id for requirement in target.evidence_requirements
+            }
+    raise ValueError(f"InterviewTurn 引用了不存在的 target_id: {target_id}")
+
+
 def _known_claim_ids(
     plan: InterviewPlan,
     claim_registry: ClaimRegistry | None,
@@ -93,6 +102,8 @@ def _build_messages(
 请只根据本轮候选人回答提取结构化 Evidence，并评估本轮实际覆盖的
 Evidence Requirement。evidence_drafts 中的一个 Evidence 可以同时关联多个
 requirement_id。只能引用输入中存在的 requirement_id 和 claim_id；不要编造 ID。
+只能关联 Current InterviewTurn.target_id 所属 target 下的 requirement_id，
+不能把本轮 Evidence 关联到其他 target。
 每个 requirement_assessment 都必须能被本轮至少一个 evidence_draft 的
 requirement_ids 直接关联。recommended_status 只能使用 in_progress、sufficient、
 contradictory；即使强反向证据存在，也可以根据整体评估返回 sufficient。
@@ -128,6 +139,7 @@ contradictory；即使强反向证据存在，也可以根据整体评估返回 
 def _validate_assessment(
     assessment: TurnAssessment,
     requirement_ids: set[str],
+    allowed_requirement_ids: set[str],
     known_claim_ids: set[str],
     answer_text: str,
 ) -> None:
@@ -141,6 +153,14 @@ def _validate_assessment(
         if unknown_requirements:
             unknown = ", ".join(sorted(unknown_requirements))
             raise ValueError(f"Evidence 引用了不存在的 requirement_id: {unknown}")
+        cross_target_requirements = (
+            set(draft.requirement_ids) - allowed_requirement_ids
+        )
+        if cross_target_requirements:
+            invalid = ", ".join(sorted(cross_target_requirements))
+            raise ValueError(
+                "Evidence requirement 不属于当前 turn target: " + invalid
+            )
 
         unknown_claims = set(draft.related_claim_ids) - known_claim_ids
         if unknown_claims:
@@ -192,6 +212,7 @@ def process_answer(
         raise ValueError("InterviewTurn 的回答不能为空或未回答")
 
     requirement_ids = _plan_requirement_ids(plan)
+    allowed_requirement_ids = _target_requirement_ids(plan, turn.target_id)
     if turn.primary_requirement_id not in requirement_ids:
         raise ValueError(
             "InterviewTurn 引用了不存在的 requirement_id: "
@@ -225,6 +246,7 @@ def process_answer(
             _validate_assessment(
                 assessment=assessment,
                 requirement_ids=requirement_ids,
+                allowed_requirement_ids=allowed_requirement_ids,
                 known_claim_ids=known_claim_ids,
                 answer_text=turn.answer,
             )
