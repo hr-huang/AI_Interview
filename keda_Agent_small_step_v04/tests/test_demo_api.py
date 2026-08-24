@@ -73,12 +73,35 @@ class DemoApiTest(unittest.TestCase):
             "profile_agent.services.scoring_blueprint_service.llm.structured",
             fail,
         ):
-            response = self.client.get("/api/demo/assessment")
+            for endpoint, case_id, expected_count in (
+                ("/api/demo/assessment", "C01", 6),
+                ("/api/demo/assessment/boundary", "C03", 2),
+            ):
+                with self.subTest(endpoint=endpoint):
+                    response = self.client.get(endpoint)
 
-        self.assertEqual(response.status_code, 200)
-        payload = response.json()
-        self.assertTrue(payload["demo"])
-        self.assertEqual(payload["target_role"], "AI Agent / AI应用工程师")
+                    self.assertEqual(response.status_code, 200)
+                    payload = response.json()
+                    self.assertTrue(payload["demo"])
+                    self.assertEqual(
+                        payload["target_role"], "AI Agent / AI应用工程师"
+                    )
+                    self.assertEqual(
+                        len(payload["interview_transcript"]), expected_count
+                    )
+                    case = get_report_calibration_case(case_id)
+                    self.assertEqual(
+                        [item["turn_id"] for item in payload["interview_transcript"]],
+                        [turn.id for turn in case.turns],
+                    )
+                    self.assertEqual(
+                        [item["question"] for item in payload["interview_transcript"]],
+                        [turn.question for turn in case.turns],
+                    )
+                    self.assertEqual(
+                        [item["answer"] for item in payload["interview_transcript"]],
+                        [turn.answer for turn in case.turns],
+                    )
 
     def test_saved_report_endpoint_builds_view(self) -> None:
         case = get_report_calibration_case("C03")

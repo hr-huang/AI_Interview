@@ -9,7 +9,8 @@ the original question, answer and evidence observation.
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from typing import Any
+from datetime import datetime
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -51,6 +52,20 @@ class RadarDimensionView(BaseModel):
     reasons: list[ReasonView]
 
 
+class InterviewTranscriptTurnView(BaseModel):
+    turn_id: str
+    sequence_number: int
+    question: str
+    answer: str | None
+    question_mode: str
+    requirement_id: str
+    requirement_label: str
+    asked_at: datetime
+    answered_at: datetime | None
+    evidence_ids: list[str]
+    evidence_status: Literal["supporting", "limiting", "mixed", "none"]
+
+
 class ReportViewModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -62,6 +77,7 @@ class ReportViewModel(BaseModel):
     radar_dimensions: list[RadarDimensionView]
     narrative: dict[str, Any]
     interview_path: list[dict[str, Any]]
+    interview_transcript: list[InterviewTranscriptTurnView]
     claim_verifications: list[dict[str, Any]]
     assessment_limitations: list[str]
     demo_variant: str = "assessment"
@@ -459,6 +475,46 @@ def _validate_report_references(
             )
 
 
+def _interview_transcript_view(
+    turns: Iterable[InterviewTurn],
+    evidences: Iterable[Evidence],
+    requirements: Mapping[str, Any],
+) -> list[InterviewTranscriptTurnView]:
+    evidences_by_turn: dict[str, list[Evidence]] = {}
+    for evidence in evidences:
+        evidences_by_turn.setdefault(evidence.turn_id, []).append(evidence)
+
+    transcript: list[InterviewTranscriptTurnView] = []
+    for turn in sorted(turns, key=lambda item: item.sequence_number):
+        linked_evidences = evidences_by_turn.get(turn.id, [])
+        polarities = {evidence.polarity for evidence in linked_evidences}
+        if polarities == {"supporting"}:
+            evidence_status = "supporting"
+        elif polarities == {"contradicting"}:
+            evidence_status = "limiting"
+        elif polarities == {"supporting", "contradicting"}:
+            evidence_status = "mixed"
+        else:
+            evidence_status = "none"
+        requirement = requirements[turn.primary_requirement_id]
+        transcript.append(
+            InterviewTranscriptTurnView(
+                turn_id=turn.id,
+                sequence_number=turn.sequence_number,
+                question=turn.question,
+                answer=turn.answer,
+                question_mode=turn.question_mode,
+                requirement_id=turn.primary_requirement_id,
+                requirement_label=requirement.description,
+                asked_at=turn.asked_at,
+                answered_at=turn.answered_at,
+                evidence_ids=[evidence.id for evidence in linked_evidences],
+                evidence_status=evidence_status,
+            )
+        )
+    return transcript
+
+
 def build_report_view(
     report: AssessmentReport | Mapping[str, Any],
     plan: InterviewPlan | Mapping[str, Any],
@@ -497,6 +553,11 @@ def build_report_view(
         turns_by_id=turns_by_id,
         evidences_by_id=evidences_by_id,
         rubric_text_by_id=rubric_text_by_id,
+    )
+    interview_transcript = _interview_transcript_view(
+        normalized_turns,
+        normalized_evidences,
+        plan_requirements,
     )
 
     radar_by_id: dict[str, RadarDimensionResult] = {}
@@ -550,6 +611,7 @@ def build_report_view(
         interview_path=[
             item.model_dump(mode="json") for item in normalized_report.interview_path
         ],
+        interview_transcript=interview_transcript,
         claim_verifications=[
             item.model_dump(mode="json")
             for item in normalized_report.score_snapshot.claim_verifications
@@ -565,6 +627,7 @@ __all__ = [
     "EvidenceSourceView",
     "ReasonView",
     "RadarDimensionView",
+    "InterviewTranscriptTurnView",
     "ReportViewModel",
     "build_report_view",
 ]
