@@ -45,6 +45,7 @@ class SupervisorRequirementContext(BaseModel):
     preferred_modes: list[QuestionMode] = Field(default_factory=list)
     related_claims: list[str] = Field(default_factory=list)
     evidence_summaries: list[str] = Field(default_factory=list)
+    requires_transfer_validation: bool = False
     _claim_linked: bool = PrivateAttr(default=False)
 
 
@@ -147,11 +148,12 @@ def _candidate_sort_key(
     *,
     current_target_id: str | None,
     plan_order: int,
-) -> tuple[int, int, int, int, int, int]:
+) -> tuple[int, int, int, int, int, int, int]:
     return (
         -int(candidate.must_cover),
         -_PRIORITY_RANK[candidate.priority],
         -int(candidate.status in _ACTIVE_STATUSES),
+        -int(candidate.requires_transfer_validation),
         -int(_claim_is_linked(candidate)),
         -int(candidate.target_id == current_target_id),
         plan_order,
@@ -210,6 +212,9 @@ def build_supervisor_context(
                 requirement.id,
                 [],
             ),
+            requires_transfer_validation=(
+                requirement.requires_transfer_validation
+            ),
         )
         candidate._claim_linked = bool(target.related_claim_ids)
         candidates_with_order.append((candidate, plan_order))
@@ -260,6 +265,9 @@ def build_supervisor_context(
 def _question_mode(candidate: SupervisorRequirementContext) -> QuestionMode:
     if candidate.attempt_count > 0 and candidate.status in _ACTIVE_STATUSES:
         return "follow_up"
+
+    if candidate.requires_transfer_validation:
+        return "scenario"
 
     if _claim_is_linked(candidate) and "project_deep_dive" in candidate.preferred_modes:
         return "project_deep_dive"

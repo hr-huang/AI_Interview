@@ -120,6 +120,13 @@ class EvidenceRequirementDraft(BaseModel):
 
     description: str
 
+    planned_role_dimension_id: str | None = None
+    # Planner 声明这条证据主要覆盖哪个 Role Pack 维度。
+    # 正式 Planner 输出会由 Python 校验；None 仅保留旧数据兼容。
+
+    requires_transfer_validation: bool = False
+    # True 表示必须脱离简历原项目，用约束不同的新场景验证迁移能力。
+
 
 # ============================================================
 # 5. LLM 输出阶段使用的 AssessmentTarget
@@ -195,6 +202,10 @@ class EvidenceRequirement(BaseModel):
     # target_01_req_01
 
     description: str
+
+    planned_role_dimension_id: str | None = None
+
+    requires_transfer_validation: bool = False
 
 
 # ============================================================

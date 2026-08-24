@@ -15,6 +15,7 @@ from profile_agent.schemas.interview_schema import (
     AssessmentTarget,
     EvidenceRequirement,
 )
+from profile_agent.schemas.report_schema import RoleCompetencyProfile
 
 
 # ============================================================
@@ -192,6 +193,94 @@ def validate_question_capacity(
             f"当前: {planned_requirements}, 最大允许: {requirement_limit}."
         )
 
+
+def validate_role_dimension_coverage(
+    draft: InterviewPlanDraft,
+    role_profile: RoleCompetencyProfile,
+) -> None:
+    """Ensure declared Role Pack references are valid and gating dimensions reachable."""
+
+    valid_dimension_ids = {
+        dimension.id for dimension in role_profile.dimensions
+    }
+    for target in draft.targets:
+        for requirement in target.evidence_requirements:
+            dimension_id = requirement.planned_role_dimension_id
+            if dimension_id is None:
+                raise ValueError(
+                    "每个 Evidence Requirement 必须声明 "
+                    "planned_role_dimension_id"
+                )
+            if dimension_id not in valid_dimension_ids:
+                raise ValueError(
+                    "Planner 返回了不存在的 Role Dimension ID: "
+                    f"{dimension_id}"
+                )
+
+    gating_ids = {
+        dimension.id
+        for dimension in role_profile.dimensions
+        if dimension.is_gating
+    }
+    prioritized_ids = {
+        requirement.planned_role_dimension_id
+        for target in draft.targets
+        if target.priority == "high" and target.must_cover
+        for requirement in target.evidence_requirements
+    }
+    missing_ids = sorted(gating_ids - prioritized_ids)
+    if missing_ids:
+        raise ValueError(
+            "gating Role Dimension 必须由 high、must_cover Target 的 "
+            "Evidence Requirement 覆盖: " + ", ".join(missing_ids)
+        )
+
+
+def validate_transfer_coverage(
+    draft: InterviewPlanDraft,
+    policy: InterviewPolicy,
+) -> None:
+    """Reserve an explicit new-scenario probe, especially for core project claims."""
+
+    if not policy.require_independent_problem_solving:
+        return
+
+    prioritized_transfer_targets = [
+        target
+        for target in draft.targets
+        if target.priority == "high"
+        and target.must_cover
+        and any(
+            requirement.requires_transfer_validation
+            for requirement in target.evidence_requirements
+        )
+    ]
+    if not prioritized_transfer_targets:
+        raise ValueError(
+            "必须在 high、must_cover Target 中安排至少一条新场景迁移验证"
+        )
+
+    for target in prioritized_transfer_targets:
+        if "scenario" not in target.preferred_modes:
+            raise ValueError("迁移验证 Target 的 preferred_modes 必须包含 scenario")
+
+    project_claim_targets = [
+        target
+        for target in draft.targets
+        if target.priority == "high"
+        and target.must_cover
+        and target.related_claim_ids
+        and "project_deep_dive" in target.preferred_modes
+    ]
+    for target in project_claim_targets:
+        if not any(
+            requirement.requires_transfer_validation
+            for requirement in target.evidence_requirements
+        ):
+            raise ValueError(
+                "high、must_cover 项目 Claim Target 必须包含新场景迁移验证"
+            )
+
 # ============================================================
 # 检查 LLM 给出的 Target 时间预算是否超出总时间
 # ============================================================
@@ -280,6 +369,12 @@ def finalize_interview_plan(
             requirement = EvidenceRequirement(
                 id=requirement_id,
                 description=req_draft.description,
+                planned_role_dimension_id=(
+                    req_draft.planned_role_dimension_id
+                ),
+                requires_transfer_validation=(
+                    req_draft.requires_transfer_validation
+                ),
             )
 
             final_requirements.append(
@@ -349,6 +444,7 @@ def build_interview_plan(
     competency_model: CompetencyModel,
     claim_registry: ClaimRegistry,
     duration_minutes: int,
+    role_profile: RoleCompetencyProfile,
     policy: InterviewPolicy = DEFAULT_INTERVIEW_POLICY,
 ) -> InterviewPlan:
 
@@ -392,6 +488,8 @@ def build_interview_plan(
         policy.model_dump_json()
     )
 
+    role_profile_json = role_profile.model_dump_json()
+
     # --------------------------------------------------------
     # 4. 构造 Prompt
     #
@@ -427,7 +525,11 @@ def build_interview_plan(
       "target_type": "knowledge/implementation/debugging/system_design/problem_solving/experience_verification 之一",
       "competency_ids": ["competency_01"],
       "evidence_requirements": [
-        {"description": "字符串"}
+        {
+          "description": "字符串",
+          "planned_role_dimension_id": "role_dim_01",
+          "requires_transfer_validation": false
+        }
       ],
       "related_claim_ids": ["claim_01"],
       "priority": "high/medium/low 之一",
@@ -438,7 +540,8 @@ def build_interview_plan(
   ]
 }
 
-重要: evidence_requirements 必须是对象数组, 每个对象包含 description 字段, 不能是字符串数组!
+重要: evidence_requirements 必须是对象数组, 每个对象必须包含 description、
+planned_role_dimension_id 和 requires_transfer_validation，不能是字符串数组!
 
 重要: TargetType 与 QuestionMode 是两套完全不同的枚举:
 
@@ -560,6 +663,13 @@ Debugging / Problem Solving
 
 能够解释 fan-out 与 fan-in 的执行关系.
 
+planned_role_dimension_id 必须是输入 RoleCompetencyProfile 中真实存在的维度 ID。
+每个 is_gating=true 的维度都必须至少有一条 Requirement 位于
+high、must_cover Target 中。
+
+requires_transfer_validation=true 只能用于脱离简历原项目的新场景；
+不能把“再解释一遍原项目”标成迁移验证。
+
 
 ==================================================
 五、题型
@@ -631,6 +741,8 @@ require_independent_problem_solving=True
 应验证候选人能否把既有方法迁移到陌生、约束不同或受监管的场景。
 迁移 Requirement 必须放在 high、must_cover 的核心 Target，
 不要放进低优先级或 optional 的尾部 Target，以确保有限题数内能够实际验证。
+如果 high、must_cover Target 通过 project_deep_dive 验证重要项目 Claim，
+迁移 Requirement 必须直接放在该 Target 内，且 preferred_modes 必须包含 scenario。
 
 
 ==================================================
@@ -717,6 +829,11 @@ InterviewPolicy:
 {policy_json}
 
 
+RoleCompetencyProfile:
+
+{role_profile_json}
+
+
 请生成 InterviewPlanDraft.
 """
         ),
@@ -745,6 +862,8 @@ InterviewPolicy:
         try:
             validate_target_count(draft=draft, policy=policy)
             validate_core_coverage(draft, competency_model)
+            validate_role_dimension_coverage(draft, role_profile)
+            validate_transfer_coverage(draft, policy)
             validate_question_capacity(
                 draft,
                 max_questions=calculate_max_questions(duration_minutes),
