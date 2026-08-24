@@ -1,4 +1,6 @@
 import { Navigate, Route, Routes, useParams } from 'react-router-dom'
+import { AnalyzingPage } from '../features/assessments/AnalyzingPage'
+import { NewAssessmentPage } from '../features/assessments/NewAssessmentPage'
 
 function RouteFrame({
   eyebrow,
@@ -15,27 +17,6 @@ function RouteFrame({
       <h1 id="route-heading">{title}</h1>
       <p className="route-detail">{detail}</p>
     </section>
-  )
-}
-
-function NewAssessmentPage() {
-  return (
-    <RouteFrame
-      eyebrow="新建评估 / 01"
-      title="创建岗位胜任力评估"
-      detail="从岗位要求与候选人材料出发，建立一条可审计的验证路径。"
-    />
-  )
-}
-
-function AnalyzingPage() {
-  const { assessmentId } = useParams()
-  return (
-    <RouteFrame
-      eyebrow="材料分析 / 02"
-      title="正在分析评估材料"
-      detail={`评估 ${assessmentId ?? '待识别'} 的岗位理解与能力建模正在准备中。`}
-    />
   )
 }
 
