@@ -40,6 +40,27 @@ class WebRepositoryTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "非法评估状态转换"):
             transition_assessment(analyzing, AssessmentStatus.COMPLETE)
 
+    def test_save_if_version_rejects_stale_update(self) -> None:
+        record = AssessmentRecord.new(
+            assessment_id="ast_versioned",
+            target_role="AI 应用工程师",
+            jd_text="Agent Workflow",
+            resume_text="LangGraph 项目",
+        )
+        self.repo.create(record)
+        analyzing = transition_assessment(record, AssessmentStatus.ANALYZING)
+
+        self.assertTrue(self.repo.save_if_version(analyzing, record.version))
+        stale_replay = analyzing.model_copy(
+            update={"error_message": "stale update"}
+        )
+        self.assertFalse(
+            self.repo.save_if_version(stale_replay, record.version)
+        )
+        current = self.repo.get(record.id)
+        self.assertEqual(current.status, AssessmentStatus.ANALYZING)
+        self.assertEqual(current.version, analyzing.version)
+
     def test_candidate_token_hash_is_indexed_and_rotatable(self) -> None:
         record = AssessmentRecord.new(
             assessment_id="ast_token",

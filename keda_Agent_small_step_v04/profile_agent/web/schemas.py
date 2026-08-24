@@ -53,8 +53,11 @@ class AssessmentRecord(BaseModel):
     target_role: str
     jd_text: str
     resume_text: str
+    interview_duration_minutes: int = Field(default=45, ge=1)
     pre_interview_state: dict[str, Any] | None = None
     original_plan: dict[str, Any] | None = None
+    plan_overrides: dict[str, Any] | None = None
+    preview_plan: dict[str, Any] | None = None
     final_plan: dict[str, Any] | None = None
     scoring_blueprint: dict[str, Any] | None = None
     report: dict[str, Any] | None = None
@@ -74,7 +77,10 @@ class AssessmentRecord(BaseModel):
         target_role: str,
         jd_text: str,
         resume_text: str,
+        interview_duration_minutes: int = 45,
     ) -> AssessmentRecord:
+        if interview_duration_minutes not in {30, 45, 60}:
+            raise ValueError("面试时长只能是 30、45 或 60 分钟")
         now = datetime.now(timezone.utc)
         return cls(
             id=assessment_id,
@@ -82,6 +88,7 @@ class AssessmentRecord(BaseModel):
             target_role=target_role.strip(),
             jd_text=jd_text.strip(),
             resume_text=resume_text.strip(),
+            interview_duration_minutes=interview_duration_minutes,
             created_at=now,
             updated_at=now,
         )
