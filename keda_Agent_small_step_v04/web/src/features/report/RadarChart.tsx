@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { RadarDimensionView } from '../../api/types'
 
 type RadarChartProps = {
@@ -54,6 +54,7 @@ function dimensionButtonLabel(dimension: RadarDimensionView): string {
 
 export function RadarChart({ dimensions, onDimensionSelect }: RadarChartProps) {
   const [selectedDimensionId, setSelectedDimensionId] = useState<string | null>(null)
+  const [activeDimensionId, setActiveDimensionId] = useState<string | null>(null)
   const total = dimensions.length
   const axisPoints = dimensions.map((_, index) => pointAt(index, total, RADIUS))
   const labelPoints = dimensions.map((_, index) => pointAt(index, total, LABEL_RADIUS))
@@ -70,6 +71,13 @@ export function RadarChart({ dimensions, onDimensionSelect }: RadarChartProps) {
   function selectDimension(dimension: RadarDimensionView) {
     setSelectedDimensionId(dimension.dimension_id)
     onDimensionSelect?.(dimension)
+  }
+
+  function handleAxisKeyDown(event: ReactKeyboardEvent<SVGGElement>, dimension: RadarDimensionView) {
+    const isSpace = event.key === ' ' || event.key === 'Space' || event.key === 'Spacebar' || event.code === 'Space'
+    if (event.key !== 'Enter' && !isSpace) return
+    event.preventDefault()
+    selectDimension(dimension)
   }
 
   return (
@@ -96,19 +104,41 @@ export function RadarChart({ dimensions, onDimensionSelect }: RadarChartProps) {
             const [x, y] = axisPoints[index]
             const [labelX, labelY] = labelPoints[index]
             const unverified = scoreForDimension(dimension) === null
+            const selected = selectedDimensionId === dimension.dimension_id
+            const active = activeDimensionId === dimension.dimension_id
             const anchor = labelX < CENTER_X - 8 ? 'end' : labelX > CENTER_X + 8 ? 'start' : 'middle'
             return (
               <g
                 key={dimension.dimension_id}
-                className={`radar-axis ${unverified ? 'is-unverified' : ''} ${selectedDimensionId === dimension.dimension_id ? 'is-selected' : ''}`}
+                className={`radar-axis ${unverified ? 'is-unverified' : ''} ${selected ? 'is-selected' : ''} ${active ? 'is-active' : ''}`}
                 data-radar-axis={dimension.dimension_id}
                 data-radar-unverified={unverified ? 'true' : 'false'}
-                data-radar-selected={selectedDimensionId === dimension.dimension_id ? 'true' : 'false'}
+                data-radar-selected={selected ? 'true' : 'false'}
+                data-radar-active={active ? 'true' : 'false'}
+                data-radar-index={index}
+                role="button"
+                tabIndex={0}
+                aria-label={dimensionButtonLabel(dimension)}
+                aria-pressed={selected}
+                style={{ '--radar-index': index } as CSSProperties}
                 onClick={() => selectDimension(dimension)}
+                onKeyDown={(event) => handleAxisKeyDown(event, dimension)}
+                onMouseEnter={() => setActiveDimensionId(dimension.dimension_id)}
+                onMouseLeave={() => setActiveDimensionId(null)}
+                onFocus={() => setActiveDimensionId(dimension.dimension_id)}
+                onBlur={() => setActiveDimensionId(null)}
               >
                 <line x1={CENTER_X} y1={CENTER_Y} x2={x} y2={y} />
+                <circle
+                  className="radar-axis-halo"
+                  cx={x}
+                  cy={y}
+                  r="8"
+                  aria-hidden="true"
+                  style={{ '--radar-index': index } as CSSProperties}
+                />
                 <circle className="radar-axis-hit" cx={x} cy={y} r="22" aria-hidden="true" />
-                <circle className="radar-axis-point" cx={x} cy={y} r="6" />
+                <circle className="radar-axis-point" cx={x} cy={y} r="8" />
                 <text x={labelX} y={labelY} textAnchor={anchor}>
                   {dimension.name}
                 </text>
@@ -156,20 +186,33 @@ export function RadarChart({ dimensions, onDimensionSelect }: RadarChartProps) {
           <tbody>
             {dimensions.map((dimension) => {
               const score = scoreForDimension(dimension)
+              const selected = selectedDimensionId === dimension.dimension_id
+              const active = activeDimensionId === dimension.dimension_id
               return (
-                <tr key={dimension.dimension_id} className={score === null ? 'is-unverified' : ''}>
+                <tr
+                  key={dimension.dimension_id}
+                  className={`${score === null ? 'is-unverified ' : ''}${selected ? 'is-selected ' : ''}${active ? 'is-active' : ''}`}
+                  data-radar-row={dimension.dimension_id}
+                  data-radar-selected={selected ? 'true' : 'false'}
+                  data-radar-active={active ? 'true' : 'false'}
+                >
                   <td>
                     <button
-                      className={`radar-dimension-button ${selectedDimensionId === dimension.dimension_id ? 'is-selected' : ''}`}
+                      className={`radar-dimension-button ${selected ? 'is-selected' : ''} ${active ? 'is-active' : ''}`}
                       type="button"
-                      aria-label={dimensionButtonLabel(dimension)}
+                      aria-label="查看该能力维度的评分依据"
+                      aria-describedby={`${dimension.dimension_id}-label`}
                       onClick={() => selectDimension(dimension)}
+                      onMouseEnter={() => setActiveDimensionId(dimension.dimension_id)}
+                      onMouseLeave={() => setActiveDimensionId(null)}
+                      onFocus={() => setActiveDimensionId(dimension.dimension_id)}
+                      onBlur={() => setActiveDimensionId(null)}
                     >
-                    <span className="radar-dimension-label">
-                      <span className="radar-row-marker" aria-hidden="true" />
-                      {String(dimensions.indexOf(dimension) + 1).padStart(2, '0')} · {dimension.name}
-                    </span>
-                    <span className="radar-row-action" aria-hidden="true">查看依据 <span>→</span></span>
+                      <span className="radar-dimension-label" id={`${dimension.dimension_id}-label`}>
+                        <span className="radar-row-marker" aria-hidden="true" />
+                        {String(dimensions.indexOf(dimension) + 1).padStart(2, '0')} · {dimension.name}
+                      </span>
+                      <span className="radar-row-action" aria-hidden="true">查看依据 <span>→</span></span>
                     </button>
                   </td>
                   <td>

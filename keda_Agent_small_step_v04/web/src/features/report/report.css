@@ -775,7 +775,7 @@
 .radar-axis text {
   fill: var(--ink-700);
   font-family: var(--font-body);
-  font-size: 10px;
+  font-size: 15px;
   pointer-events: none;
 }
 
@@ -2108,6 +2108,24 @@
   stroke-width: 1.2;
 }
 
+.radar-axis-halo {
+  fill: none;
+  stroke: var(--accent-600);
+  stroke-width: 2;
+  pointer-events: none;
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: radar-halo 1.35s ease-out 2;
+  animation-delay: calc(var(--radar-index) * 140ms);
+}
+
+.radar-axis circle.radar-axis-halo {
+  fill: none;
+  stroke: var(--accent-600);
+  stroke-width: 2;
+}
+
 .radar-axis-hit {
   fill: transparent;
   stroke: transparent;
@@ -2128,7 +2146,7 @@
 
 .radar-axis text {
   fill: var(--ink-800);
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 700;
 }
 
@@ -2139,14 +2157,27 @@
 
 .radar-axis:hover .radar-axis-point,
 .radar-axis:focus-visible .radar-axis-point,
+.radar-axis.is-active .radar-axis-point,
 .radar-axis.is-selected .radar-axis-point {
   fill: var(--accent-600);
   stroke: var(--ink-950);
   stroke-width: 3;
 }
 
+.radar-axis:hover line,
+.radar-axis:focus-visible line,
+.radar-axis.is-active line,
+.radar-axis.is-selected line {
+  stroke: var(--accent-600);
+  stroke-width: 2.4;
+}
+
+.radar-axis:hover text,
+.radar-axis:focus-visible text,
+.radar-axis.is-active text,
 .radar-axis.is-selected text {
   fill: var(--accent-600);
+  font-weight: 700;
 }
 
 .radar-score-polygon {
@@ -2237,6 +2268,12 @@
   border-bottom: 0;
 }
 
+.radar-table tbody tr.is-active td,
+.radar-table tbody tr.is-selected td {
+  color: var(--accent-600);
+  background: var(--accent-100);
+}
+
 .radar-dimension-button {
   display: flex;
   width: 100%;
@@ -2255,6 +2292,7 @@
 
 .radar-dimension-button:hover,
 .radar-dimension-button:focus-visible,
+.radar-dimension-button.is-active,
 .radar-dimension-button.is-selected {
   border-color: rgba(201, 106, 53, 0.45);
   color: var(--accent-600);
@@ -2378,6 +2416,10 @@
 
   .report-decision-signals {
     gap: 14px;
+  }
+
+  .radar-axis text {
+    font-size: 14px;
   }
 
   .report-layout-primary,
@@ -2570,7 +2612,7 @@
   }
 
   .radar-axis text {
-    font-size: 13px;
+    font-size: 14px;
   }
 
   .radar-table {
@@ -2595,5 +2637,27 @@
 
   .report-audit-line span:last-child {
     border-bottom: 0;
+  }
+}
+
+@keyframes radar-halo {
+  0% {
+    opacity: 0.55;
+    transform: scale(0.9);
+  }
+
+  70% {
+    opacity: 0.18;
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(2.2);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .radar-axis-halo {
+    animation: none;
   }
 }
