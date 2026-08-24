@@ -23,7 +23,7 @@ from profile_agent.schemas.interview_schema import (
 )
 from profile_agent.schemas.job_schema import JobProfile
 from profile_agent.schemas.resume_schema import ResumeProfile
-from profile_agent.schemas.report_schema import AssessmentReport
+from profile_agent.schemas.report_schema import AssessmentReport, ScoringBlueprint
 from profile_agent.schemas.runtime_schema import (
     Evidence,
     InterviewRuntimeState,
@@ -56,6 +56,7 @@ class MainState(TypedDict, total=False):
     # 没有则 Node 默认 30.
 
     interview_plan: InterviewPlan
+    scoring_blueprint: ScoringBlueprint
 
     # 6) 动态面试运行状态
     # 在候选人真正开始面试时初始化，不在 Pre-Interview Graph 中启动计时。

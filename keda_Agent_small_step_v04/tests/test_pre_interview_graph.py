@@ -12,6 +12,14 @@ class PreInterviewGraphSmokeTest(unittest.TestCase):
 
         self.assertEqual(runtime_nodes, [])
 
+    def test_interview_planner_flows_through_scoring_blueprint_to_end(self) -> None:
+        graph = pre_interview_graph.get_graph()
+        edges = {(edge.source, edge.target) for edge in graph.edges}
+
+        self.assertIn("scoring_blueprint", graph.nodes)
+        self.assertIn(("interview_planner", "scoring_blueprint"), edges)
+        self.assertIn(("scoring_blueprint", "__end__"), edges)
+
 
 if __name__ == "__main__":
     unittest.main()
