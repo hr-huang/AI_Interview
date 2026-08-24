@@ -1792,6 +1792,150 @@
   font-size: 14px;
 }
 
+.report-transcript-collapsible {
+  margin-top: 42px;
+}
+
+.report-transcript-panel {
+  margin-top: 44px;
+}
+
+.interview-transcript-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.interview-transcript-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.34fr) minmax(0, 1fr);
+  gap: 24px;
+  border-top: 1px solid var(--line-300);
+  padding: 25px 0 27px;
+}
+
+.interview-transcript-row:first-child {
+  border-top: 0;
+  padding-top: 4px;
+}
+
+.interview-transcript-row-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.interview-transcript-index {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--accent-600);
+  border-radius: 50%;
+  color: var(--accent-600);
+  font-family: var(--font-display);
+  font-size: 14px;
+}
+
+.interview-transcript-meta {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.interview-transcript-meta strong {
+  color: var(--ink-950);
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.interview-transcript-meta span {
+  color: var(--muted-600);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.interview-transcript-copy {
+  display: grid;
+  gap: 19px;
+  min-width: 0;
+}
+
+.interview-transcript-label {
+  display: block;
+  color: var(--muted-600);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.interview-transcript-question,
+.interview-transcript-answer {
+  margin: 7px 0 0;
+  color: var(--ink-800);
+  font-size: 16px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+}
+
+.interview-transcript-answer {
+  color: var(--ink-950);
+}
+
+.interview-transcript-evidence {
+  display: flex;
+  grid-column: 2;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+}
+
+.interview-transcript-evidence-badge {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  border: 1px solid var(--line-400);
+  border-radius: 999px;
+  padding: 5px 10px;
+  color: var(--ink-700);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.interview-transcript-evidence-badge.is-supporting {
+  border-color: rgba(47, 126, 94, 0.4);
+  color: var(--positive-600);
+  background: rgba(47, 126, 94, 0.08);
+}
+
+.interview-transcript-evidence-badge.is-limiting {
+  border-color: rgba(201, 106, 53, 0.4);
+  color: var(--accent-600);
+  background: rgba(201, 106, 53, 0.08);
+}
+
+.interview-transcript-evidence-badge.is-mixed {
+  border-color: rgba(113, 92, 140, 0.4);
+  color: #715c8c;
+  background: rgba(113, 92, 140, 0.08);
+}
+
+.interview-transcript-evidence-badge.is-none {
+  color: var(--muted-600);
+  background: var(--paper-100);
+}
+
+.interview-transcript-evidence-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .report-id-list code,
 .evidence-source-meta code,
 .evidence-rubric-line code,
@@ -2256,6 +2400,15 @@
   .reason-grid,
   .development-grid {
     grid-template-columns: 1fr;
+  }
+
+  .interview-transcript-row {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .interview-transcript-evidence {
+    grid-column: auto;
   }
 
   .report-panel,

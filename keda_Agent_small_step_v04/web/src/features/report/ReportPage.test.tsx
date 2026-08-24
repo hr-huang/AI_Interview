@@ -96,6 +96,7 @@ const report = (overrides: Partial<ReportViewModel> = {}): ReportViewModel => ({
       evidence_ids: ['E003'],
     },
   ],
+  interview_transcript: [],
   claim_verifications: [],
   assessment_limitations: ['仅基于本次面试证据。'],
   ...overrides,

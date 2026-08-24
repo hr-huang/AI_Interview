@@ -100,6 +100,20 @@ export interface InterviewPathView extends JsonObject {
   evidence_ids: string[]
 }
 
+export interface InterviewTranscriptTurnView {
+  turn_id: string
+  sequence_number: number
+  question: string
+  answer: string | null
+  question_mode: string
+  requirement_id: string
+  requirement_label: string
+  asked_at: string
+  answered_at: string | null
+  evidence_ids: string[]
+  evidence_status: 'supporting' | 'limiting' | 'mixed' | 'none'
+}
+
 export interface ClaimVerificationView extends JsonObject {
   claim_id?: string
   status?: string
@@ -118,6 +132,7 @@ export interface ReportViewModel {
   radar_dimensions: RadarDimensionView[]
   narrative: JsonObject
   interview_path: InterviewPathView[]
+  interview_transcript: InterviewTranscriptTurnView[]
   claim_verifications: ClaimVerificationView[]
   assessment_limitations: string[]
   demo_variant?: 'showcase' | 'boundary' | string

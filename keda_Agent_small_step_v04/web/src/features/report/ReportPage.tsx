@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import { api } from '../../api/client'
 import type { RadarDimensionView, ReasonView, ReportViewModel } from '../../api/types'
 import { EvidenceDrawer } from './EvidenceDrawer'
+import { InterviewTranscript } from './InterviewTranscript'
 import { RadarChart } from './RadarChart'
 import './report.css'
 
@@ -116,6 +117,14 @@ function ReportCollapsible({
   )
 }
 
+function findReasonForEvidence(dimensions: RadarDimensionView[], evidenceId: string): ReasonView | null {
+  for (const dimension of dimensions) {
+    const reason = dimension.reasons.find((item) => item.evidence_ids.includes(evidenceId))
+    if (reason) return reason
+  }
+  return null
+}
+
 function EvidenceIdList({ ids }: { ids: string[] }) {
   if (ids.length === 0) return <span className="report-muted">无可追溯证据</span>
   return (
@@ -168,6 +177,7 @@ function ReportView({ report, demo = report.demo }: { report: ReportViewModel; d
   const isPublished = jobMatch.published === true && rawScore !== null
   const dimensions = report.radar_dimensions
   const path = report.interview_path
+  const transcript = report.interview_transcript ?? []
   const claims = report.claim_verifications
   const developmentActions = asArray(narrative.development_actions)
   const limitingReasons = asArray(jobMatch.limiting_reasons)
@@ -188,6 +198,11 @@ function ReportView({ report, demo = report.demo }: { report: ReportViewModel; d
 
   function selectReason(reason: ReasonView, evidenceId: string | null = null) {
     setSelected({ reason, evidenceId })
+  }
+
+  function selectEvidence(evidenceId: string) {
+    const reason = findReasonForEvidence(dimensions, evidenceId)
+    if (reason) selectReason(reason, evidenceId)
   }
 
   function selectDimension(dimension: RadarDimensionView) {
@@ -298,6 +313,8 @@ function ReportView({ report, demo = report.demo }: { report: ReportViewModel; d
           <p className="report-disclaimer">报告用于辅助决策。最终判断仍需结合人工复试、岗位语境与其他合法信息。</p>
         </aside>
       </div>
+
+      <InterviewTranscript turns={transcript} onEvidenceSelect={selectEvidence} />
 
       <ReportCollapsible title="评分原因与证据" eyebrow="EVIDENCE REGISTER" className="report-reasons-collapsible">
         <section className="report-panel report-reasons-panel" aria-labelledby="reasons-title">
