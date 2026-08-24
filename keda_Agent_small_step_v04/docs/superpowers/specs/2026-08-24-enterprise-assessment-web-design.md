@@ -277,6 +277,7 @@ POST /api/assessments/{assessment_id}/freeze
 GET  /api/assessments/{assessment_id}/report
 
 GET  /api/interviews/{candidate_token}
+POST /api/interviews/{candidate_token}/start
 POST /api/interviews/{candidate_token}/answers
 
 GET  /api/demo/assessment
@@ -285,6 +286,8 @@ GET  /api/demo/assessment
 `POST /api/assessments` 接受目标岗位、JD、简历文本或一个简历文件，以及请求幂等键。它返回评估 ID 和 `ANALYZING` 状态。
 
 `POST /api/assessments/{assessment_id}/freeze` 完成最终计划护栏、Blueprint 构建与共同冻结，并在成功响应中返回候选人访问 URL；冻结失败时不创建候选人 token。
+
+`GET /api/interviews/{candidate_token}` 只返回会话是否可开始或当前已保存的 turn，不启动计时。`POST /api/interviews/{candidate_token}/start` 才初始化 Runtime 并生成第一问，避免招聘方预览链接时误启动面试和模型费用。
 
 `POST /api/interviews/{candidate_token}/answers` 接受当前 turn ID、答案文本和提交幂等键。后端必须拒绝过期 turn，重复幂等键只返回第一次处理结果，不重复创建 Evidence 或增加题数。
 
