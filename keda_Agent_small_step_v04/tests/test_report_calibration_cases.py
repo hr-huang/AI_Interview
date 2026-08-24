@@ -69,6 +69,17 @@ class ReportCalibrationCasesTest(unittest.TestCase):
                     case.model_dump(), get_report_calibration_case(case.id).model_dump()
                 )
 
+    def test_every_requirement_has_frozen_role_dimension_intent(self) -> None:
+        for case in load_report_calibration_cases():
+            with self.subTest(case=case.id):
+                for target in case.plan.targets:
+                    for requirement in target.evidence_requirements:
+                        suffix = requirement.id.rsplit("_", 1)[1]
+                        self.assertEqual(
+                            requirement.planned_role_dimension_id,
+                            f"role_dim_{suffix}",
+                        )
+
     def test_expectations_use_real_profile_criterion_ids(self) -> None:
         profile = load_role_profile("ai_application_engineering", "2026-H2")
         criterion_ids = {
@@ -127,6 +138,16 @@ class ReportCalibrationCasesTest(unittest.TestCase):
             "L3",
         )
         self.assertTrue(cases["C03"].expectation.forbidden_rubric_hits["req_01"])
+        c03_requirement = cases["C03"].plan.targets[0].evidence_requirements[0]
+        self.assertTrue(c03_requirement.requires_transfer_validation)
+        self.assertEqual(
+            cases["C03"].expectation.required_question_modes["req_01"],
+            ["project_deep_dive", "scenario"],
+        )
+        self.assertEqual(
+            cases["C03"].expectation.required_limiting_evidence_ids["req_01"],
+            ["ev_C03_002"],
+        )
 
         self.assertEqual(
             set(cases["C04"].expectation.requirement_level_ranges),

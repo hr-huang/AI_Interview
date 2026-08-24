@@ -255,6 +255,33 @@ def _report_for(
 
 
 class ReportCalibrationAssertionsTest(unittest.TestCase):
+    def test_c03_fails_without_required_transfer_question_mode(self) -> None:
+        case = get_report_calibration_case("C03")
+        without_transfer_turn = case.model_copy(update={"turns": [case.turns[0]]})
+
+        assertions = evaluate_report_calibration(
+            without_transfer_turn,
+            _blueprint_for(case),
+            _matches_for(case),
+            _report_for(case),
+        )
+
+        by_code = {item.code: item for item in assertions}
+        self.assertFalse(by_code["question_mode:req_01:scenario"].passed)
+
+    def test_c03_fails_when_transfer_risk_is_not_limiting_evidence(self) -> None:
+        case = get_report_calibration_case("C03")
+
+        assertions = evaluate_report_calibration(
+            case,
+            _blueprint_for(case),
+            _matches_for(case),
+            _report_for(case),
+        )
+
+        by_code = {item.code: item for item in assertions}
+        self.assertFalse(by_code["limiting_evidence:req_01"].passed)
+
     def test_require_pass_raises_with_failed_codes(self) -> None:
         assertions = [
             CalibrationAssertion(code="evidence_refs", passed=True, message="ok"),

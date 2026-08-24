@@ -5,7 +5,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from profile_agent.schemas.claim_schema import ClaimRegistry
-from profile_agent.schemas.interview_schema import InterviewPlan
+from profile_agent.schemas.interview_schema import InterviewPlan, QuestionMode
 from profile_agent.schemas.report_schema import (
     AssessmentReport,
     RubricMatchBatch,
@@ -43,6 +43,12 @@ class ReportCalibrationExpectation(CalibrationModel):
     expected_unverified_dimensions: list[str] = Field(default_factory=list)
     job_match_published: bool | None = None
     required_claim_statuses: dict[str, str] = Field(default_factory=dict)
+    required_question_modes: dict[str, list[QuestionMode]] = Field(
+        default_factory=dict
+    )
+    required_limiting_evidence_ids: dict[str, list[str]] = Field(
+        default_factory=dict
+    )
 
     @model_validator(mode="after")
     def reject_conflicting_hits(self) -> "ReportCalibrationExpectation":

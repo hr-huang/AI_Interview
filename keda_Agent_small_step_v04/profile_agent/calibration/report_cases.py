@@ -62,9 +62,12 @@ _TARGET_TYPE_BY_REQUIREMENT = {
 }
 
 
-def _plan() -> InterviewPlan:
+def _plan(
+    transfer_requirement_ids: set[str] | None = None,
+) -> InterviewPlan:
     """Build the shared six-requirement report-boundary plan."""
 
+    transfer_requirement_ids = transfer_requirement_ids or set()
     targets = []
     for index, (requirement_id, description, question_mode) in enumerate(
         _REQUIREMENTS,
@@ -80,6 +83,12 @@ def _plan() -> InterviewPlan:
                     EvidenceRequirement(
                         id=requirement_id,
                         description=description,
+                        planned_role_dimension_id=(
+                            _DIMENSION_BY_REQUIREMENT[requirement_id]
+                        ),
+                        requires_transfer_validation=(
+                            requirement_id in transfer_requirement_ids
+                        ),
                     )
                 ],
                 related_claim_ids=[],
@@ -209,6 +218,7 @@ def _case(
     turns: list[InterviewTurn],
     evidences: list[Evidence],
     expectation: ReportCalibrationExpectation,
+    transfer_requirement_ids: set[str] | None = None,
 ) -> ReportCalibrationCase:
     turn_by_id = {turn.id: turn for turn in turns}
     for evidence in evidences:
@@ -219,7 +229,7 @@ def _case(
                 f"{evidence.id}"
             )
 
-    plan = _plan()
+    plan = _plan(transfer_requirement_ids)
     return ReportCalibrationCase(
         id=case_id,
         title=title,
@@ -476,6 +486,7 @@ def _build_c03(profile: RoleCompetencyProfile) -> ReportCalibrationCase:
         description="已有 Workflow 解释很强，但迁移到受监管新场景时主张不加验证地复制。",
         turns=turns,
         evidences=evidences,
+        transfer_requirement_ids={"req_01"},
         expectation=ReportCalibrationExpectation(
             required_rubric_hits=_rubric_hits(
                 profile,
@@ -491,6 +502,12 @@ def _build_c03(profile: RoleCompetencyProfile) -> ReportCalibrationCase:
             },
             requirement_level_ranges={
                 "req_01": _level_range("L2", "L3"),
+            },
+            required_question_modes={
+                "req_01": ["project_deep_dive", "scenario"],
+            },
+            required_limiting_evidence_ids={
+                "req_01": ["ev_C03_002"],
             },
         ),
     )
