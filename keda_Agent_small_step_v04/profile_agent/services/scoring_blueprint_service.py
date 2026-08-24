@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from profile_agent.llm import llm
 from profile_agent.schemas.interview_schema import InterviewPlan
 from profile_agent.schemas.report_schema import (
+    RequirementBindingDraft,
     RoleCompetencyProfile,
     ScoringBlueprint,
     ScoringBlueprintDraft,
@@ -133,6 +134,43 @@ def _plan_requirements(plan: InterviewPlan):
     return requirements
 
 
+def _draft_from_planned_dimensions(
+    plan: InterviewPlan,
+    role_profile: RoleCompetencyProfile,
+) -> ScoringBlueprintDraft | None:
+    """Build a draft from Planner metadata when every requirement is annotated."""
+
+    requirements = _plan_requirements(plan)
+    dimension_ids = {dimension.id for dimension in role_profile.dimensions}
+
+    for requirement in requirements:
+        planned_dimension_id = requirement.planned_role_dimension_id
+        if (
+            planned_dimension_id is not None
+            and planned_dimension_id not in dimension_ids
+        ):
+            raise BlueprintValidationError(
+                "不存在的 Role Dimension ID: " + planned_dimension_id
+            )
+
+    if any(
+        requirement.planned_role_dimension_id is None
+        for requirement in requirements
+    ):
+        return None
+
+    return ScoringBlueprintDraft(
+        bindings=[
+            RequirementBindingDraft(
+                requirement_id=requirement.id,
+                primary_dimension_id=requirement.planned_role_dimension_id,
+                rubric_id=requirement.planned_role_dimension_id,
+            )
+            for requirement in requirements
+        ]
+    )
+
+
 def _validate_draft(
     draft: ScoringBlueprintDraft,
     plan: InterviewPlan,
@@ -186,16 +224,18 @@ def build_scoring_blueprint(
 ) -> ScoringBlueprint:
     """Bind every plan Requirement once and normalize weights in Python."""
 
-    response = llm_client.structured(
-        _messages(plan, role_profile),
-        ScoringBlueprintDraft,
-    )
-    try:
-        draft = ScoringBlueprintDraft.model_validate(response)
-    except ValidationError as exc:
-        raise BlueprintValidationError(
-            "LLM 返回的 ScoringBlueprintDraft 无效"
-        ) from exc
+    draft = _draft_from_planned_dimensions(plan, role_profile)
+    if draft is None:
+        response = llm_client.structured(
+            _messages(plan, role_profile),
+            ScoringBlueprintDraft,
+        )
+        try:
+            draft = ScoringBlueprintDraft.model_validate(response)
+        except ValidationError as exc:
+            raise BlueprintValidationError(
+                "LLM 返回的 ScoringBlueprintDraft 无效"
+            ) from exc
 
     _validate_draft(draft, plan, role_profile)
 
