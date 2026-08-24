@@ -1,9 +1,9 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { api } from '../../api/client'
-import type { ReportViewModel } from '../../api/types'
+import type { InterviewTranscriptTurnView, ReportViewModel } from '../../api/types'
 import { DemoReportPage } from './DemoReportPage'
 import { ReportPage } from './ReportPage'
 
@@ -136,6 +136,70 @@ describe('ReportPage', () => {
     expect(screen.getByRole('dialog')).toBeVisible()
     expect(screen.getByText(/你如何设计 State/)).toBeVisible()
     expect(screen.getByText(/节点只返回增量更新/)).toBeVisible()
+  })
+
+  test('renders ordered transcript turns and does not open a drawer for unlinked evidence', async () => {
+    vi.mocked(api.getReport).mockResolvedValue(report({
+      interview_transcript: [
+        {
+          turn_id: 'turn_transcript_002',
+          sequence_number: 2,
+          question: '第二个问题：请说明边界？',
+          answer: null,
+          question_mode: 'follow_up',
+          requirement_id: 'req_02',
+          requirement_label: '边界验证',
+          asked_at: '2026-08-24T10:02:00Z',
+          answered_at: null,
+          evidence_ids: [],
+          evidence_status: 'none',
+        },
+        {
+          turn_id: 'turn_transcript_001',
+          sequence_number: 1,
+          question: '第一个问题：请介绍项目？',
+          answer: '第一个回答。',
+          question_mode: 'project_deep_dive',
+          requirement_id: 'req_01',
+          requirement_label: '项目经验',
+          asked_at: '2026-08-24T10:00:00Z',
+          answered_at: '2026-08-24T10:01:00Z',
+          evidence_ids: ['E003'],
+          evidence_status: 'supporting',
+        },
+        {
+          turn_id: 'turn_transcript_003',
+          sequence_number: 3,
+          question: '第三个问题：请说明迁移？',
+          answer: '第三个回答。',
+          question_mode: 'scenario',
+          requirement_id: 'req_03',
+          requirement_label: '迁移场景',
+          asked_at: '2026-08-24T10:04:00Z',
+          answered_at: '2026-08-24T10:05:00Z',
+          evidence_ids: ['E_UNLINKED'],
+          evidence_status: 'supporting',
+        },
+      ] satisfies InterviewTranscriptTurnView[],
+    }))
+    const user = userEvent.setup()
+    renderEnterprisePage()
+
+    expect(await screen.findByRole('heading', { name: '岗位胜任力报告' })).toBeVisible()
+    await user.click(screen.getByText('展开查看完整面试记录'))
+
+    const transcriptPanel = screen.getByRole('heading', { name: '候选人的完整回答' }).closest('section')
+    expect(transcriptPanel).not.toBeNull()
+    const rows = within(transcriptPanel as HTMLElement).getAllByRole('listitem')
+    expect(rows).toHaveLength(3)
+    expect(rows[0]).toHaveTextContent('第一个问题：请介绍项目？')
+    expect(rows[1]).toHaveTextContent('第二个问题：请说明边界？')
+    expect(rows[1]).toHaveTextContent('未提交回答')
+    expect(rows[2]).toHaveTextContent('第三个问题：请说明迁移？')
+
+    await user.click(screen.getByRole('button', { name: /查看证据 E_UNLINKED/ }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
   test('shows loading and API errors as accessible page states', async () => {

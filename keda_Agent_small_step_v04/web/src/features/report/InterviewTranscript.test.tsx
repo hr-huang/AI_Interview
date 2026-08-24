@@ -46,9 +46,15 @@ describe('InterviewTranscript', () => {
     await user.click(screen.getByText('展开查看完整面试记录'))
 
     expect(screen.getByText('候选人的完整回答')).toBeVisible()
+    expect(screen.getByText('2 轮记录')).toBeVisible()
     expect(screen.getByText('我负责把状态流转拆成可复核的节点，并记录每次变更。')).toBeVisible()
     expect(screen.getByText('我会先定义失败条件，再补充一个可复现的验证场景。')).toBeVisible()
     expect(screen.getByText('未形成评分证据')).toBeVisible()
+
+    const rows = screen.getAllByRole('listitem')
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toHaveTextContent('项目落地经验')
+    expect(rows[1]).toHaveTextContent('验证边界条件')
 
     await user.click(screen.getByRole('button', { name: /查看证据 ev_001/ }))
 

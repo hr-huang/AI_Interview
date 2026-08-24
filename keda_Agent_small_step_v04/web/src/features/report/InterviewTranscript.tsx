@@ -46,7 +46,7 @@ export function InterviewTranscript({ turns, onEvidenceSelect }: InterviewTransc
             <p className="eyebrow">INTERVIEW TRANSCRIPT</p>
             <h2 id="transcript-title">候选人的完整回答</h2>
           </div>
-          <span>{orderedTurns.length} 个回答</span>
+          <span>{orderedTurns.length} 轮记录</span>
         </div>
 
         {orderedTurns.length > 0 ? (
