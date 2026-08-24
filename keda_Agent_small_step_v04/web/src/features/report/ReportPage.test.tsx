@@ -128,7 +128,8 @@ describe('ReportPage', () => {
     expect(screen.getByText('当前证据覆盖有限。')).toBeVisible()
     expect(screen.getByText('展开查看动态追问路径')).toBeVisible()
 
-    await user.click(screen.getByRole('button', { name: /Agent 编排/ }))
+    const radarTable = screen.getByRole('table')
+    await user.click(within(radarTable).getByRole('button', { name: /Agent 编排/ }))
     expect(screen.getByRole('dialog')).toBeVisible()
     await user.click(screen.getByRole('button', { name: /^关闭$/ }))
     await user.click(screen.getByText('展开查看评分原因与证据'))

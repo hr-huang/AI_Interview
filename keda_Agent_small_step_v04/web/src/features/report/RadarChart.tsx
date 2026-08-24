@@ -200,15 +200,14 @@ export function RadarChart({ dimensions, onDimensionSelect }: RadarChartProps) {
                     <button
                       className={`radar-dimension-button ${selected ? 'is-selected' : ''} ${active ? 'is-active' : ''}`}
                       type="button"
-                      aria-label="查看该能力维度的评分依据"
-                      aria-describedby={`${dimension.dimension_id}-label`}
+                      aria-label={dimensionButtonLabel(dimension)}
                       onClick={() => selectDimension(dimension)}
                       onMouseEnter={() => setActiveDimensionId(dimension.dimension_id)}
                       onMouseLeave={() => setActiveDimensionId(null)}
                       onFocus={() => setActiveDimensionId(dimension.dimension_id)}
                       onBlur={() => setActiveDimensionId(null)}
                     >
-                      <span className="radar-dimension-label" id={`${dimension.dimension_id}-label`}>
+                      <span className="radar-dimension-label">
                         <span className="radar-row-marker" aria-hidden="true" />
                         {String(dimensions.indexOf(dimension) + 1).padStart(2, '0')} · {dimension.name}
                       </span>

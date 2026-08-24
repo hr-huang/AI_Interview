@@ -2126,7 +2126,7 @@
   stroke-width: 2;
 }
 
-.radar-axis-hit {
+.radar-axis circle.radar-axis-hit {
   fill: transparent;
   stroke: transparent;
   pointer-events: all;
