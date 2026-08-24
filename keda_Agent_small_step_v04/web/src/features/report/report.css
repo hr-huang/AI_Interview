@@ -2374,6 +2374,21 @@
   line-height: 1.75;
 }
 
+@media (max-width: 1100px) {
+  .report-layout-primary {
+    grid-template-columns: 1fr;
+  }
+
+  .report-radar-panel,
+  .report-match-panel {
+    min-width: 0;
+  }
+
+  .radar-graphic-wrap {
+    padding-inline: 28px;
+  }
+}
+
 @media (max-width: 1000px) {
   .radar-chart {
     grid-template-columns: 1fr;
