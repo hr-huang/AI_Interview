@@ -6,6 +6,7 @@ from fastapi import FastAPI
 
 from profile_agent.web.container import WebContainer
 from profile_agent.web.routers.assessments import router as assessments_router
+from profile_agent.web.routers.interviews import router as interviews_router
 
 
 def create_app(container: WebContainer | None = None) -> FastAPI:
@@ -19,25 +20,26 @@ def create_app(container: WebContainer | None = None) -> FastAPI:
         finally:
             if app.state.container_owned:
                 # Stop background work before closing the database it may use.
-                dispatcher_close = getattr(
+                first_error: BaseException | None = None
+                for resource in (
                     app.state.container.dispatcher,
-                    "close",
-                    None,
-                )
-                repository_close = getattr(
                     app.state.container.repository,
-                    "close",
-                    None,
-                )
-                try:
-                    if callable(dispatcher_close):
-                        dispatcher_close()
-                finally:
-                    if callable(repository_close):
-                        repository_close()
+                    app.state.container.checkpoint_connection,
+                ):
+                    close = getattr(resource, "close", None)
+                    if not callable(close):
+                        continue
+                    try:
+                        close()
+                    except BaseException as error:
+                        if first_error is None:
+                            first_error = error
+                if first_error is not None:
+                    raise first_error
 
     app = FastAPI(title="衡鉴 Evidence Hiring", lifespan=lifespan)
     app.state.container = resolved_container
     app.state.container_owned = owns_container
     app.include_router(assessments_router, prefix="/api")
+    app.include_router(interviews_router, prefix="/api")
     return app
