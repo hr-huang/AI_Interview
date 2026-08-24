@@ -253,6 +253,6 @@ Use Playwright with the installed Edge executable. At widths 390, 840, 960, 1100
 
 Create a Playwright context with `reducedMotion: 'reduce'` and assert the computed `animation-name` for `.radar-axis-halo` is `none`.
 
-- [ ] **Step 5: Review the final diff without committing user-owned work**
+- [ ] **Step 5: Review and commit only Task 4 changes**
 
-Confirm every changed line supports this spec, no environment file or API key changed, and no unrelated user modification was overwritten. Report modified files, tests, browser evidence, and remaining limitations to the primary agent. Do not create a Git commit; the primary agent performs final acceptance.
+Confirm every changed line supports this spec, no environment file or API key changed, and no unrelated user modification was overwritten. Commit only Task 4 files, then report modified files, tests, browser evidence, and remaining limitations to the primary agent. The primary agent still performs final acceptance and does not push the branch.
