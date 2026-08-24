@@ -411,18 +411,40 @@ def match_evidence_to_rubric(
         turns=turns,
         evidence=evidence,
     )
-    raw_batch = llm_client.structured(messages, RubricMatchBatch)
-    try:
-        batch = RubricMatchBatch.model_validate(raw_batch)
-    except ValidationError as exc:
-        raise RubricMatchValidationError(
-            "LLM 返回的 RubricMatchBatch 不符合 schema"
-        ) from exc
+    correction: RubricMatchValidationError | None = None
+    for semantic_attempt in range(2):
+        attempt_messages = messages
+        if correction is not None:
+            attempt_messages = messages + [
+                (
+                    "human",
+                    "上一轮 RubricMatchBatch 未通过业务校验："
+                    f"{correction}。请只使用输入中真实存在且具有正确 "
+                    "provenance 的 evidence_id、requirement_id 和 Rubric ID "
+                    "重新生成；只返回 JSON。",
+                )
+            ]
 
-    return _validate_matches(
-        batch=batch,
-        evidence_by_id=evidence_by_id,
-        plan_requirements=plan_requirements,
-        bindings_by_requirement=bindings_by_requirement,
-        dimensions_by_id=dimensions_by_id,
-    )
+        raw_batch = llm_client.structured(attempt_messages, RubricMatchBatch)
+        try:
+            batch = RubricMatchBatch.model_validate(raw_batch)
+            return _validate_matches(
+                batch=batch,
+                evidence_by_id=evidence_by_id,
+                plan_requirements=plan_requirements,
+                bindings_by_requirement=bindings_by_requirement,
+                dimensions_by_id=dimensions_by_id,
+            )
+        except ValidationError as exc:
+            error = RubricMatchValidationError(
+                "LLM 返回的 RubricMatchBatch 不符合 schema"
+            )
+            if semantic_attempt == 1:
+                raise error from exc
+            correction = error
+        except RubricMatchValidationError as error:
+            if semantic_attempt == 1:
+                raise
+            correction = error
+
+    raise AssertionError("RubricMatch 业务校验重试循环意外结束")
