@@ -328,7 +328,7 @@ export function NewAssessmentPage() {
           </button>
           <p className="demo-route-copy">
             暂时没有材料？{' '}
-            <Link to="/demo/assessment">查看已完成的演示评估 →</Link>
+            <Link to="/demo/assessment">查看演示示例 →</Link>
           </p>
           <p className="privacy-note">评估用于辅助决策，系统不会自动输出录用或淘汰结论。</p>
         </aside>

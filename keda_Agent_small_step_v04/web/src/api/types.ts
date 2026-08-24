@@ -83,16 +83,42 @@ export interface RadarDimensionView {
   reasons: ReasonView[]
 }
 
+export interface JobMatchView extends JsonObject {
+  raw_score?: number | null
+  published?: boolean
+  fit_level?: string | null
+  coverage?: number
+  confidence?: string
+  limiting_reasons?: JsonObject[]
+}
+
+export interface InterviewPathView extends JsonObject {
+  turn_id: string
+  question_mode: string
+  requirement_id: string
+  outcome: string
+  evidence_ids: string[]
+}
+
+export interface ClaimVerificationView extends JsonObject {
+  claim_id?: string
+  status?: string
+  outcome?: string
+  supporting_evidence_ids?: string[]
+  contradicting_evidence_ids?: string[]
+  evidence_ids?: string[]
+}
+
 export interface ReportViewModel {
   demo: boolean
   target_role: string
   role_profile_version: string
   scoring_engine_version: string
-  job_match: JsonObject
+  job_match: JobMatchView
   radar_dimensions: RadarDimensionView[]
   narrative: JsonObject
-  interview_path: JsonObject[]
-  claim_verifications: JsonObject[]
+  interview_path: InterviewPathView[]
+  claim_verifications: ClaimVerificationView[]
   assessment_limitations: string[]
 }
 

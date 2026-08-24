@@ -35,7 +35,7 @@ describe('NewAssessmentPage', () => {
     expect(screen.getByRole('button', { name: '创建评估' })).toBeVisible()
     expect(screen.getByRole('combobox', { name: '目标岗位' })).toHaveValue('AI Agent / AI应用工程师')
     expect(screen.getByRole('option')).toHaveTextContent('AI Agent / AI应用工程师')
-    expect(screen.getByRole('link', { name: /查看已完成的演示评估/ })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /查看演示示例/ })).toHaveAttribute(
       'href',
       '/demo/assessment',
     )
