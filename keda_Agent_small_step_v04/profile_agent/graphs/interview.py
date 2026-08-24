@@ -254,6 +254,7 @@ def build_interview_graph(
             evidences=list(state.get("evidences") or []),
             claim_registry=state.get("claim_registry"),
             target_role=state.get("target_role"),
+            scoring_blueprint=state.get("scoring_blueprint"),
         )
         return {"assessment_report": AssessmentReport.model_validate(report)}
 

@@ -36,6 +36,7 @@ class ReportGeneratorRecorder:
         evidences,
         claim_registry,
         target_role,
+        scoring_blueprint=None,
     ):
         self.calls.append(
             {
@@ -45,6 +46,7 @@ class ReportGeneratorRecorder:
                 "evidences": evidences,
                 "claim_registry": claim_registry,
                 "target_role": target_role,
+                "scoring_blueprint": scoring_blueprint,
             }
         )
         return self.result

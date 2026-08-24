@@ -356,6 +356,7 @@ def generate_assessment_report(
     evidence: list[Evidence] | None = None,
     target_role: str | None = None,
     role_version: str | None = None,
+    scoring_blueprint: ScoringBlueprint | None = None,
     blueprint_builder: Callable[..., Any] | None = None,
     rubric_matcher: Callable[..., Any] | None = None,
     assessment_builder: Callable[..., Any] | None = None,
@@ -433,9 +434,12 @@ def generate_assessment_report(
         write_report_narrative,
     )
 
-    blueprint = ScoringBlueprint.model_validate(
-        blueprint_builder(plan, profile)
-    )
+    if scoring_blueprint is None:
+        blueprint = ScoringBlueprint.model_validate(
+            blueprint_builder(plan, profile)
+        )
+    else:
+        blueprint = ScoringBlueprint.model_validate(scoring_blueprint)
     _validate_blueprint(plan, profile, blueprint)
 
     matches = RubricMatchBatch.model_validate(

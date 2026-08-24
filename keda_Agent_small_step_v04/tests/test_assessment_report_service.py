@@ -31,6 +31,7 @@ from profile_agent.services.report_writer_service import fallback_report_narrati
 class FakeSemanticServices:
     def __init__(self, *, writer=None, score_engine=None) -> None:
         self.calls: list[str] = []
+        self.received_blueprints: list[ScoringBlueprint] = []
         self.writer = writer
         self.score_engine = score_engine
         self.blueprint = _make_blueprint()
@@ -42,6 +43,7 @@ class FakeSemanticServices:
 
     def match_rubric(self, plan, blueprint, role_profile, turns, evidences):
         self.calls.append("matches")
+        self.received_blueprints.append(blueprint)
         return self.matches
 
     def write_narrative(self, snapshot, evidences, role_profile):
@@ -304,12 +306,19 @@ def _generate(
     *,
     runtime: InterviewRuntimeState | None = None,
     role_family: str = "ai_application_engineering",
+    scoring_blueprint: ScoringBlueprint | None = None,
+    blueprint_builder=None,
 ):
     from profile_agent.services.assessment_report_service import (
         generate_assessment_report,
     )
 
     plan = _make_plan()
+    kwargs = {}
+    if scoring_blueprint is not None:
+        kwargs["scoring_blueprint"] = scoring_blueprint
+    if blueprint_builder is not None:
+        kwargs["blueprint_builder"] = blueprint_builder
     return generate_assessment_report(
         target_role="AI Agent / AI应用工程师",
         plan=plan,
@@ -320,10 +329,39 @@ def _generate(
         role_family=role_family,
         role_profile_version="2026-H2",
         semantic_services=services.as_mapping(),
+        **kwargs,
     )
 
 
 class AssessmentReportServiceTest(unittest.TestCase):
+    def test_supplied_blueprint_is_reused_without_builder_and_reaches_matcher(self) -> None:
+        services = _make_services()
+        frozen = _make_blueprint()
+
+        def fail_builder(*args, **kwargs):
+            raise AssertionError("a supplied blueprint must skip the builder")
+
+        report = _generate(
+            services,
+            scoring_blueprint=frozen,
+            blueprint_builder=fail_builder,
+        )
+
+        self.assertIsNotNone(report)
+        self.assertEqual(services.calls, ["matches", "writer"])
+        self.assertEqual(len(services.received_blueprints), 1)
+        self.assertEqual(
+            services.received_blueprints[0].model_dump(),
+            frozen.model_dump(),
+        )
+
+    def test_missing_blueprint_invokes_builder_once(self) -> None:
+        services = _make_services()
+
+        _generate(services)
+
+        self.assertEqual(services.calls.count("blueprint"), 1)
+
     def test_complete_pipeline_produces_explainable_report(self) -> None:
         services = _make_services()
 

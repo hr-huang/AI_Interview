@@ -14,6 +14,7 @@ from profile_agent.schemas.interview_schema import (
     GeneratedQuestion,
     InterviewPlan,
 )
+from profile_agent.schemas.report_schema import ScoringBlueprint
 from profile_agent.schemas.runtime_schema import (
     AnswerProcessingResult,
     Evidence,
@@ -31,6 +32,7 @@ class InterviewGraphTest(unittest.TestCase):
         self.question_calls: list[AskAction] = []
         self.answer_calls: list[InterviewTurn] = []
         self.events: list[str] = []
+        self.report_calls: list[dict] = []
 
     def make_plan(self) -> InterviewPlan:
         return InterviewPlan(
@@ -135,7 +137,29 @@ class InterviewGraphTest(unittest.TestCase):
         )
 
     def report_generator(self, **kwargs):
+        self.report_calls.append(kwargs)
         return make_test_report(kwargs.get("target_role") or "测试岗位")
+
+    def test_report_generator_receives_frozen_blueprint_from_initial_state(self) -> None:
+        blueprint = ScoringBlueprint(
+            role_family="ai_application_engineering",
+            role_profile_version="2026-H2",
+            bindings=[],
+        )
+        initial_state = self.make_initial_state()
+        initial_state["scoring_blueprint"] = blueprint
+        graph = self.build_graph()
+        config = self.config("report-blueprint")
+
+        graph.invoke(initial_state, config)
+        graph.invoke(Command(resume="strong answer"), config)
+
+        self.assertEqual(len(self.report_calls), 1)
+        self.assertIn("scoring_blueprint", self.report_calls[0])
+        self.assertEqual(
+            self.report_calls[0]["scoring_blueprint"].model_dump(),
+            blueprint.model_dump(),
+        )
 
     @staticmethod
     def config(thread_id: str) -> dict:
