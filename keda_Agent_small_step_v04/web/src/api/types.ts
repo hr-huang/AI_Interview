@@ -120,6 +120,9 @@ export interface ReportViewModel {
   interview_path: InterviewPathView[]
   claim_verifications: ClaimVerificationView[]
   assessment_limitations: string[]
+  demo_variant?: 'showcase' | 'boundary' | string
+  demo_case_title?: string | null
+  demo_case_description?: string | null
 }
 
 export interface InterviewAnswerRequest {

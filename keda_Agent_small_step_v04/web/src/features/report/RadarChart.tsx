@@ -1,4 +1,4 @@
-import type { KeyboardEvent } from 'react'
+import { useState } from 'react'
 import type { RadarDimensionView } from '../../api/types'
 
 type RadarChartProps = {
@@ -6,12 +6,12 @@ type RadarChartProps = {
   onDimensionSelect?: (dimension: RadarDimensionView) => void
 }
 
-const VIEWBOX_WIDTH = 480
-const VIEWBOX_HEIGHT = 400
-const CENTER_X = 220
-const CENTER_Y = 200
-const RADIUS = 132
-const LABEL_RADIUS = 166
+const VIEWBOX_WIDTH = 560
+const VIEWBOX_HEIGHT = 450
+const CENTER_X = 258
+const CENTER_Y = 224
+const RADIUS = 155
+const LABEL_RADIUS = 198
 
 function pointAt(index: number, total: number, radius: number): [number, number] {
   const angle = (Math.PI * 2 * index) / Math.max(total, 1) - Math.PI / 2
@@ -53,6 +53,7 @@ function dimensionButtonLabel(dimension: RadarDimensionView): string {
 }
 
 export function RadarChart({ dimensions, onDimensionSelect }: RadarChartProps) {
+  const [selectedDimensionId, setSelectedDimensionId] = useState<string | null>(null)
   const total = dimensions.length
   const axisPoints = dimensions.map((_, index) => pointAt(index, total, RADIUS))
   const labelPoints = dimensions.map((_, index) => pointAt(index, total, LABEL_RADIUS))
@@ -64,11 +65,11 @@ export function RadarChart({ dimensions, onDimensionSelect }: RadarChartProps) {
     })
     .filter((point): point is [number, number] => point !== null)
 
-  function handleDimensionKeyDown(event: KeyboardEvent<SVGGElement>, dimension: RadarDimensionView) {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault()
-      onDimensionSelect?.(dimension)
-    }
+  const verifiedCount = verifiedPoints.length
+
+  function selectDimension(dimension: RadarDimensionView) {
+    setSelectedDimensionId(dimension.dimension_id)
+    onDimensionSelect?.(dimension)
   }
 
   return (
@@ -99,17 +100,15 @@ export function RadarChart({ dimensions, onDimensionSelect }: RadarChartProps) {
             return (
               <g
                 key={dimension.dimension_id}
-                className={`radar-axis ${unverified ? 'is-unverified' : ''}`}
+                className={`radar-axis ${unverified ? 'is-unverified' : ''} ${selectedDimensionId === dimension.dimension_id ? 'is-selected' : ''}`}
                 data-radar-axis={dimension.dimension_id}
                 data-radar-unverified={unverified ? 'true' : 'false'}
-                role="button"
-                tabIndex={0}
-                aria-label={dimensionButtonLabel(dimension)}
-                onClick={() => onDimensionSelect?.(dimension)}
-                onKeyDown={(event) => handleDimensionKeyDown(event, dimension)}
+                data-radar-selected={selectedDimensionId === dimension.dimension_id ? 'true' : 'false'}
+                onClick={() => selectDimension(dimension)}
               >
                 <line x1={CENTER_X} y1={CENTER_Y} x2={x} y2={y} />
-                <circle cx={x} cy={y} r="3" />
+                <circle className="radar-axis-hit" cx={x} cy={y} r="22" aria-hidden="true" />
+                <circle className="radar-axis-point" cx={x} cy={y} r="6" />
                 <text x={labelX} y={labelY} textAnchor={anchor}>
                   {dimension.name}
                 </text>
@@ -119,18 +118,27 @@ export function RadarChart({ dimensions, onDimensionSelect }: RadarChartProps) {
 
           {verifiedPoints.length > 0 ? (
             <polygon
-              className="radar-score-polygon"
+              className={`radar-score-polygon ${verifiedCount < 3 ? 'is-partial' : ''}`}
               data-radar-score-polygon="true"
               points={pointsAttribute(verifiedPoints)}
             />
           ) : null}
           {verifiedPoints.map(([x, y], index) => (
-            <circle className="radar-score-point" key={`${x}-${y}-${index}`} cx={x} cy={y} r="4" />
+            <circle className="radar-score-point" key={`${x}-${y}-${index}`} cx={x} cy={y} r="7" />
           ))}
         </svg>
+        <p className="radar-interaction-hint">
+          <span aria-hidden="true">↗</span>
+          点击任一能力维度，查看评分依据与原始问答
+        </p>
+        {verifiedCount < total ? (
+          <p className="radar-coverage-note">
+            当前已验证 {verifiedCount} / {total} 个维度；未验证维度不会按 0 分绘制。
+          </p>
+        ) : null}
         <div className="radar-scale-note" aria-hidden="true">
           <span>100</span>
-          <span>能力得分 / 仅展示服务端结果</span>
+          <span>能力得分 · 仅展示已形成证据的结果</span>
         </div>
       </div>
 
@@ -151,10 +159,18 @@ export function RadarChart({ dimensions, onDimensionSelect }: RadarChartProps) {
               return (
                 <tr key={dimension.dimension_id} className={score === null ? 'is-unverified' : ''}>
                   <td>
+                    <button
+                      className={`radar-dimension-button ${selectedDimensionId === dimension.dimension_id ? 'is-selected' : ''}`}
+                      type="button"
+                      aria-label={dimensionButtonLabel(dimension)}
+                      onClick={() => selectDimension(dimension)}
+                    >
                     <span className="radar-dimension-label">
                       <span className="radar-row-marker" aria-hidden="true" />
                       {String(dimensions.indexOf(dimension) + 1).padStart(2, '0')} · {dimension.name}
                     </span>
+                    <span className="radar-row-action" aria-hidden="true">查看依据 <span>→</span></span>
+                    </button>
                   </td>
                   <td>
                     {score === null ? (

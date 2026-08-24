@@ -14,4 +14,9 @@ def get_demo_assessment() -> ReportViewModel:
     return build_demo_report_view()
 
 
+@router.get("/demo/assessment/boundary", response_model=ReportViewModel)
+def get_boundary_demo_assessment() -> ReportViewModel:
+    return build_demo_report_view("C03")
+
+
 __all__ = ["router"]

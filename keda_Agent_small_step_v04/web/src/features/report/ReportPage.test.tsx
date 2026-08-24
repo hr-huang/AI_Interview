@@ -125,8 +125,12 @@ describe('ReportPage', () => {
     expect(api.getReport).toHaveBeenCalledWith('ast_001')
     expect(screen.getByText('Agent 编排')).toBeVisible()
     expect(screen.getByText('当前证据覆盖有限。')).toBeVisible()
-    expect(screen.getByText('动态追问路径')).toBeVisible()
+    expect(screen.getByText('展开查看动态追问路径')).toBeVisible()
 
+    await user.click(screen.getByRole('button', { name: /Agent 编排/ }))
+    expect(screen.getByRole('dialog')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: /^关闭$/ }))
+    await user.click(screen.getByText('展开查看评分原因与证据'))
     await user.click(screen.getByRole('button', { name: /查看证据 E003/ }))
     expect(screen.getByRole('dialog')).toBeVisible()
     expect(screen.getByText(/你如何设计 State/)).toBeVisible()

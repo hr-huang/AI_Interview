@@ -64,6 +64,9 @@ class ReportViewModel(BaseModel):
     interview_path: list[dict[str, Any]]
     claim_verifications: list[dict[str, Any]]
     assessment_limitations: list[str]
+    demo_variant: str = "assessment"
+    demo_case_title: str | None = None
+    demo_case_description: str | None = None
 
 
 def _normalise_models(
@@ -464,6 +467,9 @@ def build_report_view(
     profile: RoleCompetencyProfile | Mapping[str, Any],
     *,
     demo: bool,
+    demo_variant: str = "assessment",
+    demo_case_title: str | None = None,
+    demo_case_description: str | None = None,
 ) -> ReportViewModel:
     """Build the browser-facing report while failing closed on bad joins."""
 
@@ -549,6 +555,9 @@ def build_report_view(
             for item in normalized_report.score_snapshot.claim_verifications
         ],
         assessment_limitations=list(normalized_report.assessment_limitations),
+        demo_variant=demo_variant,
+        demo_case_title=demo_case_title,
+        demo_case_description=demo_case_description,
     )
 
 

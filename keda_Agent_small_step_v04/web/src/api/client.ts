@@ -142,4 +142,8 @@ export const api = {
   getDemoAssessment() {
     return request<ReportViewModel>('/demo/assessment')
   },
+
+  getDemoBoundaryAssessment() {
+    return request<ReportViewModel>('/demo/assessment/boundary')
+  },
 }
