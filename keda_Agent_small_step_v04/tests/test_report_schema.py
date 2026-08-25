@@ -6,8 +6,10 @@ from pydantic import ValidationError
 from profile_agent.schemas.report_schema import (
     AssessmentReport,
     CandidateOverview,
-    EnterpriseAssessment,
     CompetencyDimensionRubric,
+    DecisionSignal,
+    EnterpriseAssessment,
+    EvidenceExcerpt,
     JobMatchResult,
     RadarDimensionResult,
     ReinterviewFocus,
@@ -61,8 +63,8 @@ def _dimension(
     )
 
 
-def _candidate_overview_fields() -> dict[str, object]:
-    return {
+def _candidate_overview_fields(**overrides: object) -> dict[str, object]:
+    fields: dict[str, object] = {
         "candidate_id": "candidate_01",
         "candidate_name": "候选人",
         "target_role": "AI 应用工程师",
@@ -72,6 +74,33 @@ def _candidate_overview_fields() -> dict[str, object]:
         "interview_rounds": 1,
         "generated_at": datetime(2026, 8, 25, 12, 0),
     }
+    fields.update(overrides)
+    return fields
+
+
+def _decision_signal_fields(**overrides: object) -> dict[str, object]:
+    fields: dict[str, object] = {
+        "title": "关键能力",
+        "text": "能够解释方案边界和验证方式。",
+        "dimension_ids": ["role_dim_01"],
+        "evidence_ids": ["E001"],
+        "confidence": "high",
+    }
+    fields.update(overrides)
+    return fields
+
+
+def _evidence_excerpt_fields(**overrides: object) -> dict[str, object]:
+    fields: dict[str, object] = {
+        "evidence_id": "E001",
+        "turn_id": "turn_01",
+        "conclusion": "能复述关键取舍。",
+        "quote": "我会先定义失败边界，再决定是否重试。",
+        "interpretation": "体现对可靠性边界的理解。",
+        "limitation": "尚未验证高并发场景。",
+    }
+    fields.update(overrides)
+    return fields
 
 
 def _reinterview_focus_fields(**overrides: object) -> dict[str, object]:
@@ -133,11 +162,95 @@ class ReportSchemaTest(unittest.TestCase):
         with self.assertRaises(ValidationError):
             CandidateOverview(**fields)
 
+    def test_candidate_overview_requires_identity_and_timestamp_fields(self) -> None:
+        for required_field in (
+            "candidate_id",
+            "target_role",
+            "interview_rounds",
+            "generated_at",
+        ):
+            with self.subTest(required_field=required_field):
+                incomplete = _candidate_overview_fields()
+                incomplete.pop(required_field)
+                with self.assertRaises(ValidationError):
+                    CandidateOverview(**incomplete)
+
+        for interview_rounds in (0, 1):
+            with self.subTest(interview_rounds=interview_rounds):
+                overview = CandidateOverview(
+                    **_candidate_overview_fields(
+                        interview_rounds=interview_rounds
+                    )
+                )
+                self.assertEqual(overview.interview_rounds, interview_rounds)
+
+        with self.assertRaises(ValidationError):
+            CandidateOverview(
+                **_candidate_overview_fields(interview_rounds=-1)
+            )
+
+        overview = CandidateOverview(
+            **_candidate_overview_fields(
+                jd_focus=[f"focus_{index}" for index in range(5)]
+            )
+        )
+        self.assertEqual(len(overview.jd_focus), 5)
+
+        with self.assertRaises(ValidationError):
+            CandidateOverview(
+                **_candidate_overview_fields(
+                    jd_focus=[f"focus_{index}" for index in range(6)]
+                )
+            )
+
+    def test_decision_signal_has_required_fields_and_forbids_extras(self) -> None:
+        signal = DecisionSignal(**_decision_signal_fields())
+        self.assertEqual(signal.title, "关键能力")
+
+        for required_field in ("title", "text", "confidence"):
+            with self.subTest(required_field=required_field):
+                incomplete = _decision_signal_fields()
+                incomplete.pop(required_field)
+                with self.assertRaises(ValidationError):
+                    DecisionSignal(**incomplete)
+
+        with self.assertRaises(ValidationError):
+            DecisionSignal(
+                **_decision_signal_fields(unexpected="must be rejected")
+            )
+
+    def test_evidence_excerpt_has_required_fields_and_forbids_extras(self) -> None:
+        excerpt = EvidenceExcerpt(**_evidence_excerpt_fields())
+        self.assertEqual(excerpt.evidence_id, "E001")
+
+        for required_field in (
+            "evidence_id",
+            "turn_id",
+            "conclusion",
+            "quote",
+            "interpretation",
+            "limitation",
+        ):
+            with self.subTest(required_field=required_field):
+                incomplete = _evidence_excerpt_fields()
+                incomplete.pop(required_field)
+                with self.assertRaises(ValidationError):
+                    EvidenceExcerpt(**incomplete)
+
+        with self.assertRaises(ValidationError):
+            EvidenceExcerpt(
+                **_evidence_excerpt_fields(unexpected="must be rejected")
+            )
+
     def test_enterprise_assessment_requires_decision_and_overall_assessment(
         self,
     ) -> None:
-        with self.assertRaises(ValidationError):
-            EnterpriseAssessment.model_validate({"strengths": []})
+        for required_field in ("decision", "overall_assessment"):
+            with self.subTest(required_field=required_field):
+                incomplete = _enterprise_assessment_fields()
+                incomplete.pop(required_field)
+                with self.assertRaises(ValidationError):
+                    EnterpriseAssessment.model_validate(incomplete)
 
     def test_enterprise_assessment_enforces_decision_and_score_boundaries(
         self,
@@ -172,6 +285,77 @@ class ReportSchemaTest(unittest.TestCase):
                     EnterpriseAssessment(
                         **_enterprise_assessment_fields(provisional_score=score)
                     )
+
+    def test_enterprise_assessment_enforces_collection_boundaries(self) -> None:
+        factories = {
+            "conditions": lambda length: [
+                f"condition_{index}" for index in range(length)
+            ],
+            "decision_reasons": lambda length: [
+                f"reason_{index}" for index in range(length)
+            ],
+            "strengths": lambda length: [
+                DecisionSignal(
+                    **_decision_signal_fields(title=f"strength_{index}")
+                )
+                for index in range(length)
+            ],
+            "risks": lambda length: [
+                DecisionSignal(
+                    **_decision_signal_fields(title=f"risk_{index}")
+                )
+                for index in range(length)
+            ],
+            "unknowns": lambda length: [
+                DecisionSignal(
+                    **_decision_signal_fields(title=f"unknown_{index}")
+                )
+                for index in range(length)
+            ],
+            "reinterview_plan": lambda length: [
+                ReinterviewFocus(
+                    **_reinterview_focus_fields(
+                        dimension_id=f"role_dim_{index + 1:02d}"
+                    )
+                )
+                for index in range(length)
+            ],
+        }
+        bounds = {
+            "conditions": (3, (4,)),
+            "decision_reasons": (3, (0, 4)),
+            "strengths": (3, (4,)),
+            "risks": (3, (4,)),
+            "unknowns": (2, (3,)),
+            "reinterview_plan": (3, (4,)),
+        }
+
+        for field, (maximum, invalid_lengths) in bounds.items():
+            valid_lengths = (maximum,)
+            if field == "decision_reasons":
+                valid_lengths = (1, maximum)
+            for length in valid_lengths:
+                with self.subTest(field=field, length=length):
+                    assessment = EnterpriseAssessment(
+                        **_enterprise_assessment_fields(
+                            **{field: factories[field](length)}
+                        )
+                    )
+                    self.assertEqual(len(getattr(assessment, field)), length)
+
+            for length in invalid_lengths:
+                with self.subTest(field=field, length=length):
+                    with self.assertRaises(ValidationError):
+                        EnterpriseAssessment(
+                            **_enterprise_assessment_fields(
+                                **{field: factories[field](length)}
+                            )
+                        )
+
+    def test_development_actions_is_marked_as_legacy(self) -> None:
+        field = ReportNarrativeDraft.model_fields["development_actions"]
+        self.assertTrue(field.deprecated)
+        self.assertIn("legacy", (field.description or "").lower())
 
     def test_reinterview_focus_requires_observable_signals_and_minutes(self) -> None:
         focus = ReinterviewFocus(
