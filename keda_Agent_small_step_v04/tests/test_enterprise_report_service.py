@@ -203,7 +203,7 @@ class EnterpriseReportServiceTest(unittest.TestCase):
 
         decision = derive_hiring_decision(snapshot)
 
-        self.assertEqual(decision.code, "CONDITIONAL_PROCEED")
+        self.assertEqual(decision.code, "PROCEED")
 
     def test_contradicting_limiting_evidence_requires_conditional_decision(self) -> None:
         reason = ScoreReason(
@@ -237,13 +237,24 @@ class EnterpriseReportServiceTest(unittest.TestCase):
         with self.assertRaises(ReportConsistencyError):
             validate_enterprise_assessment(enterprise, snapshot, _turns())
 
-    def test_guard_requires_unknowns_to_cover_every_unverified_dimension(self) -> None:
+    def test_guard_allows_partial_unknown_coverage_with_bounded_signal(self) -> None:
         snapshot = _snapshot(
             unverified_dimensions=["role_dim_05", "role_dim_06"]
         )
         enterprise = _enterprise(
             snapshot=snapshot,
             unknowns=[_signal(dimension_ids=["role_dim_05"])],
+        )
+
+        validate_enterprise_assessment(enterprise, snapshot, _turns())
+
+    def test_guard_rejects_unknown_signal_for_verified_dimension(self) -> None:
+        snapshot = _snapshot(unverified_dimensions=["role_dim_06"])
+        enterprise = _enterprise(
+            snapshot=snapshot,
+            unknowns=[
+                _signal(dimension_ids=["role_dim_06", "role_dim_01"])
+            ],
         )
 
         with self.assertRaises(ReportConsistencyError):
@@ -299,8 +310,53 @@ class EnterpriseReportServiceTest(unittest.TestCase):
             snapshot=snapshot,
             risks=[
                 _signal(title="门槛维度风险", dimension_ids=["role_dim_02"]),
-                _signal(title="额外观察风险", dimension_ids=["role_dim_01"]),
+                _signal(title="额外观察风险"),
             ],
+        )
+
+        validate_enterprise_assessment(enterprise, snapshot, _turns())
+
+    def test_guard_rejects_extra_risk_on_verified_dimension_without_risk(self) -> None:
+        snapshot = _snapshot()
+        snapshot.radar_dimensions[1].score_reasons = [
+            ScoreReason(
+                reason_type="risk",
+                text="该维度存在限制证据。",
+                evidence_ids=["E001"],
+            ),
+            ScoreReason(
+                reason_type="unverified",
+                text="仍需补充场景观察。",
+            ),
+        ]
+        enterprise = _enterprise(
+            snapshot=snapshot,
+            risks=[
+                _signal(title="门槛维度风险", dimension_ids=["role_dim_02"]),
+                _signal(title="错误额外维度风险", dimension_ids=["role_dim_01"]),
+            ],
+        )
+
+        with self.assertRaises(ReportConsistencyError):
+            validate_enterprise_assessment(enterprise, snapshot, _turns())
+
+    def test_guard_allows_risks_to_cover_only_one_of_multiple_risk_dimensions(self) -> None:
+        snapshot = _snapshot()
+        for index in (0, 1):
+            snapshot.radar_dimensions[index].score_reasons = [
+                ScoreReason(
+                    reason_type="risk",
+                    text="该维度存在限制证据。",
+                    evidence_ids=["E001"],
+                ),
+                ScoreReason(
+                    reason_type="unverified",
+                    text="仍需补充场景观察。",
+                ),
+            ]
+        enterprise = _enterprise(
+            snapshot=snapshot,
+            risks=[_signal(title="一个风险重点", dimension_ids=["role_dim_01"])],
         )
 
         validate_enterprise_assessment(enterprise, snapshot, _turns())
