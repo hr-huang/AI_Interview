@@ -688,6 +688,149 @@ def _build_c06(profile: RoleCompetencyProfile) -> ReportCalibrationCase:
     )
 
 
+def build_public_student_showcase_case() -> ReportCalibrationCase:
+    """Build the student-scoped public demo without altering calibration cases."""
+
+    profile = load_role_profile(_ROLE_FAMILY, _ROLE_PROFILE_VERSION)
+    turns = [
+        _turn(
+            "DEMO_STUDENT",
+            1,
+            requirement_id="req_01",
+            question_mode="system_design",
+            question=(
+                "你在校招助手项目中为什么选择显式 Workflow，而不是让一个 Agent "
+                "自行完成全部步骤？请结合状态和工具边界说明。"
+            ),
+            answer=(
+                "课程团队最初使用单 Agent，但调试时无法确认失败发生在哪一步。我把流程改为简历解析、"
+                "岗位检索、证据匹配和人工确认四个节点，状态只保存候选人 ID、来源版本、当前步骤和"
+                "工具结果引用；涉及写入或低置信度结论时转人工。职责独立但共享状态，所以没有继续拆成"
+                "多 Agent。改造后可以逐节点回放，也减少了重复调用。"
+            ),
+        ),
+        _turn(
+            "DEMO_STUDENT",
+            2,
+            requirement_id="req_02",
+            question_mode="scenario",
+            question=(
+                "如果业务只说“让岗位推荐更准确”，你会如何把它变成可验收任务？"
+            ),
+            answer=(
+                "我会先确认候选人、岗位范围和不能使用的敏感字段，再把输出定义为带理由的岗位列表。"
+                "离线使用 Top-K 命中率和理由引用正确率，在线观察点击率与人工驳回率；规则过滤用"
+                "确定性代码，模型只负责需要语义判断的部分。"
+            ),
+        ),
+        _turn(
+            "DEMO_STUDENT",
+            3,
+            requirement_id="req_03",
+            question_mode="project_deep_dive",
+            question=(
+                "项目中的 Context、RAG 和工具调用是怎样连接的？你如何避免旧岗位信息影响回答？"
+            ),
+            answer=(
+                "我把当前任务和实时状态放进 Context，岗位材料按发布日期过滤后检索并保留引用；"
+                "工具调用前检查参数格式和权限。项目做过过期文档测试，但还没有完整比较不同记忆策略"
+                "或建立独立的工具调用评测集。"
+            ),
+        ),
+        _turn(
+            "DEMO_STUDENT",
+            4,
+            requirement_id="req_04",
+            question_mode="project_deep_dive",
+            question=(
+                "你使用 AI 编程工具完成了哪些工作？如何证明交付物不是“能运行就算完成”？"
+            ),
+            answer=(
+                "我先写输入输出契约和验收样例，再让 AI 生成解析与接口代码；我逐段审查依赖和异常路径，"
+                "补充单元测试、接口测试和固定样本回放。一次 AI 把空文件当成功结果，我用失败用例发现后"
+                "修正，并把该样本加入回归集。"
+            ),
+        ),
+        _turn(
+            "DEMO_STUDENT",
+            5,
+            requirement_id="req_05",
+            question_mode="scenario",
+            question=(
+                "如果岗位推荐工具超时后返回了不确定结果，你会怎样恢复，并避免系统作出高风险决定？"
+            ),
+            answer=(
+                "读取请求可以按错误类型限次重试，写操作使用幂等键；仍失败时降级为只展示已有证据。"
+                "模型不能直接淘汰候选人，高风险结论必须人工确认，日志保留请求、模型版本、工具结果和"
+                "审批记录。我会用超时注入、重复写入率和人工接管成功率验收。"
+            ),
+        ),
+    ]
+    evidences = [
+        _evidence(
+            "DEMO_STUDENT",
+            index,
+            turn,
+            observation=(
+                "公开演示观察：该回答来自应届候选人的课程、竞赛或实习项目，"
+                "并提供了可回溯的工程事实。"
+            ),
+        )
+        for index, turn in enumerate(turns, start=1)
+    ]
+    req_01_hits = [
+        *_criterion_ids(profile, "role_dim_01", "minimum_criteria"),
+        *_criterion_ids(profile, "role_dim_01", "excellence_signals"),
+    ]
+    req_03_minimum = _criterion_ids(
+        profile,
+        "role_dim_03",
+        "minimum_criteria",
+    )
+    return _case(
+        profile,
+        case_id="DEMO_STUDENT",
+        title="应届候选人完整演示",
+        description=(
+            "一名应届候选人使用课程、竞赛与实习项目回答五轮动态问题；"
+            "系统区分已证明能力、部分证据和待复试验证项。"
+        ),
+        turns=turns,
+        evidences=evidences,
+        expectation=ReportCalibrationExpectation(
+            required_rubric_hits={
+                "req_01": req_01_hits,
+                "req_02": _criterion_ids(
+                    profile,
+                    "role_dim_02",
+                    "minimum_criteria",
+                ),
+                "req_03": req_03_minimum[:1],
+                "req_04": _criterion_ids(
+                    profile,
+                    "role_dim_04",
+                    "minimum_criteria",
+                ),
+                "req_05": _criterion_ids(
+                    profile,
+                    "role_dim_05",
+                    "minimum_criteria",
+                ),
+            },
+            requirement_level_ranges={
+                "req_01": _level_range("L3", "L3"),
+                "req_02": _level_range("L3", "L3"),
+                "req_03": _level_range("L1", "L1"),
+                "req_04": _level_range("L3", "L3"),
+                "req_05": _level_range("L3", "L3"),
+            },
+            expected_unverified_requirements=["req_06"],
+            expected_unverified_dimensions=["role_dim_06"],
+            job_match_published=True,
+        ),
+    )
+
+
 def load_report_calibration_cases() -> tuple[ReportCalibrationCase, ...]:
     """Return the six deterministic report-boundary inputs in canonical order."""
 
@@ -712,6 +855,7 @@ def get_report_calibration_case(case_id: str) -> ReportCalibrationCase:
 
 
 __all__ = [
+    "build_public_student_showcase_case",
     "get_report_calibration_case",
     "load_report_calibration_cases",
 ]
