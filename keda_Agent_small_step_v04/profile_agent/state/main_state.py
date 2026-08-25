@@ -33,6 +33,7 @@ from profile_agent.schemas.runtime_schema import (
 
 class MainState(TypedDict, total=False):
     # 1) API/前端传入的原始输入
+    assessment_id: str
     resume_text: str
     jd_text: str | None
     target_role: str

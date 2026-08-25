@@ -18,7 +18,9 @@ from pydantic import BaseModel, Field, field_validator
 
 from profile_agent.schemas.claim_schema import ClaimRegistry
 from profile_agent.schemas.interview_schema import InterviewPlan
+from profile_agent.schemas.job_schema import JobProfile
 from profile_agent.schemas.report_schema import AssessmentReport, ScoringBlueprint
+from profile_agent.schemas.resume_schema import ResumeProfile
 from profile_agent.schemas.runtime_schema import InterviewRuntimeState, InterviewTurn
 from profile_agent.web.assessment_service import jsonable
 from profile_agent.web.schemas import (
@@ -309,6 +311,7 @@ class InterviewService:
         state: dict[str, Any] = dict(record.pre_interview_state or {})
         state.update(
             {
+                "assessment_id": record.id,
                 "resume_text": record.resume_text,
                 "jd_text": record.jd_text,
                 "target_role": record.target_role,
@@ -324,6 +327,15 @@ class InterviewService:
                 "evidences": [],
             }
         )
+        # The pre-interview graph stores JSON in the repository.  Restore the
+        # two typed context blocks before the interview graph reaches its
+        # terminal report node; absent legacy blocks remain absent/optional.
+        if state.get("resume_profile") is not None:
+            state["resume_profile"] = ResumeProfile.model_validate(
+                state["resume_profile"]
+            )
+        if state.get("job_profile") is not None:
+            state["job_profile"] = JobProfile.model_validate(state["job_profile"])
         return state
 
     def _read_graph_state(

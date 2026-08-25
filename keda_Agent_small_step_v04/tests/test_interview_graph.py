@@ -14,7 +14,9 @@ from profile_agent.schemas.interview_schema import (
     GeneratedQuestion,
     InterviewPlan,
 )
+from profile_agent.schemas.job_schema import JobProfile, JobRequirement
 from profile_agent.schemas.report_schema import ScoringBlueprint
+from profile_agent.schemas.resume_schema import ResumeProfile
 from profile_agent.schemas.runtime_schema import (
     AnswerProcessingResult,
     Evidence,
@@ -79,8 +81,16 @@ class InterviewGraphTest(unittest.TestCase):
 
     def make_initial_state(self) -> dict:
         return {
+            "assessment_id": "ast_001",
             "interview_plan": self.make_plan(),
             "claim_registry": ClaimRegistry(),
+            "resume_profile": ResumeProfile(education=["本科：计算机科学与技术"]),
+            "job_profile": JobProfile(
+                role="AI 应用工程师",
+                requirements=[
+                    JobRequirement(name="Agent Workflow", description="状态与工具边界")
+                ],
+            ),
         }
 
     def question_generator(
@@ -160,6 +170,18 @@ class InterviewGraphTest(unittest.TestCase):
             self.report_calls[0]["scoring_blueprint"].model_dump(),
             blueprint.model_dump(),
         )
+
+    def test_report_generator_receives_assessment_and_candidate_context(self) -> None:
+        graph = self.build_graph()
+        config = self.config("report-context")
+
+        graph.invoke(self.make_initial_state(), config)
+        graph.invoke(Command(resume="strong answer"), config)
+
+        call = self.report_calls[0]
+        self.assertEqual(call["candidate_id"], "ast_001")
+        self.assertIn("本科", call["resume_profile"].education[0])
+        self.assertTrue(call["job_profile"].requirements)
 
     @staticmethod
     def config(thread_id: str) -> dict:

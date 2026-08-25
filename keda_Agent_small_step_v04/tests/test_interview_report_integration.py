@@ -13,6 +13,8 @@ from profile_agent.schemas.interview_schema import (
     GeneratedQuestion,
     InterviewPlan,
 )
+from profile_agent.schemas.job_schema import JobProfile, JobRequirement
+from profile_agent.schemas.resume_schema import ResumeProfile
 from profile_agent.schemas.runtime_schema import (
     AnswerProcessingResult,
     Evidence,
@@ -37,6 +39,9 @@ class ReportGeneratorRecorder:
         claim_registry,
         target_role,
         scoring_blueprint=None,
+        candidate_id="未提供",
+        resume_profile=None,
+        job_profile=None,
     ):
         self.calls.append(
             {
@@ -47,6 +52,9 @@ class ReportGeneratorRecorder:
                 "claim_registry": claim_registry,
                 "target_role": target_role,
                 "scoring_blueprint": scoring_blueprint,
+                "candidate_id": candidate_id,
+                "resume_profile": resume_profile,
+                "job_profile": job_profile,
             }
         )
         return self.result
@@ -83,9 +91,17 @@ class InterviewReportIntegrationTest(unittest.TestCase):
 
     def make_initial_state(self) -> dict[str, object]:
         return {
+            "assessment_id": "ast_001",
             "interview_plan": self.make_plan(),
             "claim_registry": ClaimRegistry(),
             "target_role": "目标岗位",
+            "resume_profile": ResumeProfile(education=["本科：计算机科学与技术"]),
+            "job_profile": JobProfile(
+                role="目标岗位",
+                requirements=[
+                    JobRequirement(name="Agent Workflow", description="状态与工具边界")
+                ],
+            ),
         }
 
     @staticmethod
@@ -157,6 +173,9 @@ class InterviewReportIntegrationTest(unittest.TestCase):
         self.assertEqual(call["evidences"][0].id, "evidence_a")
         self.assertEqual(call["claim_registry"], ClaimRegistry())
         self.assertEqual(call["target_role"], "目标岗位")
+        self.assertEqual(call["candidate_id"], "ast_001")
+        self.assertIn("本科", call["resume_profile"].education[0])
+        self.assertTrue(call["job_profile"].requirements)
 
         state = graph.get_state(config).values
         self.assertIsInstance(state["next_action"], FinishAction)

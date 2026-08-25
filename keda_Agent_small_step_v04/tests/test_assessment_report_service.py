@@ -25,6 +25,8 @@ from profile_agent.schemas.runtime_schema import (
     InterviewTurn,
     RequirementProgress,
 )
+from profile_agent.schemas.job_schema import JobProfile, JobRequirement
+from profile_agent.schemas.resume_schema import ResumeProfile
 from profile_agent.services.report_writer_service import fallback_report_narrative
 
 
@@ -308,6 +310,10 @@ def _generate(
     role_family: str = "ai_application_engineering",
     scoring_blueprint: ScoringBlueprint | None = None,
     blueprint_builder=None,
+    candidate_id: str = "未提供",
+    resume_profile: ResumeProfile | None = None,
+    job_profile: JobProfile | None = None,
+    evidences: list[Evidence] | None = None,
 ):
     from profile_agent.services.assessment_report_service import (
         generate_assessment_report,
@@ -324,16 +330,108 @@ def _generate(
         plan=plan,
         runtime_state=runtime or _make_runtime(plan),
         turns=_make_turns(),
-        evidences=list(reversed(_make_evidence())),
+        evidences=list(reversed(evidences or _make_evidence())),
         claim_registry=_make_claim_registry(),
         role_family=role_family,
         role_profile_version="2026-H2",
         semantic_services=services.as_mapping(),
+        candidate_id=candidate_id,
+        resume_profile=resume_profile,
+        job_profile=job_profile,
         **kwargs,
     )
 
 
 class AssessmentReportServiceTest(unittest.TestCase):
+    def test_enterprise_assembly_preserves_candidate_context_and_decision(self) -> None:
+        from profile_agent.services.score_engine_service import (
+            calculate_score_snapshot,
+        )
+
+        def conditional_score_engine(profile, blueprint, assessments, claims):
+            snapshot = calculate_score_snapshot(
+                profile,
+                blueprint,
+                assessments,
+                claims,
+            )
+            return snapshot.model_copy(
+                update={
+                    "job_match": snapshot.job_match.model_copy(
+                        update={"limiting_reasons": []}
+                    )
+                }
+            )
+
+        resume_profile = ResumeProfile(
+            education=["本科：计算机科学与技术"],
+            skills=["Python", "Agent"],
+        )
+        job_profile = JobProfile(
+            role="AI 应用工程师",
+            responsibilities=["建设 Agent 应用"],
+            requirements=[
+                JobRequirement(name="Agent Workflow", description="状态与工具边界"),
+                JobRequirement(name="RAG", description="检索增强生成"),
+            ],
+        )
+
+        report = _generate(
+            _make_services(score_engine=conditional_score_engine),
+            candidate_id="ast_001",
+            resume_profile=resume_profile,
+            job_profile=job_profile,
+        )
+
+        self.assertEqual(report.candidate_overview.candidate_id, "ast_001")
+        self.assertIn("本科", report.candidate_overview.education_summary or "")
+        self.assertTrue(report.candidate_overview.jd_focus)
+        self.assertEqual(
+            report.candidate_overview.interview_rounds,
+            len(_make_turns()),
+        )
+        self.assertEqual(
+            report.enterprise_assessment.decision,
+            "CONDITIONAL_PROCEED",
+        )
+
+    def test_enterprise_writer_failure_uses_dimension_fallback_and_guard(self) -> None:
+        from profile_agent.services.score_engine_service import (
+            calculate_score_snapshot,
+        )
+
+        def conditional_score_engine(profile, blueprint, assessments, claims):
+            snapshot = calculate_score_snapshot(
+                profile,
+                blueprint,
+                assessments,
+                claims,
+            )
+            return snapshot.model_copy(
+                update={
+                    "job_match": snapshot.job_match.model_copy(
+                        update={"limiting_reasons": []}
+                    )
+                }
+            )
+
+        def fail_writer(snapshot, evidences, role_profile):
+            raise RuntimeError("narrative writer offline")
+
+        report = _generate(
+            _make_services(
+                writer=fail_writer,
+                score_engine=conditional_score_engine,
+            ),
+        )
+
+        self.assertTrue(report.enterprise_assessment.overall_assessment)
+        self.assertLessEqual(len(report.enterprise_assessment.reinterview_plan), 3)
+        self.assertEqual(
+            report.enterprise_assessment.decision,
+            "CONDITIONAL_PROCEED",
+        )
+
     def test_supplied_blueprint_is_reused_without_builder_and_reaches_matcher(self) -> None:
         services = _make_services()
         frozen = _make_blueprint()

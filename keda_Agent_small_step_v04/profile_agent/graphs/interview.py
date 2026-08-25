@@ -255,6 +255,9 @@ def build_interview_graph(
             claim_registry=state.get("claim_registry"),
             target_role=state.get("target_role"),
             scoring_blueprint=state.get("scoring_blueprint"),
+            candidate_id=state.get("assessment_id", "未提供"),
+            resume_profile=state.get("resume_profile"),
+            job_profile=state.get("job_profile"),
         )
         return {"assessment_report": AssessmentReport.model_validate(report)}
 
