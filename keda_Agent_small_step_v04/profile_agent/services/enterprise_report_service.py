@@ -15,12 +15,16 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from profile_agent.schemas.report_schema import (
     ConfidenceLevel,
+    DecisionSignal,
     EnterpriseAssessment,
+    EvidenceExcerpt,
     HiringDecisionCode,
+    RoleCompetencyProfile,
     ScoreReason,
     ScoreSnapshot,
 )
-from profile_agent.schemas.runtime_schema import InterviewTurn
+from profile_agent.schemas.runtime_schema import Evidence, InterviewTurn
+from profile_agent.services.role_profile_service import load_role_profile
 
 
 _DECISION_LABELS: dict[HiringDecisionCode, str] = {
@@ -515,9 +519,660 @@ def validate_enterprise_assessment(
         raise ReportConsistencyError("；".join(errors))
 
 
+_CONFIDENCE_RANK = {"low": 0, "medium": 1, "high": 2}
+_RISK_REASON_RANK = {"critical_error": 0, "risk": 1}
+_DEFAULT_EVIDENCE_LIMITATION = "该证据只支持当前场景，迁移能力仍需独立验证。"
+_INTERNAL_TEXT_ID = re.compile(
+    r"\b(?:role_dim_\d+|req_[A-Za-z0-9_]+|"
+    r"(?:d\d+_(?:min|exc|err|alt)_[A-Za-z0-9_]+)|"
+    r"(?:ev(?:idence)?_[A-Za-z0-9_]+)|E\d+)\b"
+)
+
+
+def _normalise_evidences(
+    evidences: Iterable[Evidence],
+) -> list[Evidence]:
+    try:
+        return [Evidence.model_validate(evidence) for evidence in evidences]
+    except (ValidationError, TypeError, ValueError) as exc:
+        raise ReportConsistencyError("Evidence 不符合报告契约") from exc
+
+
+def _normalise_profile(
+    profile: RoleCompetencyProfile,
+) -> RoleCompetencyProfile:
+    try:
+        return RoleCompetencyProfile.model_validate(profile)
+    except (ValidationError, TypeError, ValueError) as exc:
+        raise ReportConsistencyError("RoleCompetencyProfile 不符合报告契约") from exc
+
+
+def _profile_for_snapshot(snapshot: ScoreSnapshot) -> RoleCompetencyProfile:
+    try:
+        profile = load_role_profile(
+            snapshot.role_family,
+            snapshot.role_profile_version,
+        )
+    except (OSError, TypeError, ValueError) as exc:
+        raise ReportConsistencyError(
+            "无法加载 ScoreSnapshot 对应的 Role Pack"
+        ) from exc
+    return _normalise_profile(profile)
+
+
+def _unique_index(
+    items: Iterable[object],
+    item_kind: str,
+    *,
+    id_field: str = "id",
+) -> dict[str, object]:
+    indexed: dict[str, object] = {}
+    for item in items:
+        item_id = getattr(item, id_field, None)
+        if not isinstance(item_id, str) or not item_id.strip():
+            raise ReportConsistencyError(f"{item_kind} 必须有非空 ID")
+        if item_id in indexed:
+            raise ReportConsistencyError(f"{item_kind} ID 重复: {item_id}")
+        indexed[item_id] = item
+    return indexed
+
+
+def _profile_dimension_index(
+    profile: RoleCompetencyProfile,
+) -> dict[str, object]:
+    return _unique_index(profile.dimensions, "Role Dimension")
+
+
+def _reason_entries(
+    snapshot: ScoreSnapshot,
+) -> list[tuple[str | None, object | None, ScoreReason]]:
+    """Return score reasons in stable, provenance-oriented order."""
+
+    entries: list[tuple[str | None, object | None, ScoreReason]] = []
+    for assessment in snapshot.requirement_assessments:
+        for reason in assessment.assessment_reasons:
+            entries.append((assessment.dimension_id, assessment, reason))
+    for radar in snapshot.radar_dimensions:
+        for reason in radar.score_reasons:
+            entries.append((radar.dimension_id, None, reason))
+    for reason in snapshot.job_match.limiting_reasons:
+        entries.append((None, None, reason))
+    return entries
+
+
+def _evidence_contexts(
+    snapshot: ScoreSnapshot,
+) -> dict[str, list[tuple[str | None, object | None, ScoreReason]]]:
+    contexts: dict[
+        str,
+        list[tuple[str | None, object | None, ScoreReason]],
+    ] = {}
+    for dimension_id, assessment, reason in _reason_entries(snapshot):
+        for evidence_id in reason.evidence_ids:
+            contexts.setdefault(evidence_id, []).append(
+                (dimension_id, assessment, reason)
+            )
+    return contexts
+
+
+def _evidence_assessment_matches(
+    evidence: Evidence,
+    snapshot: ScoreSnapshot,
+    contexts: Iterable[tuple[str | None, object | None, ScoreReason]],
+) -> list[object]:
+    requirement_ids = set(evidence.requirement_ids)
+    matches = [
+        assessment
+        for assessment in snapshot.requirement_assessments
+        if assessment.requirement_id in requirement_ids
+    ]
+    if matches:
+        return matches
+    return [
+        assessment
+        for _, assessment, _ in contexts
+        if assessment is not None and assessment not in matches
+    ]
+
+
+def _criterion_texts(
+    profile: RoleCompetencyProfile,
+    dimension_ids: Iterable[str | None],
+    reasons: Iterable[ScoreReason],
+) -> list[str]:
+    dimensions = _profile_dimension_index(profile)
+    ordered_dimensions = [
+        dimensions[dimension_id]
+        for dimension_id in dimension_ids
+        if dimension_id in dimensions
+    ]
+    if not ordered_dimensions:
+        ordered_dimensions = list(profile.dimensions)
+
+    all_criteria_by_id: dict[str, str] = {}
+    for dimension in ordered_dimensions:
+        for criterion in (
+            dimension.minimum_criteria
+            + dimension.excellence_signals
+            + dimension.critical_errors
+            + dimension.accepted_alternatives
+        ):
+            all_criteria_by_id.setdefault(criterion.id, criterion.text)
+
+    texts: list[str] = []
+    for reason in reasons:
+        for rubric_id in reason.rubric_signal_ids:
+            criterion_text = all_criteria_by_id.get(rubric_id)
+            if criterion_text and criterion_text not in texts:
+                texts.append(criterion_text)
+
+    if texts:
+        return texts
+
+    # A score reason may be evidence-backed without carrying a rubric ID
+    # (for example, a hand-authored snapshot).  Keep the interpretation
+    # enterprise-readable by using the dimension's minimum criterion text.
+    for dimension in ordered_dimensions:
+        for criterion in dimension.minimum_criteria:
+            if criterion.text not in texts:
+                texts.append(criterion.text)
+    return texts
+
+
+def _clean_enterprise_text(text: str) -> str:
+    cleaned = _INTERNAL_TEXT_ID.sub("", text).strip()
+    cleaned = re.sub(r"\s{2,}", " ", cleaned)
+    cleaned = re.sub(r"[：:，,、；;]\s*[。.!！]", "。", cleaned)
+    return cleaned.strip(" ，,、:：；;")
+
+
+def _render_reason(
+    reason: ScoreReason,
+    *,
+    criterion_texts: Iterable[str],
+) -> str:
+    readable_reason = _clean_enterprise_text(reason.text)
+    criteria = [text for text in criterion_texts if text]
+    if criteria:
+        if readable_reason:
+            return readable_reason + "（对应岗位要求：" + "；".join(criteria) + "）"
+        return "对应岗位要求：" + "；".join(criteria)
+    return readable_reason or "该结论来自已锁定的结构化证据。"
+
+
+def _reason_conclusion(
+    reason: ScoreReason,
+    dimension_name: str | None,
+) -> str:
+    name = f"“{dimension_name}”" if dimension_name else "当前岗位判断"
+    if reason.reason_type == "strength":
+        return f"该证据支持{name}已有可验证的岗位相关表现。"
+    if reason.reason_type == "critical_error":
+        return f"该证据提示{name}存在需要重点关注的关键限制。"
+    if reason.reason_type == "risk":
+        return f"该证据限制{name}的当前判断。"
+    return f"该证据与{name}相关，但尚不足以形成完整结论。"
+
+
+def _reason_interpretation(
+    profile: RoleCompetencyProfile,
+    contexts: list[tuple[str | None, object | None, ScoreReason]],
+) -> str:
+    dimension_ids = [dimension_id for dimension_id, _, _ in contexts]
+    reasons = [reason for _, _, reason in contexts]
+    criterion_texts = _criterion_texts(profile, dimension_ids, reasons)
+    if criterion_texts:
+        return "该片段与岗位要求的对应点包括：" + "；".join(criterion_texts) + "。"
+    dimensions = _profile_dimension_index(profile)
+    names = [
+        dimensions[dimension_id].name
+        for dimension_id in dimension_ids
+        if dimension_id in dimensions
+    ]
+    if names:
+        return "该片段与“" + "、".join(dict.fromkeys(names)) + "”相关。"
+    return "该片段是当前岗位判断的可追溯证据。"
+
+
+def _reason_limitation(
+    profile: RoleCompetencyProfile,
+    assessments: Iterable[object],
+) -> str:
+    dimensions = _profile_dimension_index(profile)
+    unmet_texts: list[str] = []
+    for assessment in assessments:
+        dimension_id = getattr(assessment, "dimension_id", None)
+        dimension = dimensions.get(dimension_id)
+        if dimension is None:
+            continue
+        if getattr(assessment, "accepted_alternative_ids", []):
+            continue
+        satisfied_ids = set(
+            getattr(assessment, "satisfied_minimum_criterion_ids", [])
+        )
+        for criterion in dimension.minimum_criteria:
+            if criterion.id not in satisfied_ids and criterion.text not in unmet_texts:
+                unmet_texts.append(criterion.text)
+    if unmet_texts:
+        return "尚未验证：" + "；".join(unmet_texts) + "。"
+    return _DEFAULT_EVIDENCE_LIMITATION
+
+
+def build_evidence_excerpts(
+    snapshot: ScoreSnapshot,
+    evidences: Iterable[Evidence],
+    turns: Iterable[InterviewTurn],
+) -> list[EvidenceExcerpt]:
+    """Build short, auditable excerpts from score-reason evidence only.
+
+    The answer itself is never used as a fallback quote.  An excerpt is
+    published only when the original ``Evidence.source_excerpt`` is non-empty
+    and is an exact substring of its linked interview answer.
+    """
+
+    snapshot = _normalise_snapshot(snapshot)
+    normalized_evidences = _normalise_evidences(evidences)
+    normalized_turns = _normalise_turns(turns)
+    evidences_by_id = _unique_index(normalized_evidences, "Evidence")
+    turns_by_id = _unique_index(normalized_turns, "InterviewTurn")
+    profile = _profile_for_snapshot(snapshot)
+    contexts_by_evidence = _evidence_contexts(snapshot)
+
+    ordered_evidence_ids: list[str] = []
+    for _, _, reason in _reason_entries(snapshot):
+        for evidence_id in reason.evidence_ids:
+            if evidence_id not in ordered_evidence_ids:
+                ordered_evidence_ids.append(evidence_id)
+
+    excerpts: list[EvidenceExcerpt] = []
+    dimensions = _profile_dimension_index(profile)
+    for evidence_id in ordered_evidence_ids:
+        evidence = evidences_by_id.get(evidence_id)
+        contexts = contexts_by_evidence.get(evidence_id, [])
+        if evidence is None or not contexts:
+            continue
+        turn = turns_by_id.get(evidence.turn_id)
+        if turn is None:
+            continue
+        quote = evidence.source_excerpt
+        answer = turn.answer or ""
+        if not quote or not quote.strip() or not answer or quote not in answer:
+            continue
+
+        dimension_name = next(
+            (
+                dimensions[dimension_id].name
+                for dimension_id, _, _ in contexts
+                if dimension_id in dimensions
+            ),
+            None,
+        )
+        reasons = [reason for _, _, reason in contexts]
+        first_reason = reasons[0]
+        assessments = _evidence_assessment_matches(evidence, snapshot, contexts)
+        excerpts.append(
+            EvidenceExcerpt(
+                evidence_id=evidence.id,
+                turn_id=turn.id,
+                conclusion=_reason_conclusion(first_reason, dimension_name),
+                quote=quote,
+                interpretation=_reason_interpretation(profile, contexts),
+                limitation=_reason_limitation(profile, assessments),
+            )
+        )
+    return excerpts
+
+
+def _dimension_reasons(
+    snapshot: ScoreSnapshot,
+) -> dict[str, list[ScoreReason]]:
+    reasons_by_dimension: dict[str, list[ScoreReason]] = {}
+    for radar in snapshot.radar_dimensions:
+        reasons_by_dimension.setdefault(radar.dimension_id, []).extend(
+            radar.score_reasons
+        )
+    for assessment in snapshot.requirement_assessments:
+        reasons_by_dimension.setdefault(assessment.dimension_id, []).extend(
+            assessment.assessment_reasons
+        )
+    return reasons_by_dimension
+
+
+def _dimension_evidence_ids(
+    snapshot: ScoreSnapshot,
+) -> dict[str, list[str]]:
+    evidence_by_dimension: dict[str, list[str]] = {}
+
+    def add(dimension_id: str, evidence_ids: Iterable[str]) -> None:
+        values = evidence_by_dimension.setdefault(dimension_id, [])
+        for evidence_id in evidence_ids:
+            if evidence_id not in values:
+                values.append(evidence_id)
+
+    for radar in snapshot.radar_dimensions:
+        for reason in radar.score_reasons:
+            add(radar.dimension_id, reason.evidence_ids)
+    for assessment in snapshot.requirement_assessments:
+        add(
+            assessment.dimension_id,
+            assessment.supporting_evidence_ids
+            + assessment.limiting_evidence_ids
+            + assessment.transfer_evidence_ids,
+        )
+        for reason in assessment.assessment_reasons:
+            add(assessment.dimension_id, reason.evidence_ids)
+    return evidence_by_dimension
+
+
+def _signal_text(
+    profile: RoleCompetencyProfile,
+    dimension_id: str | None,
+    reasons: list[ScoreReason],
+    *,
+    fallback: str | None = None,
+) -> str:
+    dimensions = _profile_dimension_index(profile)
+    dimension = dimensions.get(dimension_id) if dimension_id else None
+    rendered: list[str] = []
+    for reason in reasons:
+        criteria = _criterion_texts(profile, [dimension_id], [reason])
+        text = _render_reason(reason, criterion_texts=criteria)
+        if text not in rendered:
+            rendered.append(text)
+    body = "；".join(rendered)
+    if body:
+        if reason_type := reasons[0].reason_type:
+            if reason_type == "critical_error":
+                prefix = "关键风险："
+            elif reason_type == "risk":
+                prefix = "限制信号："
+            elif reason_type == "strength":
+                prefix = "已验证表现："
+            else:
+                prefix = "观察结论："
+            body = prefix + body
+    if body:
+        return body
+    if fallback:
+        return fallback
+    if dimension is not None:
+        return f"“{dimension.name}”当前有待补充可验证证据。"
+    return "当前岗位判断存在待核验限制。"
+
+
+def build_decision_signals(
+    snapshot: ScoreSnapshot,
+    profile: RoleCompetencyProfile,
+) -> tuple[list[DecisionSignal], list[DecisionSignal], list[DecisionSignal]]:
+    """Select bounded enterprise signals from the frozen score snapshot."""
+
+    snapshot = _normalise_snapshot(snapshot)
+    profile = _normalise_profile(profile)
+    if (
+        snapshot.role_family != profile.role_family
+        or snapshot.role_profile_version != profile.version
+    ):
+        raise ReportConsistencyError(
+            "ScoreSnapshot 与 RoleCompetencyProfile 的版本或岗位不一致"
+        )
+
+    dimensions = _profile_dimension_index(profile)
+    radar_by_id = _unique_index(
+        snapshot.radar_dimensions,
+        "Radar Dimension",
+        id_field="dimension_id",
+    )
+    reasons_by_dimension = _dimension_reasons(snapshot)
+    evidence_by_dimension = _dimension_evidence_ids(snapshot)
+    dimension_order = {
+        dimension.id: index for index, dimension in enumerate(profile.dimensions)
+    }
+
+    strength_candidates: list[tuple[tuple[int, float, int], str, list[ScoreReason]]] = []
+    for dimension_id, radar_object in radar_by_id.items():
+        radar = radar_object
+        if radar.level == "UNVERIFIED" or radar.score is None:
+            continue
+        strength_reasons = [
+            reason
+            for reason in reasons_by_dimension.get(dimension_id, [])
+            if reason.reason_type == "strength" and reason.evidence_ids
+        ]
+        if not strength_reasons:
+            continue
+        strength_candidates.append(
+            (
+                (
+                    -_CONFIDENCE_RANK[radar.confidence],
+                    -radar.score,
+                    dimension_order.get(dimension_id, len(dimension_order)),
+                ),
+                dimension_id,
+                strength_reasons,
+            )
+        )
+    strength_candidates.sort(key=lambda item: item[0])
+    strengths: list[DecisionSignal] = []
+    for _, dimension_id, reasons in strength_candidates[:3]:
+        radar = radar_by_id[dimension_id]
+        evidence_ids = list(evidence_by_dimension.get(dimension_id, []))
+        evidence_ids = [
+            evidence_id
+            for reason in reasons
+            for evidence_id in reason.evidence_ids
+            if evidence_id not in evidence_ids
+        ] + evidence_ids
+        strengths.append(
+            DecisionSignal(
+                title=dimensions.get(dimension_id, radar).name,
+                text=_signal_text(profile, dimension_id, reasons),
+                dimension_ids=[dimension_id],
+                evidence_ids=list(dict.fromkeys(evidence_ids)),
+                confidence=radar.confidence,
+            )
+        )
+
+    risk_candidates: dict[
+        str | None,
+        tuple[int, list[ScoreReason], list[str]],
+    ] = {}
+
+    def add_risk(
+        dimension_id: str | None,
+        reason_rank: int,
+        reason: ScoreReason | None,
+        evidence_ids: Iterable[str] = (),
+    ) -> None:
+        current = risk_candidates.get(dimension_id)
+        if current is None:
+            risk_candidates[dimension_id] = (
+                reason_rank,
+                [reason] if reason is not None else [],
+                list(dict.fromkeys(evidence_ids)),
+            )
+            return
+        current_rank, current_reasons, current_evidence_ids = current
+        if reason is not None:
+            current_reasons.append(reason)
+        for evidence_id in evidence_ids:
+            if evidence_id not in current_evidence_ids:
+                current_evidence_ids.append(evidence_id)
+        risk_candidates[dimension_id] = (
+            min(current_rank, reason_rank),
+            current_reasons,
+            current_evidence_ids,
+        )
+
+    for dimension_id, reasons in reasons_by_dimension.items():
+        radar = radar_by_id.get(dimension_id)
+        if radar is not None and radar.level == "UNVERIFIED":
+            continue
+        for reason in reasons:
+            reason_rank = _RISK_REASON_RANK.get(reason.reason_type)
+            if reason_rank is not None:
+                add_risk(dimension_id, reason_rank, reason, reason.evidence_ids)
+    for assessment in snapshot.requirement_assessments:
+        radar = radar_by_id.get(assessment.dimension_id)
+        if (
+            radar is not None
+            and radar.level == "UNVERIFIED"
+        ):
+            continue
+        if (
+            assessment.limiting_evidence_ids
+            and assessment.dimension_id not in risk_candidates
+        ):
+            add_risk(
+                assessment.dimension_id,
+                _RISK_REASON_RANK["risk"],
+                ScoreReason(
+                    reason_type="risk",
+                    text="存在带有明确限制的岗位证据。",
+                    evidence_ids=list(assessment.limiting_evidence_ids),
+                ),
+                assessment.limiting_evidence_ids,
+            )
+
+    evidence_dimensions: dict[str, list[str]] = {}
+    for dimension_id, evidence_ids in evidence_by_dimension.items():
+        for evidence_id in evidence_ids:
+            evidence_dimensions.setdefault(evidence_id, []).append(dimension_id)
+    for reason in snapshot.job_match.limiting_reasons:
+        reason_rank = _RISK_REASON_RANK.get(reason.reason_type)
+        if reason_rank is None:
+            continue
+        linked_dimensions: list[str] = []
+        linked_unverified = False
+        for evidence_id in reason.evidence_ids:
+            for dimension_id in evidence_dimensions.get(evidence_id, []):
+                radar = radar_by_id.get(dimension_id)
+                if radar is not None and radar.level == "UNVERIFIED":
+                    linked_unverified = True
+                elif dimension_id not in linked_dimensions:
+                    linked_dimensions.append(dimension_id)
+        if not linked_dimensions:
+            for dimension in profile.dimensions:
+                if any(
+                    rubric_id
+                    in {
+                        criterion.id
+                        for criterion in (
+                            dimension.minimum_criteria
+                            + dimension.excellence_signals
+                            + dimension.critical_errors
+                            + dimension.accepted_alternatives
+                        )
+                    }
+                    for rubric_id in reason.rubric_signal_ids
+                ) and (
+                    radar_by_id.get(dimension.id) is None
+                    or radar_by_id[dimension.id].level != "UNVERIFIED"
+                ):
+                    linked_dimensions.append(dimension.id)
+        if linked_dimensions:
+            for dimension_id in linked_dimensions:
+                add_risk(dimension_id, reason_rank, reason, reason.evidence_ids)
+        elif not linked_unverified:
+            add_risk(None, reason_rank, reason, reason.evidence_ids)
+
+    for dimension in profile.dimensions:
+        radar = radar_by_id.get(dimension.id)
+        if radar is None or radar.level == "UNVERIFIED" or radar.score is None:
+            continue
+        low_score = radar.level in {"L0", "L1"} or radar.score < 60
+        if dimension.is_gating and low_score and dimension.id not in risk_candidates:
+            add_risk(
+                dimension.id,
+                2,
+                None,
+                (),
+            )
+
+    ordered_risks = sorted(
+        risk_candidates.items(),
+        key=lambda item: (
+            item[1][0],
+            dimension_order.get(item[0], len(dimension_order)),
+            -(
+                radar_by_id[item[0]].score
+                if item[0] is not None and radar_by_id[item[0]].score is not None
+                else -1
+            ),
+        ),
+    )
+    risks: list[DecisionSignal] = []
+    for dimension_id, (reason_rank, reasons, candidate_evidence_ids) in ordered_risks[:3]:
+        radar = radar_by_id.get(dimension_id) if dimension_id else None
+        dimension = dimensions.get(dimension_id) if dimension_id else None
+        evidence_ids = list(candidate_evidence_ids)
+        for reason in reasons:
+            for evidence_id in reason.evidence_ids:
+                if evidence_id not in evidence_ids:
+                    evidence_ids.append(evidence_id)
+        risks.append(
+            DecisionSignal(
+                title=dimension.name if dimension is not None else "岗位匹配限制",
+                text=_signal_text(
+                    profile,
+                    dimension_id,
+                    reasons,
+                    fallback=(
+                        f"门槛维度“{dimension.name}”当前评分较低，需要重点核验。"
+                        if dimension is not None and reason_rank == 2
+                        else None
+                    ),
+                ),
+                dimension_ids=[dimension_id] if dimension_id else [],
+                evidence_ids=evidence_ids,
+                confidence=(
+                    radar.confidence
+                    if radar is not None
+                    else snapshot.job_match.confidence
+                ),
+            )
+        )
+
+    unknown_candidates: list[tuple[tuple[int, float, int], str]] = []
+    for dimension_id, radar_object in radar_by_id.items():
+        radar = radar_object
+        if radar.level != "UNVERIFIED":
+            continue
+        dimension = dimensions.get(dimension_id)
+        if dimension is None:
+            continue
+        unknown_candidates.append(
+            (
+                (
+                    0 if dimension.is_gating else 1,
+                    -dimension.weight,
+                    dimension_order.get(dimension_id, len(dimension_order)),
+                ),
+                dimension_id,
+            )
+        )
+    unknown_candidates.sort(key=lambda item: item[0])
+    unknowns: list[DecisionSignal] = []
+    for _, dimension_id in unknown_candidates[:2]:
+        dimension = dimensions[dimension_id]
+        radar = radar_by_id[dimension_id]
+        unknowns.append(
+            DecisionSignal(
+                title=dimension.name,
+                text="该能力维度尚未形成足够的面试证据，当前状态为未验证。",
+                dimension_ids=[dimension_id],
+                evidence_ids=[],
+                confidence=radar.confidence,
+            )
+        )
+
+    return strengths, risks, unknowns
+
+
 __all__ = [
     "HiringDecisionDraft",
     "ReportConsistencyError",
+    "build_decision_signals",
+    "build_evidence_excerpts",
     "derive_hiring_decision",
     "validate_enterprise_assessment",
 ]

@@ -10,15 +10,21 @@ from profile_agent.schemas.report_schema import (
     JobMatchResult,
     RadarDimensionResult,
     ReinterviewFocus,
+    RequirementEvidenceAssessment,
+    RoleCompetencyProfile,
+    RubricQuality,
     ScoreReason,
     ScoreSnapshot,
 )
-from profile_agent.schemas.runtime_schema import InterviewTurn
+from profile_agent.schemas.runtime_schema import Evidence, InterviewTurn
 from profile_agent.services.enterprise_report_service import (
     ReportConsistencyError,
+    build_decision_signals,
+    build_evidence_excerpts,
     derive_hiring_decision,
     validate_enterprise_assessment,
 )
+from profile_agent.services.role_profile_service import load_role_profile
 
 
 _DIMENSION_IDS = [f"role_dim_{index:02d}" for index in range(1, 7)]
@@ -104,6 +110,32 @@ def _turns() -> list[InterviewTurn]:
     ]
 
 
+def _evidences() -> list[Evidence]:
+    return [
+        Evidence(
+            id="E001",
+            turn_id="turn_01",
+            requirement_ids=["req_01"],
+            polarity="supporting",
+            strength="strong",
+            observation="回答说明了失败边界和重试决策。",
+            source_excerpt="我会先定义失败边界",
+        )
+    ]
+
+
+def _profile() -> RoleCompetencyProfile:
+    return load_role_profile("ai_application_engineering", "2026-H2")
+
+
+def _flatten_dimensions(signals: list[DecisionSignal]) -> set[str]:
+    return {
+        dimension_id
+        for signal in signals
+        for dimension_id in signal.dimension_ids
+    }
+
+
 def _signal(
     *,
     title: str = "待核验维度",
@@ -149,6 +181,112 @@ def _enterprise(
 
 
 class EnterpriseReportServiceTest(unittest.TestCase):
+    def test_evidence_excerpt_quote_is_an_exact_answer_substring(self) -> None:
+        excerpts = build_evidence_excerpts(
+            _snapshot(), _evidences(), _turns()
+        )
+        answers = {turn.id: turn.answer or "" for turn in _turns()}
+
+        self.assertTrue(excerpts)
+        for excerpt in excerpts:
+            self.assertIn(excerpt.quote, answers[excerpt.turn_id])
+            self.assertNotEqual(excerpt.quote, answers[excerpt.turn_id])
+
+    def test_unverified_dimension_becomes_unknown_not_risk(self) -> None:
+        strengths, risks, unknowns = build_decision_signals(
+            _snapshot(unverified_dimensions=["role_dim_06"]),
+            _profile(),
+        )
+
+        self.assertIn("role_dim_06", _flatten_dimensions(unknowns))
+        self.assertNotIn("role_dim_06", _flatten_dimensions(risks))
+
+    def test_unverified_dimension_with_risk_reason_stays_unknown(self) -> None:
+        snapshot = _snapshot(unverified_dimensions=["role_dim_06"])
+        snapshot.radar_dimensions[5].score_reasons = [
+            ScoreReason(
+                reason_type="risk",
+                text="该维度仍缺少可验证证据。",
+                evidence_ids=["E001"],
+            )
+        ]
+
+        _, risks, unknowns = build_decision_signals(snapshot, _profile())
+
+        self.assertNotIn("role_dim_06", _flatten_dimensions(risks))
+        self.assertIn("role_dim_06", _flatten_dimensions(unknowns))
+
+    def test_invalid_source_excerpt_is_skipped_without_answer_fallback(self) -> None:
+        evidence = _evidences()[0].model_copy(
+            update={"source_excerpt": "回答中没有这段文字"}
+        )
+
+        excerpts = build_evidence_excerpts(_snapshot(), [evidence], _turns())
+
+        self.assertEqual(excerpts, [])
+
+    def test_excerpt_uses_readable_criteria_and_unmet_minimum_limitation(self) -> None:
+        snapshot = _snapshot()
+        snapshot.requirement_assessments = [
+            RequirementEvidenceAssessment(
+                requirement_id="req_01",
+                dimension_id="role_dim_01",
+                level="L1",
+                coverage=0.5,
+                confidence="medium",
+                satisfied_minimum_criterion_ids=["d01_min_01"],
+                supporting_evidence_ids=["E001"],
+                quality=RubricQuality(),
+                assessment_reasons=[
+                    ScoreReason(
+                        reason_type="strength",
+                        text="回答命中了最低充分条件。",
+                        evidence_ids=["E001"],
+                        rubric_signal_ids=["d01_min_01"],
+                    )
+                ],
+            )
+        ]
+
+        excerpt = build_evidence_excerpts(snapshot, _evidences(), _turns())[0]
+
+        self.assertIn("拆分任务、状态、工具和人工介入边界", excerpt.interpretation)
+        self.assertNotIn("d01_min_01", excerpt.interpretation)
+        self.assertIn("解释状态流转、路由和失败恢复", excerpt.limitation)
+
+    def test_unknowns_prioritize_gating_dimensions_and_are_bounded(self) -> None:
+        snapshot = _snapshot(
+            unverified_dimensions=["role_dim_02", "role_dim_05", "role_dim_06"]
+        )
+
+        _, _, unknowns = build_decision_signals(snapshot, _profile())
+
+        self.assertEqual(len(unknowns), 2)
+        self.assertEqual(unknowns[0].dimension_ids, ["role_dim_05"])
+        self.assertEqual(unknowns[1].dimension_ids, ["role_dim_02"])
+
+    def test_risk_order_puts_critical_reasons_before_low_gating_scores(self) -> None:
+        snapshot = _snapshot()
+        snapshot.radar_dimensions[1].score = 40.0
+        snapshot.radar_dimensions[1].level = "L1"
+        snapshot.radar_dimensions[2].score_reasons = [
+            ScoreReason(
+                reason_type="critical_error",
+                text="存在未经验证的高风险操作。",
+                evidence_ids=["E001"],
+            ),
+            ScoreReason(
+                reason_type="unverified",
+                text="仍需观察。",
+            ),
+        ]
+
+        _, risks, _ = build_decision_signals(snapshot, _profile())
+
+        self.assertGreaterEqual(len(risks), 2)
+        self.assertEqual(risks[0].dimension_ids, ["role_dim_03"])
+        self.assertEqual(risks[1].dimension_ids, ["role_dim_02"])
+
     def test_low_confidence_with_unverified_dimension_is_conditional(self) -> None:
         snapshot = _snapshot(
             published=True,
