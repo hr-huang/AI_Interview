@@ -4,9 +4,11 @@ import unittest
 from pydantic import ValidationError
 
 from profile_agent.schemas.report_schema import (
+    EnterpriseAssessment,
     CompetencyDimensionRubric,
     JobMatchResult,
     RadarDimensionResult,
+    ReinterviewFocus,
     RequirementEvidenceAssessment,
     RequirementScore,
     RubricCriterion,
@@ -56,6 +58,28 @@ def _dimension(
 
 
 class ReportSchemaTest(unittest.TestCase):
+    def test_enterprise_assessment_requires_decision_and_overall_assessment(
+        self,
+    ) -> None:
+        with self.assertRaises(ValidationError):
+            EnterpriseAssessment.model_validate({"strengths": []})
+
+    def test_reinterview_focus_requires_observable_signals_and_minutes(self) -> None:
+        focus = ReinterviewFocus(
+            priority=1,
+            dimension_id="role_dim_03",
+            dimension_name="Context、RAG、Memory与工具工程",
+            reason="当前只验证了过期文档过滤。",
+            question="实时状态与历史记忆冲突时如何处理？",
+            follow_ups=["如何验证冲突策略有效？"],
+            positive_signals=["说明生命周期和冲突优先级"],
+            risk_signals=["只描述向量检索"],
+            pass_criteria=["给出可复现实验和回滚方式"],
+            suggested_minutes=8,
+            related_evidence_ids=["E003"],
+        )
+        self.assertEqual(focus.priority, 1)
+
     def test_unverified_assessment_is_valid_without_numeric_score(self) -> None:
         assessment = RequirementEvidenceAssessment(
             requirement_id="req_01",
