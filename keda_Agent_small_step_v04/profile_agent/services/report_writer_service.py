@@ -103,51 +103,30 @@ _UNVERIFIED_NEGATIVE_PHRASES = (
 
 _INTERNAL_PUBLIC_TEXT_ID = re.compile(
     r"(?:role_dim_\d+|req_[A-Za-z0-9_]*|ev_[A-Za-z0-9_]*|"
-    r"\bd\d{3}_[A-Za-z0-9_]*|\bRequirement\b|\bRubricMatch\b)",
+    r"(?<![A-Za-z0-9_])d\d+_[A-Za-z0-9_]+|\bRequirement\b|\bRubricMatch\b)",
     re.IGNORECASE,
 )
 
-_PROHIBITED_GROWTH_PHRASES = (
-    "成长建议",
-    "候选人成长",
-    "成长路径",
-    "成长空间",
-    "成长",
-    "发展建议",
-    "候选人发展",
-    "发展空间",
-    "候选人提升",
-    "建议候选人",
-    "候选人应",
-    "提升能力",
-    "能力提升",
-    "改进能力",
-    "改进建议",
-    "补齐",
-    "弥补能力",
-    "培训计划",
-    "学习计划",
-    "培训",
-    "学习",
-    "练习",
-)
-
-_PROHIBITED_LOCKED_FACT_PHRASES = (
-    "建议推进",
-    "建议不推进",
-    "推荐推进",
-    "不建议推进",
-    "建议进入复试",
-    "建议进入结构化复试",
-    "不建议进入复试",
-    "不予推进",
-    "优先级",
-    "分数",
-    "等级",
-    "置信度",
-    "score",
-    "level",
-    "confidence",
+_GROWTH_ADVICE_PATTERNS = (
+    re.compile(
+        r"(?:建议|推荐|要求|需要|应当|应|后续|未来|之后|下一步)"
+        r"[^。！？\n]{0,20}(?:候选人|其)?"
+        r"[^。！？\n]{0,12}(?:补足|补齐|弥补|提升|改进|加强|学习|培训|练习)"
+        r"[^。！？\n]{0,16}(?:能力|短板|技能|知识|基础|表现)?",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"[^。！？\n]{0,8}(?:成长|发展)(?:建议|路径|计划|空间)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:补足|补齐|弥补)[^。！？\n]{0,12}(?:能力|短板|技能|知识)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:提升|改进|加强)[^。！？\n]{0,12}(?:能力|短板|技能|知识)",
+        re.IGNORECASE,
+    ),
 )
 
 _ENTERPRISE_COPY_SYSTEM_PROMPT = """
@@ -645,6 +624,78 @@ def _normalise_selected_dimension_ids(
     return selected
 
 
+def _normalise_enterprise_inputs(
+    snapshot: ScoreSnapshot,
+    profile: RoleCompetencyProfile,
+    evidences: Iterable[Evidence] | None,
+) -> tuple[
+    ScoreSnapshot,
+    RoleCompetencyProfile,
+    list[Evidence],
+    dict[str, Evidence],
+    set[str],
+]:
+    """Validate the shared enterprise writer inputs and provenance."""
+
+    try:
+        normalized_snapshot = ScoreSnapshot.model_validate(snapshot)
+        normalized_profile = RoleCompetencyProfile.model_validate(profile)
+        normalized_evidences = (
+            []
+            if evidences is None
+            else [Evidence.model_validate(item) for item in evidences]
+        )
+    except (ValidationError, TypeError, ValueError) as exc:
+        raise GroundingValidationError(
+            "企业文案输入不符合结构化契约"
+        ) from exc
+
+    if (
+        normalized_snapshot.role_family != normalized_profile.role_family
+        or normalized_snapshot.role_profile_version != normalized_profile.version
+    ):
+        raise GroundingValidationError(
+            "ScoreSnapshot 与 RoleCompetencyProfile 的版本或岗位不一致"
+        )
+
+    # A fallback call without an evidence collection is supported for the
+    # frozen dimension copy contract.  When evidence is supplied, both online
+    # and offline paths execute exactly the same provenance checks.
+    if evidences is None:
+        return (
+            normalized_snapshot,
+            normalized_profile,
+            normalized_evidences,
+            {},
+            set(),
+        )
+
+    (
+        evidence_by_id,
+        _supporting_ids,
+        _limiting_ids,
+        _transfer_ids,
+        source_kinds,
+        _radar_by_dimension,
+    ) = _snapshot_evidence_sources(
+        normalized_snapshot,
+        normalized_evidences,
+        normalized_profile,
+    )
+    _validate_snapshot_reason_provenance(
+        normalized_snapshot,
+        evidence_by_id,
+        set(source_kinds),
+    )
+    return (
+        normalized_snapshot,
+        normalized_profile,
+        normalized_evidences,
+        evidence_by_id,
+        set(source_kinds),
+    )
+
+
 def _enterprise_copy_texts(
     draft: EnterpriseCopyDraft,
 ) -> Iterable[tuple[str, str]]:
@@ -675,21 +726,17 @@ def _validate_enterprise_copy_text(
         raise GroundingValidationError(
             f"{label} 不得暴露内部标识: {internal_match.group(0)}"
         )
-    lowered = text.casefold()
-    for phrase in _PROHIBITED_GROWTH_PHRASES:
-        if phrase.casefold() in lowered:
+    for pattern in _GROWTH_ADVICE_PATTERNS:
+        growth_match = pattern.search(text)
+        if growth_match:
             raise GroundingValidationError(
-                f"{label} 不得提供候选人成长建议: {phrase}"
+                f"{label} 不得提供候选人成长建议: {growth_match.group(0)}"
             )
+    lowered = text.casefold()
     for phrase in _PROHIBITED_HIRING_PHRASES:
         if phrase.casefold() in lowered:
             raise GroundingValidationError(
                 f"{label} 不得新增招聘结论: {phrase}"
-            )
-    for phrase in _PROHIBITED_LOCKED_FACT_PHRASES:
-        if phrase.casefold() in lowered:
-            raise GroundingValidationError(
-                f"{label} 不得改写已锁定事实: {phrase}"
             )
 
 
@@ -700,6 +747,10 @@ def _validate_enterprise_copy(
     known_evidence_ids: set[str] | None = None,
 ) -> None:
     for label, text in _enterprise_copy_texts(draft):
+        # overall_assessment is replaced by a deterministic projection after
+        # validation; model prose cannot smuggle a hiring decision through it.
+        if label == "overall_assessment":
+            continue
         _validate_enterprise_copy_text(text, label)
 
     actual_ids = [focus.dimension_id for focus in draft.reinterview_plan]
@@ -729,6 +780,7 @@ def _validate_enterprise_copy(
 def _canonicalize_enterprise_copy(
     draft: EnterpriseCopyDraft,
     selected_dimension_ids: list[str],
+    snapshot: ScoreSnapshot,
     role_profile: RoleCompetencyProfile,
 ) -> EnterpriseCopyDraft:
     dimensions = {dimension.id: dimension for dimension in role_profile.dimensions}
@@ -746,7 +798,10 @@ def _canonicalize_enterprise_copy(
         for index, dimension_id in enumerate(selected_dimension_ids)
     ]
     return EnterpriseCopyDraft(
-        overall_assessment=draft.overall_assessment,
+        overall_assessment=_deterministic_enterprise_overall_assessment(
+            snapshot,
+            role_profile,
+        ),
         reinterview_plan=plan,
     )
 
@@ -818,6 +873,39 @@ def _enterprise_copy_messages(
     ]
 
 
+def _deterministic_enterprise_overall_assessment(
+    snapshot: ScoreSnapshot,
+    profile: RoleCompetencyProfile,
+) -> str:
+    """Project locked report facts into safe, readable overall copy."""
+
+    from profile_agent.services.enterprise_report_service import (
+        build_decision_signals,
+        derive_hiring_decision,
+    )
+
+    decision = derive_hiring_decision(snapshot)
+    strengths, risks, unknowns = build_decision_signals(snapshot, profile)
+    if decision.code == "INSUFFICIENT_EVIDENCE":
+        opening = "当前证据覆盖仍有限，结构化复试需要继续核验关键边界。"
+    elif decision.code == "NOT_RECOMMENDED":
+        opening = "当前证据包含需要重点核验的限制信号，结构化复试聚焦限制边界。"
+    else:
+        opening = "当前证据已形成部分岗位相关观察，结构化复试聚焦剩余核验边界。"
+
+    parts = [opening]
+    strength_names = [signal.title for signal in strengths if signal.title]
+    risk_names = [signal.title for signal in risks if signal.title]
+    unknown_names = [signal.title for signal in unknowns if signal.title]
+    if strength_names:
+        parts.append("已观察到：" + "、".join(dict.fromkeys(strength_names)) + "。")
+    if risk_names:
+        parts.append("限制信号集中在：" + "、".join(dict.fromkeys(risk_names)) + "。")
+    if unknown_names:
+        parts.append("尚待核验：" + "、".join(dict.fromkeys(unknown_names)) + "。")
+    return "".join(parts)
+
+
 def write_enterprise_copy(
     snapshot: ScoreSnapshot,
     profile: RoleCompetencyProfile,
@@ -827,37 +915,17 @@ def write_enterprise_copy(
 ) -> EnterpriseCopyDraft:
     """Generate one enterprise copy draft for locked re-interview targets."""
 
-    try:
-        normalized_snapshot = ScoreSnapshot.model_validate(snapshot)
-        normalized_profile = RoleCompetencyProfile.model_validate(profile)
-        normalized_evidences = [
-            Evidence.model_validate(item) for item in evidences
-        ]
-    except (ValidationError, TypeError, ValueError) as exc:
-        raise GroundingValidationError(
-            "企业文案输入不符合结构化契约"
-        ) from exc
+    (
+        normalized_snapshot,
+        normalized_profile,
+        normalized_evidences,
+        evidence_by_id,
+        source_kinds,
+    ) = _normalise_enterprise_inputs(snapshot, profile, evidences)
 
     selected = _normalise_selected_dimension_ids(
         selected_dimension_ids,
         normalized_profile,
-    )
-    (
-        evidence_by_id,
-        _supporting_ids,
-        _limiting_ids,
-        _transfer_ids,
-        source_kinds,
-        _radar_by_dimension,
-    ) = _snapshot_evidence_sources(
-        normalized_snapshot,
-        normalized_evidences,
-        normalized_profile,
-    )
-    _validate_snapshot_reason_provenance(
-        normalized_snapshot,
-        evidence_by_id,
-        set(source_kinds),
     )
     messages = _enterprise_copy_messages(
         normalized_snapshot,
@@ -893,6 +961,7 @@ def write_enterprise_copy(
     return _canonicalize_enterprise_copy(
         draft,
         selected,
+        normalized_snapshot,
         normalized_profile,
     )
 
@@ -964,8 +1033,13 @@ def fallback_enterprise_copy(
 ) -> EnterpriseCopyDraft:
     """Return dimension-specific enterprise copy without an API call."""
 
-    normalized_snapshot = ScoreSnapshot.model_validate(snapshot)
-    normalized_profile = RoleCompetencyProfile.model_validate(profile)
+    (
+        normalized_snapshot,
+        normalized_profile,
+        _normalized_evidences,
+        evidence_by_id,
+        _source_kinds,
+    ) = _normalise_enterprise_inputs(snapshot, profile, evidence)
     selected = _normalise_selected_dimension_ids(
         selected_dimension_ids,
         normalized_profile,
@@ -987,10 +1061,9 @@ def fallback_enterprise_copy(
         ):
             if evidence_id not in values:
                 values.append(evidence_id)
-    known_evidence_ids: set[str] | None = None
-    if evidence is not None:
-        normalized_evidences = [Evidence.model_validate(item) for item in evidence]
-        known_evidence_ids = {item.id for item in normalized_evidences}
+    known_evidence_ids: set[str] | None = (
+        set(evidence_by_id) if evidence is not None else None
+    )
 
     plan: list[ReinterviewFocus] = []
     for priority, dimension_id in enumerate(selected, start=1):
@@ -1030,7 +1103,10 @@ def fallback_enterprise_copy(
         )
 
     draft = EnterpriseCopyDraft(
-        overall_assessment="当前评估保留待核验维度；复试计划聚焦可观察的过程、边界与验证信号。",
+        overall_assessment=_deterministic_enterprise_overall_assessment(
+            normalized_snapshot,
+            normalized_profile,
+        ),
         reinterview_plan=plan,
     )
     _validate_enterprise_copy(

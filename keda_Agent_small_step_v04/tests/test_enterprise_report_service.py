@@ -129,7 +129,22 @@ def _snapshot_with_six_reinterview_gaps() -> ScoreSnapshot:
         update={"score": 64.0, "confidence": "high"}
     )
     radar_by_id["role_dim_05"] = radar_by_id["role_dim_05"].model_copy(
-        update={"score": 58.0, "confidence": "medium"}
+        update={
+            "score": 58.0,
+            "confidence": "low",
+            "score_reasons": [
+                ScoreReason(
+                    reason_type="risk",
+                    text="门槛维度仍有关键限制。",
+                    evidence_ids=["E005"],
+                ),
+                ScoreReason(
+                    reason_type="strength",
+                    text="已有局部治理证据。",
+                    evidence_ids=["E005"],
+                ),
+            ],
+        }
     )
     limiting_reason = ScoreReason(
         reason_type="critical_error",
@@ -239,7 +254,68 @@ class EnterpriseReportServiceTest(unittest.TestCase):
         )
 
         self.assertLessEqual(len(selected), 3)
-        self.assertEqual(selected[0], "role_dim_03")
+        self.assertEqual(selected[0], "role_dim_05")
+
+    def test_non_gating_critical_gap_does_not_beat_gating_low_confidence_gap(
+        self,
+    ) -> None:
+        snapshot = _snapshot_with_six_reinterview_gaps()
+        radar_by_id = {
+            radar.dimension_id: radar for radar in snapshot.radar_dimensions
+        }
+        for dimension_id, radar in list(radar_by_id.items()):
+            if dimension_id == "role_dim_03":
+                continue
+            radar_by_id[dimension_id] = radar.model_copy(
+                update={
+                    "confidence": (
+                        "high" if dimension_id == "role_dim_05" else radar.confidence
+                    ),
+                    "score_reasons": [
+                        ScoreReason(
+                            reason_type="strength",
+                            text="已有独立场景证据。",
+                            evidence_ids=["E002"],
+                        ),
+                        ScoreReason(
+                            reason_type="unverified",
+                            text="更高阶表现仍需补充观察。",
+                        ),
+                    ]
+                }
+            )
+        radar_by_id["role_dim_02"] = radar_by_id["role_dim_02"].model_copy(
+            update={"confidence": "low"}
+        )
+        snapshot = snapshot.model_copy(
+            update={
+                "radar_dimensions": list(radar_by_id.values()),
+                "job_match": snapshot.job_match.model_copy(
+                    update={
+                        "limiting_reasons": [
+                            ScoreReason(
+                                reason_type="critical_error",
+                                text="role_dim_03 存在岗位限制。",
+                                evidence_ids=["E99"],
+                                rubric_signal_ids=["err_03"],
+                            )
+                        ]
+                    }
+                ),
+            }
+        )
+        role_03 = next(
+            radar
+            for radar in snapshot.radar_dimensions
+            if radar.dimension_id == "role_dim_03"
+        )
+        role_03.score_reasons[0] = role_03.score_reasons[0].model_copy(
+            update={"evidence_ids": ["E99"], "rubric_signal_ids": ["err_03"]}
+        )
+
+        selected = select_reinterview_dimensions(snapshot, _profile())
+
+        self.assertEqual(selected[0], "role_dim_02")
 
     def test_evidence_excerpt_quote_is_an_exact_answer_substring(self) -> None:
         excerpts = build_evidence_excerpts(

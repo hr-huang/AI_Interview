@@ -334,7 +334,11 @@ class ReportWriterServiceTest(unittest.TestCase):
 
         self.assertEqual(len(fake_llm.calls), 1)
         self.assertIs(fake_llm.calls[0][1], EnterpriseCopyDraft)
-        self.assertEqual(result.model_dump(), make_enterprise_copy_draft().model_dump())
+        self.assertEqual(
+            result.reinterview_plan,
+            make_enterprise_copy_draft().reinterview_plan,
+        )
+        self.assertIn("复试", result.overall_assessment)
 
         prompt = "\n".join(text for _, text in fake_llm.calls[0][0])
         self.assertIn("req_", prompt)
@@ -359,7 +363,7 @@ class ReportWriterServiceTest(unittest.TestCase):
 
     def test_enterprise_writer_rejects_internal_ids_in_public_copy(self) -> None:
         draft = make_enterprise_copy_draft()
-        draft.overall_assessment = "请继续核验 req_01 的边界。"
+        draft.reinterview_plan[0].reason = "请继续核验 req_01 的边界。"
 
         with self.assertRaises(GroundingValidationError):
             write_enterprise_copy(
@@ -369,6 +373,70 @@ class ReportWriterServiceTest(unittest.TestCase):
                 ["role_dim_01", "role_dim_02"],
                 llm_client=FakeLLM(draft),
             )
+
+    def test_enterprise_writer_rejects_real_rubric_ids_in_public_copy(self) -> None:
+        for field_name, value in (
+            ("reason", "需要核验 d01_min_01 的边界。"),
+            ("pass_criteria", ["不能触发 d03_err_01。"]),
+        ):
+            with self.subTest(field_name=field_name):
+                draft = make_enterprise_copy_draft()
+                setattr(draft.reinterview_plan[0], field_name, value)
+                with self.assertRaises(GroundingValidationError):
+                    write_enterprise_copy(
+                        self.snapshot,
+                        self.role_profile,
+                        self.evidence,
+                        ["role_dim_01", "role_dim_02"],
+                        llm_client=FakeLLM(draft),
+                    )
+
+    def test_enterprise_writer_projects_overall_assessment_deterministically(
+        self,
+    ) -> None:
+        draft = make_enterprise_copy_draft()
+        draft.overall_assessment = "建议进入下一轮并继续推进。"
+
+        result = write_enterprise_copy(
+            self.snapshot,
+            self.role_profile,
+            self.evidence,
+            ["role_dim_01", "role_dim_02"],
+            llm_client=FakeLLM(draft),
+        )
+
+        self.assertNotIn("进入下一轮", result.overall_assessment)
+        self.assertNotIn("继续推进", result.overall_assessment)
+        self.assertIn("复试", result.overall_assessment)
+
+    def test_enterprise_writer_allows_learning_domain_words_but_rejects_growth_advice(
+        self,
+    ) -> None:
+        domain_draft = make_enterprise_copy_draft()
+        domain_draft.reinterview_plan[0].question = (
+            "请说明机器学习系统如何验证数据漂移。"
+        )
+        result = write_enterprise_copy(
+            self.snapshot,
+            self.role_profile,
+            self.evidence,
+            ["role_dim_01", "role_dim_02"],
+            llm_client=FakeLLM(domain_draft),
+        )
+        self.assertIn("机器学习系统", result.reinterview_plan[0].question)
+
+        for text in ("后续补足能力短板。", "建议候选人提升相关能力。"):
+            with self.subTest(text=text):
+                advice_draft = make_enterprise_copy_draft()
+                advice_draft.reinterview_plan[0].reason = text
+                with self.assertRaises(GroundingValidationError):
+                    write_enterprise_copy(
+                        self.snapshot,
+                        self.role_profile,
+                        self.evidence,
+                        ["role_dim_01", "role_dim_02"],
+                        llm_client=FakeLLM(advice_draft),
+                    )
 
     def test_fallback_questions_are_dimension_specific(self) -> None:
         profile = load_role_profile("ai_application_engineering", "2026-H2")
@@ -384,6 +452,26 @@ class ReportWriterServiceTest(unittest.TestCase):
         self.assertIn("成本", questions[1])
         self.assertIn("工具", questions[0])
         self.assertIn("优化", questions[1])
+
+    def test_fallback_shares_online_role_and_evidence_validation(self) -> None:
+        mismatched_profile = self.role_profile.model_copy(
+            update={"version": "2025-H1"}
+        )
+        with self.assertRaises(GroundingValidationError):
+            fallback_enterprise_copy(
+                self.snapshot,
+                mismatched_profile,
+                ["role_dim_01"],
+                evidence=self.evidence,
+            )
+
+        with self.assertRaises(GroundingValidationError):
+            fallback_enterprise_copy(
+                self.snapshot,
+                self.role_profile,
+                ["role_dim_01"],
+                evidence=[self.evidence[1]],
+            )
 
     def test_strength_requires_supporting_evidence(self) -> None:
         with self.assertRaises(GroundingValidationError):

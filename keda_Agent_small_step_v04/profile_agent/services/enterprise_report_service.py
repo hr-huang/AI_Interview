@@ -1215,6 +1215,56 @@ def select_reinterview_dimensions(
         )
     limiting_dimension_ids = _limiting_dimension_ids(snapshot)
 
+    # A JobMatch limiting reason has no dimension field.  Only count it as a
+    # gating limiter when its provenance identifies one dimension directly,
+    # through one rubric criterion, or through evidence unique to one
+    # dimension.  Shared evidence across several dimensions is not proof.
+    evidence_to_dimensions: dict[str, set[str]] = {}
+    for radar in snapshot.radar_dimensions:
+        for reason in radar.score_reasons:
+            for evidence_id in reason.evidence_ids:
+                evidence_to_dimensions.setdefault(evidence_id, set()).add(
+                    radar.dimension_id
+                )
+    for assessment in snapshot.requirement_assessments:
+        for evidence_id in (
+            assessment.supporting_evidence_ids
+            + assessment.limiting_evidence_ids
+            + assessment.transfer_evidence_ids
+        ):
+            evidence_to_dimensions.setdefault(evidence_id, set()).add(
+                assessment.dimension_id
+            )
+        for reason in assessment.assessment_reasons:
+            for evidence_id in reason.evidence_ids:
+                evidence_to_dimensions.setdefault(evidence_id, set()).add(
+                    assessment.dimension_id
+                )
+    rubric_to_dimensions: dict[str, set[str]] = {}
+    for dimension in profile.dimensions:
+        for criterion in (
+            dimension.minimum_criteria
+            + dimension.excellence_signals
+            + dimension.critical_errors
+            + dimension.accepted_alternatives
+        ):
+            rubric_to_dimensions.setdefault(criterion.id, set()).add(
+                dimension.id
+            )
+    proven_gating_limiting_ids: set[str] = set()
+    for reason in snapshot.job_match.limiting_reasons:
+        for dimension in profile.dimensions:
+            if dimension.id in reason.text:
+                proven_gating_limiting_ids.add(dimension.id)
+        for rubric_id in reason.rubric_signal_ids:
+            dimensions_for_rubric = rubric_to_dimensions.get(rubric_id, set())
+            if len(dimensions_for_rubric) == 1:
+                proven_gating_limiting_ids.update(dimensions_for_rubric)
+        for evidence_id in reason.evidence_ids:
+            dimensions_for_evidence = evidence_to_dimensions.get(evidence_id, set())
+            if len(dimensions_for_evidence) == 1:
+                proven_gating_limiting_ids.update(dimensions_for_evidence)
+
     candidates: list[tuple[tuple[int, int, int, float, float], str, int]] = []
     for display_order, dimension in enumerate(profile.dimensions):
         dimension_id = dimension.id
@@ -1231,6 +1281,20 @@ def select_reinterview_dimensions(
                 bool(
                     getattr(assessment, "limiting_evidence_ids", [])
                     or getattr(assessment, "unresolved_critical_error_ids", [])
+                )
+                for assessment in assessments
+            )
+        )
+        has_gating_critical_or_limiting = dimension.is_gating and (
+            dimension_id in proven_gating_limiting_ids
+            or any(
+                reason.reason_type in {"critical_error", "risk"}
+                for reason in reasons
+            )
+            or any(
+                bool(
+                    getattr(assessment, "unresolved_critical_error_ids", [])
+                    or getattr(assessment, "limiting_evidence_ids", [])
                 )
                 for assessment in assessments
             )
@@ -1255,7 +1319,7 @@ def select_reinterview_dimensions(
             continue
 
         priority = (
-            int(has_limiting_reason),
+            int(has_gating_critical_or_limiting),
             int(dimension.is_gating and confidence == "low"),
             int(is_unverified),
             100 - float(score or 0),
