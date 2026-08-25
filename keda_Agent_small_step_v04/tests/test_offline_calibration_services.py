@@ -20,6 +20,30 @@ class OfflineCalibrationServicesTest(unittest.TestCase):
         self.assertIn("rubric_matcher", services)
         self.assertIn("narrative_writer", services)
 
+    def test_offline_writer_uses_enterprise_copy_contract(self) -> None:
+        from profile_agent.calibration.offline_services import (
+            build_offline_semantic_services,
+        )
+        from profile_agent.schemas.report_schema import EnterpriseAssessment
+        from profile_agent.services.report_writer_service import EnterpriseCopyDraft
+        from profile_agent.services.role_profile_service import load_role_profile
+
+        case = get_report_calibration_case("C01")
+        run = run_report_calibration_case(
+            case,
+            semantic_services=build_offline_semantic_services(case),
+        )[0]
+        writer = build_offline_semantic_services(case)["narrative_writer"]
+        draft = writer(
+            run.report.score_snapshot,
+            load_role_profile("ai_application_engineering", "2026-H2"),
+            case.evidences,
+            ["role_dim_03"],
+        )
+
+        self.assertIsInstance(draft, EnterpriseCopyDraft)
+        self.assertNotIsInstance(draft, EnterpriseAssessment)
+
     def test_c01_c03_c06_run_without_any_blueprint_llm_call(self) -> None:
         from profile_agent.calibration.offline_services import (
             build_offline_semantic_services,

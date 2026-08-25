@@ -10,6 +10,7 @@ from profile_agent.schemas.report_schema import (
     ReportNarrativeDraft,
     RequirementEvidenceAssessment,
     RequirementScore,
+    ReinterviewFocus,
     RoleCompetencyProfile,
     RubricCriterion,
     RubricQuality,
@@ -18,10 +19,14 @@ from profile_agent.schemas.report_schema import (
 )
 from profile_agent.schemas.runtime_schema import Evidence
 from profile_agent.services.report_writer_service import (
+    EnterpriseCopyDraft,
     GroundingValidationError,
     fallback_report_narrative,
+    fallback_enterprise_copy,
+    write_enterprise_copy,
     write_report_narrative,
 )
+from profile_agent.services.role_profile_service import load_role_profile
 
 
 class FakeLLM:
@@ -265,6 +270,40 @@ def make_draft(
     )
 
 
+def make_enterprise_copy_draft() -> EnterpriseCopyDraft:
+    return EnterpriseCopyDraft(
+        overall_assessment="当前已有可核验片段，复试需要补充两个独立场景。",
+        reinterview_plan=[
+            ReinterviewFocus(
+                priority=1,
+                dimension_id="role_dim_01",
+                dimension_name="AI应用与Agent编排",
+                reason="需要核验边界设计。",
+                question="请说明一次状态与工具边界的设计取舍。",
+                follow_ups=["当工具失败时如何处理？"],
+                positive_signals=["能明确状态边界。"],
+                risk_signals=["只描述流程而没有边界。"],
+                pass_criteria=["能说明输入、边界和验证方式。"],
+                suggested_minutes=8,
+                related_evidence_ids=["ev_support"],
+            ),
+            ReinterviewFocus(
+                priority=2,
+                dimension_id="role_dim_02",
+                dimension_name="业务理解与任务建模",
+                reason="需要核验任务建模。",
+                question="请把一个业务目标拆成可验收任务。",
+                follow_ups=["如何定义成功？"],
+                positive_signals=["能给出验收标准。"],
+                risk_signals=["目标与输出无法对应。"],
+                pass_criteria=["能说清输入、输出和边界。"],
+                suggested_minutes=7,
+                related_evidence_ids=["ev_support"],
+            ),
+        ],
+    )
+
+
 class ReportWriterServiceTest(unittest.TestCase):
     def setUp(self) -> None:
         self.snapshot = make_snapshot()
@@ -281,6 +320,70 @@ class ReportWriterServiceTest(unittest.TestCase):
         self.assertEqual(len(fake_llm.calls), 1)
         self.assertIs(fake_llm.calls[0][1], ReportNarrativeDraft)
         self.assertEqual(result.model_dump(), make_draft().model_dump())
+
+    def test_enterprise_writer_calls_structured_llm_once_with_copy_contract(self) -> None:
+        fake_llm = FakeLLM(make_enterprise_copy_draft())
+
+        result = write_enterprise_copy(
+            self.snapshot,
+            self.role_profile,
+            self.evidence,
+            ["role_dim_01", "role_dim_02"],
+            llm_client=fake_llm,
+        )
+
+        self.assertEqual(len(fake_llm.calls), 1)
+        self.assertIs(fake_llm.calls[0][1], EnterpriseCopyDraft)
+        self.assertEqual(result.model_dump(), make_enterprise_copy_draft().model_dump())
+
+        prompt = "\n".join(text for _, text in fake_llm.calls[0][0])
+        self.assertIn("req_", prompt)
+        self.assertIn("d003_", prompt)
+        self.assertIn("ev_", prompt)
+        self.assertIn("Requirement", prompt)
+        self.assertIn("RubricMatch", prompt)
+        self.assertIn("成长", prompt)
+
+    def test_enterprise_writer_requires_one_focus_per_selected_dimension(self) -> None:
+        draft = make_enterprise_copy_draft()
+        draft.reinterview_plan = draft.reinterview_plan[:1]
+
+        with self.assertRaises(GroundingValidationError):
+            write_enterprise_copy(
+                self.snapshot,
+                self.role_profile,
+                self.evidence,
+                ["role_dim_01", "role_dim_02"],
+                llm_client=FakeLLM(draft),
+            )
+
+    def test_enterprise_writer_rejects_internal_ids_in_public_copy(self) -> None:
+        draft = make_enterprise_copy_draft()
+        draft.overall_assessment = "请继续核验 req_01 的边界。"
+
+        with self.assertRaises(GroundingValidationError):
+            write_enterprise_copy(
+                self.snapshot,
+                self.role_profile,
+                self.evidence,
+                ["role_dim_01", "role_dim_02"],
+                llm_client=FakeLLM(draft),
+            )
+
+    def test_fallback_questions_are_dimension_specific(self) -> None:
+        profile = load_role_profile("ai_application_engineering", "2026-H2")
+        draft = fallback_enterprise_copy(
+            self.snapshot,
+            profile,
+            ["role_dim_03", "role_dim_06"],
+        )
+        questions = [item.question for item in draft.reinterview_plan]
+
+        self.assertEqual(len(set(questions)), 2)
+        self.assertIn("记忆", questions[0])
+        self.assertIn("成本", questions[1])
+        self.assertIn("工具", questions[0])
+        self.assertIn("优化", questions[1])
 
     def test_strength_requires_supporting_evidence(self) -> None:
         with self.assertRaises(GroundingValidationError):

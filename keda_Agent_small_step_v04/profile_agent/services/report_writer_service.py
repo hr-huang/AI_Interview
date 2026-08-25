@@ -10,26 +10,44 @@ draft is returned.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterable
 from typing import Any
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from profile_agent.llm import llm
 from profile_agent.schemas.report_schema import (
     DevelopmentAction,
     NarrativeItem,
     RadarDimensionResult,
+    ReinterviewFocus,
     ReportNarrativeDraft,
     RoleCompetencyProfile,
     ScoreReason,
     ScoreSnapshot,
+    _ReportModel,
 )
 from profile_agent.schemas.runtime_schema import Evidence
 
 
 class GroundingValidationError(ValueError):
     """Raised when a narrative is not grounded in the supplied snapshot."""
+
+
+class EnterpriseCopyDraft(_ReportModel):
+    """The prose-only output boundary for the enterprise report.
+
+    Hiring decisions, ranking and selected dimensions are deterministic
+    inputs.  The writer can only explain the locked assessment and fill the
+    question plan for the already selected dimensions.
+    """
+
+    overall_assessment: str
+    reinterview_plan: list[ReinterviewFocus] = Field(
+        default_factory=list,
+        max_length=3,
+    )
 
 
 _SYSTEM_PROMPT = """
@@ -82,6 +100,73 @@ _UNVERIFIED_NEGATIVE_PHRASES = (
     "风险",
     "失败",
 )
+
+_INTERNAL_PUBLIC_TEXT_ID = re.compile(
+    r"(?:role_dim_\d+|req_[A-Za-z0-9_]*|ev_[A-Za-z0-9_]*|"
+    r"\bd\d{3}_[A-Za-z0-9_]*|\bRequirement\b|\bRubricMatch\b)",
+    re.IGNORECASE,
+)
+
+_PROHIBITED_GROWTH_PHRASES = (
+    "成长建议",
+    "候选人成长",
+    "成长路径",
+    "成长空间",
+    "成长",
+    "发展建议",
+    "候选人发展",
+    "发展空间",
+    "候选人提升",
+    "建议候选人",
+    "候选人应",
+    "提升能力",
+    "能力提升",
+    "改进能力",
+    "改进建议",
+    "补齐",
+    "弥补能力",
+    "培训计划",
+    "学习计划",
+    "培训",
+    "学习",
+    "练习",
+)
+
+_PROHIBITED_LOCKED_FACT_PHRASES = (
+    "建议推进",
+    "建议不推进",
+    "推荐推进",
+    "不建议推进",
+    "建议进入复试",
+    "建议进入结构化复试",
+    "不建议进入复试",
+    "不予推进",
+    "优先级",
+    "分数",
+    "等级",
+    "置信度",
+    "score",
+    "level",
+    "confidence",
+)
+
+_ENTERPRISE_COPY_SYSTEM_PROMPT = """
+你是企业评估报告的 Copy Writer。只能根据已经锁定的评分快照、岗位 Role
+Pack、决策投影、已选复试维度、决策信号和证据摘录生成 EnterpriseCopyDraft。
+
+严格边界：
+- 只输出 overall_assessment 和 reinterview_plan；不能增加字段。
+- 岗位招聘结论、复试维度的选择顺序和 priority 已由确定性规则锁定，不能
+  重新决定招聘结论、不能改变 selected dimension IDs、不能自行排序优先级。
+- 必须为每一个 selected dimension ID 输出且只输出一个复试重点；结构字段可
+  使用锁定的维度 ID，但任何公开文案不得出现 req_、ev_、role_dim_、d003_、
+  Requirement 或 RubricMatch 等内部标识。
+- 公开文案不得提供候选人成长、学习、培训、提升或改进建议；只写本轮复试
+  要观察的信号、追问和通过标准。
+- 不得输出录用、淘汰或其他新的招聘判断，不得写入分数、等级或置信度。
+
+请严格按照 EnterpriseCopyDraft 的 JSON 结构返回。
+""".strip()
 
 
 def _json_value(value: Any) -> Any:
@@ -533,6 +618,425 @@ def write_report_narrative(
         normalized_snapshot,
         normalized_evidence,
         normalized_profile,
+    )
+    return draft
+
+
+def _normalise_selected_dimension_ids(
+    selected_dimension_ids: Iterable[str],
+    role_profile: RoleCompetencyProfile,
+) -> list[str]:
+    try:
+        selected = list(selected_dimension_ids)
+    except (TypeError, ValueError) as exc:
+        raise GroundingValidationError("selected_dimension_ids 无效") from exc
+    if len(selected) > 3:
+        raise GroundingValidationError("复试重点不能超过三个维度")
+    if any(not isinstance(item, str) or not item.strip() for item in selected):
+        raise GroundingValidationError("selected_dimension_ids 必须是非空字符串")
+    if len(selected) != len(set(selected)):
+        raise GroundingValidationError("selected_dimension_ids 不能重复")
+    known_ids = {dimension.id for dimension in role_profile.dimensions}
+    unknown_ids = sorted(set(selected) - known_ids)
+    if unknown_ids:
+        raise GroundingValidationError(
+            "selected_dimension_ids 不存在: " + ", ".join(unknown_ids)
+        )
+    return selected
+
+
+def _enterprise_copy_texts(
+    draft: EnterpriseCopyDraft,
+) -> Iterable[tuple[str, str]]:
+    yield "overall_assessment", draft.overall_assessment
+    for index, focus in enumerate(draft.reinterview_plan):
+        prefix = f"reinterview_plan[{index}]"
+        yield f"{prefix}.dimension_name", focus.dimension_name
+        yield f"{prefix}.reason", focus.reason
+        yield f"{prefix}.question", focus.question
+        for follow_up_index, text in enumerate(focus.follow_ups):
+            yield f"{prefix}.follow_ups[{follow_up_index}]", text
+        for signal_index, text in enumerate(focus.positive_signals):
+            yield f"{prefix}.positive_signals[{signal_index}]", text
+        for signal_index, text in enumerate(focus.risk_signals):
+            yield f"{prefix}.risk_signals[{signal_index}]", text
+        for criterion_index, text in enumerate(focus.pass_criteria):
+            yield f"{prefix}.pass_criteria[{criterion_index}]", text
+
+
+def _validate_enterprise_copy_text(
+    text: str,
+    label: str,
+) -> None:
+    if not text.strip():
+        raise GroundingValidationError(f"{label} 不能为空")
+    internal_match = _INTERNAL_PUBLIC_TEXT_ID.search(text)
+    if internal_match:
+        raise GroundingValidationError(
+            f"{label} 不得暴露内部标识: {internal_match.group(0)}"
+        )
+    lowered = text.casefold()
+    for phrase in _PROHIBITED_GROWTH_PHRASES:
+        if phrase.casefold() in lowered:
+            raise GroundingValidationError(
+                f"{label} 不得提供候选人成长建议: {phrase}"
+            )
+    for phrase in _PROHIBITED_HIRING_PHRASES:
+        if phrase.casefold() in lowered:
+            raise GroundingValidationError(
+                f"{label} 不得新增招聘结论: {phrase}"
+            )
+    for phrase in _PROHIBITED_LOCKED_FACT_PHRASES:
+        if phrase.casefold() in lowered:
+            raise GroundingValidationError(
+                f"{label} 不得改写已锁定事实: {phrase}"
+            )
+
+
+def _validate_enterprise_copy(
+    draft: EnterpriseCopyDraft,
+    selected_dimension_ids: list[str],
+    *,
+    known_evidence_ids: set[str] | None = None,
+) -> None:
+    for label, text in _enterprise_copy_texts(draft):
+        _validate_enterprise_copy_text(text, label)
+
+    actual_ids = [focus.dimension_id for focus in draft.reinterview_plan]
+    if len(actual_ids) != len(selected_dimension_ids):
+        raise GroundingValidationError(
+            "reinterview_plan 必须为每个已选维度返回一个重点"
+        )
+    if len(actual_ids) != len(set(actual_ids)):
+        raise GroundingValidationError("reinterview_plan 的维度不能重复")
+    if set(actual_ids) != set(selected_dimension_ids):
+        raise GroundingValidationError(
+            "reinterview_plan 只能覆盖已锁定的 selected dimension IDs"
+        )
+    if known_evidence_ids is None:
+        return
+    for index, focus in enumerate(draft.reinterview_plan):
+        unknown_evidence_ids = sorted(
+            set(focus.related_evidence_ids) - known_evidence_ids
+        )
+        if unknown_evidence_ids:
+            raise GroundingValidationError(
+                f"reinterview_plan[{index}] 引用了未知 Evidence ID: "
+                + ", ".join(unknown_evidence_ids)
+            )
+
+
+def _canonicalize_enterprise_copy(
+    draft: EnterpriseCopyDraft,
+    selected_dimension_ids: list[str],
+    role_profile: RoleCompetencyProfile,
+) -> EnterpriseCopyDraft:
+    dimensions = {dimension.id: dimension for dimension in role_profile.dimensions}
+    focus_by_dimension = {
+        focus.dimension_id: focus for focus in draft.reinterview_plan
+    }
+    plan = [
+        focus_by_dimension[dimension_id].model_copy(
+            update={
+                # Priority is deterministic and never selected by the model.
+                "priority": index + 1,
+                "dimension_name": dimensions[dimension_id].name,
+            }
+        )
+        for index, dimension_id in enumerate(selected_dimension_ids)
+    ]
+    return EnterpriseCopyDraft(
+        overall_assessment=draft.overall_assessment,
+        reinterview_plan=plan,
+    )
+
+
+def _enterprise_copy_messages(
+    snapshot: ScoreSnapshot,
+    profile: RoleCompetencyProfile,
+    evidences: list[Evidence],
+    selected_dimension_ids: list[str],
+    assessment_evidence_ids: set[str],
+) -> list[tuple[str, str]]:
+    # Imports stay local so the legacy narrative writer remains independently
+    # usable and the two service modules do not form an import cycle.
+    from profile_agent.services.enterprise_report_service import (
+        build_decision_signals,
+        derive_hiring_decision,
+    )
+
+    strengths, risks, unknowns = build_decision_signals(snapshot, profile)
+    decision = derive_hiring_decision(snapshot)
+    selected_dimensions = [
+        dimension
+        for dimension in profile.dimensions
+        if dimension.id in selected_dimension_ids
+    ]
+    readable_criteria = {
+        dimension.id: {
+            "name": dimension.name,
+            "minimum_criteria": [
+                criterion.text for criterion in dimension.minimum_criteria
+            ],
+            "excellence_signals": [
+                criterion.text for criterion in dimension.excellence_signals
+            ],
+            "critical_errors": [
+                criterion.text for criterion in dimension.critical_errors
+            ],
+            "accepted_alternatives": [
+                criterion.text for criterion in dimension.accepted_alternatives
+            ],
+        }
+        for dimension in selected_dimensions
+    }
+    grounded_evidence = [
+        evidence for evidence in evidences if evidence.id in assessment_evidence_ids
+    ]
+    return [
+        ("system", _ENTERPRISE_COPY_SYSTEM_PROMPT),
+        (
+            "human",
+            "锁定的招聘决策投影（只能解释，不能改变）：\n"
+            + _serialized(decision)
+            + "\n\n已锁定的 selected dimension IDs（顺序和 priority 由系统负责）：\n"
+            + _serialized(selected_dimension_ids)
+            + "\n\n可读岗位标准（不要把内部 ID 写入公开文案）：\n"
+            + _serialized(readable_criteria)
+            + "\n\n决策信号（只能解释已给信号）：\n"
+            + _serialized(
+                {
+                    "strengths": strengths,
+                    "risks": risks,
+                    "unknowns": unknowns,
+                }
+            )
+            + "\n\n可追溯证据摘录：\n"
+            + _serialized(grounded_evidence)
+            + "\n\n请生成 EnterpriseCopyDraft；不得评分、不得作招聘判断、不得给候选人成长建议。",
+        ),
+    ]
+
+
+def write_enterprise_copy(
+    snapshot: ScoreSnapshot,
+    profile: RoleCompetencyProfile,
+    evidences: Iterable[Evidence],
+    selected_dimension_ids: Iterable[str],
+    llm_client=llm,
+) -> EnterpriseCopyDraft:
+    """Generate one enterprise copy draft for locked re-interview targets."""
+
+    try:
+        normalized_snapshot = ScoreSnapshot.model_validate(snapshot)
+        normalized_profile = RoleCompetencyProfile.model_validate(profile)
+        normalized_evidences = [
+            Evidence.model_validate(item) for item in evidences
+        ]
+    except (ValidationError, TypeError, ValueError) as exc:
+        raise GroundingValidationError(
+            "企业文案输入不符合结构化契约"
+        ) from exc
+
+    selected = _normalise_selected_dimension_ids(
+        selected_dimension_ids,
+        normalized_profile,
+    )
+    (
+        evidence_by_id,
+        _supporting_ids,
+        _limiting_ids,
+        _transfer_ids,
+        source_kinds,
+        _radar_by_dimension,
+    ) = _snapshot_evidence_sources(
+        normalized_snapshot,
+        normalized_evidences,
+        normalized_profile,
+    )
+    _validate_snapshot_reason_provenance(
+        normalized_snapshot,
+        evidence_by_id,
+        set(source_kinds),
+    )
+    messages = _enterprise_copy_messages(
+        normalized_snapshot,
+        normalized_profile,
+        normalized_evidences,
+        selected,
+        set(source_kinds),
+    )
+
+    try:
+        response = llm_client.structured(messages, EnterpriseCopyDraft)
+    except Exception:
+        # The deterministic fallback is the only recovery path for a model
+        # outage or API error; it never triggers a second structured call.
+        return fallback_enterprise_copy(
+            normalized_snapshot,
+            normalized_profile,
+            selected,
+            evidence=normalized_evidences,
+        )
+    try:
+        draft = EnterpriseCopyDraft.model_validate(response)
+    except (ValidationError, TypeError, ValueError) as exc:
+        raise GroundingValidationError(
+            "LLM 返回的 EnterpriseCopyDraft 无效"
+        ) from exc
+
+    _validate_enterprise_copy(
+        draft,
+        selected,
+        known_evidence_ids=set(evidence_by_id),
+    )
+    return _canonicalize_enterprise_copy(
+        draft,
+        selected,
+        normalized_profile,
+    )
+
+
+_FALLBACK_REINTERVIEW_CONTENT: dict[str, dict[str, object]] = {
+    "role_dim_01": {
+        "reason": "需要核验 Agent 状态、任务拆分与工具边界是否能闭环。",
+        "question": "请拆解一次 Agent 编排任务，并说明状态、工具和失败转移。",
+        "follow_ups": ["何时交给人工？"],
+        "positive_signals": ["边界和转移条件清晰。"],
+        "risk_signals": ["只描述链路而没有状态约束。"],
+        "pass_criteria": ["能说明输入、边界、失败处理和验证方式。"],
+        "suggested_minutes": 10,
+    },
+    "role_dim_02": {
+        "reason": "需要核验业务目标能否转成可验收的任务模型。",
+        "question": "请把一个业务目标拆成任务、输入、输出和验收标准。",
+        "follow_ups": ["需求变化时如何调整？"],
+        "positive_signals": ["目标、约束与验收标准一致。"],
+        "risk_signals": ["方案与业务结果脱节。"],
+        "pass_criteria": ["能用可观察结果定义任务完成。"],
+        "suggested_minutes": 8,
+    },
+    "role_dim_03": {
+        "reason": "需要核验上下文生命周期、记忆冲突和工具验证的完整边界。",
+        "question": "请设计一个涉及上下文生命周期、记忆冲突和工具验证的场景。",
+        "follow_ups": ["如何发现记忆污染？", "工具结果不可信时怎么办？"],
+        "positive_signals": ["能区分上下文与记忆边界。"],
+        "risk_signals": ["只依赖历史内容而没有冲突处理。"],
+        "pass_criteria": ["能说明生命周期、冲突处置和工具验证闭环。"],
+        "suggested_minutes": 10,
+    },
+    "role_dim_04": {
+        "reason": "需要核验 AI 协作开发方案能否落到生产交付和回滚。",
+        "question": "请说明一次 AI 协作开发上线前后的交付与回滚安排。",
+        "follow_ups": ["如何设置发布闸门？"],
+        "positive_signals": ["交付、观测和回滚互相对应。"],
+        "risk_signals": ["只展示开发速度而没有上线约束。"],
+        "pass_criteria": ["能说明变更验证、发布闸门和回滚触发条件。"],
+        "suggested_minutes": 8,
+    },
+    "role_dim_05": {
+        "reason": "需要核验评测、可观测性与安全治理在异常场景中的联动。",
+        "question": "请设计一套发现模型风险并追踪到修复的评测与观测流程。",
+        "follow_ups": ["如何处理安全事件？"],
+        "positive_signals": ["指标、告警和处置责任清楚。"],
+        "risk_signals": ["只有离线指标而没有线上闭环。"],
+        "pass_criteria": ["能说明评测样本、告警阈值、责任和复盘证据。"],
+        "suggested_minutes": 9,
+    },
+    "role_dim_06": {
+        "reason": "需要核验成本、延迟、质量回归与优化权衡的决策依据。",
+        "question": "请在一个真实场景中说明成本、延迟、质量回归与优化权衡。",
+        "follow_ups": ["如何定位质量回归？", "何时接受更高成本？"],
+        "positive_signals": ["能用数据解释优化取舍。"],
+        "risk_signals": ["只追求单一指标而忽略质量回归。"],
+        "pass_criteria": ["能说明基线、权衡指标、回归验证和优化边界。"],
+        "suggested_minutes": 9,
+    },
+}
+
+
+def fallback_enterprise_copy(
+    snapshot: ScoreSnapshot,
+    profile: RoleCompetencyProfile,
+    selected_dimension_ids: Iterable[str],
+    *,
+    evidence: Iterable[Evidence] | None = None,
+) -> EnterpriseCopyDraft:
+    """Return dimension-specific enterprise copy without an API call."""
+
+    normalized_snapshot = ScoreSnapshot.model_validate(snapshot)
+    normalized_profile = RoleCompetencyProfile.model_validate(profile)
+    selected = _normalise_selected_dimension_ids(
+        selected_dimension_ids,
+        normalized_profile,
+    )
+    dimensions = {dimension.id: dimension for dimension in normalized_profile.dimensions}
+    evidence_by_dimension: dict[str, list[str]] = {}
+    for radar in normalized_snapshot.radar_dimensions:
+        values = evidence_by_dimension.setdefault(radar.dimension_id, [])
+        for reason in radar.score_reasons:
+            for evidence_id in reason.evidence_ids:
+                if evidence_id not in values:
+                    values.append(evidence_id)
+    for assessment in normalized_snapshot.requirement_assessments:
+        values = evidence_by_dimension.setdefault(assessment.dimension_id, [])
+        for evidence_id in (
+            assessment.supporting_evidence_ids
+            + assessment.limiting_evidence_ids
+            + assessment.transfer_evidence_ids
+        ):
+            if evidence_id not in values:
+                values.append(evidence_id)
+    known_evidence_ids: set[str] | None = None
+    if evidence is not None:
+        normalized_evidences = [Evidence.model_validate(item) for item in evidence]
+        known_evidence_ids = {item.id for item in normalized_evidences}
+
+    plan: list[ReinterviewFocus] = []
+    for priority, dimension_id in enumerate(selected, start=1):
+        dimension = dimensions[dimension_id]
+        content = _FALLBACK_REINTERVIEW_CONTENT.get(dimension_id)
+        if content is None:
+            content = {
+                "reason": f"需要核验“{dimension.name}”的可观察表现。",
+                "question": f"请说明一个能体现“{dimension.name}”的真实场景。",
+                "follow_ups": ["如何验证结果？"],
+                "positive_signals": ["能给出可复核的过程和结果。"],
+                "risk_signals": ["描述停留在抽象判断。"],
+                "pass_criteria": ["能说明输入、边界、验证和结果。"],
+                "suggested_minutes": 8,
+            }
+        related_evidence_ids = list(evidence_by_dimension.get(dimension_id, []))
+        if known_evidence_ids is not None:
+            related_evidence_ids = [
+                evidence_id
+                for evidence_id in related_evidence_ids
+                if evidence_id in known_evidence_ids
+            ]
+        plan.append(
+            ReinterviewFocus(
+                priority=priority,
+                dimension_id=dimension_id,
+                dimension_name=dimension.name,
+                reason=content["reason"],
+                question=content["question"],
+                follow_ups=content["follow_ups"],
+                positive_signals=content["positive_signals"],
+                risk_signals=content["risk_signals"],
+                pass_criteria=content["pass_criteria"],
+                suggested_minutes=content["suggested_minutes"],
+                related_evidence_ids=related_evidence_ids,
+            )
+        )
+
+    draft = EnterpriseCopyDraft(
+        overall_assessment="当前评估保留待核验维度；复试计划聚焦可观察的过程、边界与验证信号。",
+        reinterview_plan=plan,
+    )
+    _validate_enterprise_copy(
+        draft,
+        selected,
+        known_evidence_ids=known_evidence_ids,
     )
     return draft
 

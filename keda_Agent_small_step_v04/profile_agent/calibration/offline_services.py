@@ -11,7 +11,7 @@ from profile_agent.schemas.report_schema import (
     RubricQuality,
 )
 from profile_agent.services.report_writer_service import (
-    fallback_report_narrative,
+    fallback_enterprise_copy,
 )
 
 
@@ -76,9 +76,26 @@ def build_offline_semantic_services(
     def rubric_matcher(plan, blueprint, role_profile, turns, evidences):
         return _offline_matches(case)
 
+    def enterprise_copy_writer(
+        snapshot,
+        role_profile,
+        evidences,
+        selected_dimension_ids,
+    ):
+        return fallback_enterprise_copy(
+            snapshot,
+            role_profile,
+            selected_dimension_ids,
+            evidence=evidences,
+        )
+
     return {
         "rubric_matcher": rubric_matcher,
-        "narrative_writer": fallback_report_narrative,
+        # Task 4 establishes one writer contract for online and zero-API
+        # callers.  Keep the explicit alias while Task 5 wires it into the
+        # report assembler.
+        "narrative_writer": enterprise_copy_writer,
+        "enterprise_copy_writer": enterprise_copy_writer,
     }
 
 

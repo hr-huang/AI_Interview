@@ -22,6 +22,7 @@ from profile_agent.services.enterprise_report_service import (
     build_decision_signals,
     build_evidence_excerpts,
     derive_hiring_decision,
+    select_reinterview_dimensions,
     validate_enterprise_assessment,
 )
 from profile_agent.services.role_profile_service import load_role_profile
@@ -91,6 +92,57 @@ def _snapshot(
             confidence=confidence,
             limiting_reasons=limiting_reasons or [],
         ),
+    )
+
+
+def _snapshot_with_six_reinterview_gaps() -> ScoreSnapshot:
+    snapshot = _snapshot(unverified_dimensions=["role_dim_06"])
+    radar_by_id = {
+        radar.dimension_id: radar for radar in snapshot.radar_dimensions
+    }
+    radar_by_id["role_dim_01"] = radar_by_id["role_dim_01"].model_copy(
+        update={"score": 90.0, "confidence": "high"}
+    )
+    radar_by_id["role_dim_02"] = radar_by_id["role_dim_02"].model_copy(
+        update={"score": 68.0, "confidence": "medium"}
+    )
+    radar_by_id["role_dim_03"] = radar_by_id["role_dim_03"].model_copy(
+        update={
+            "score": 35.0,
+            "level": "L1",
+            "confidence": "low",
+            "score_reasons": [
+                ScoreReason(
+                    reason_type="critical_error",
+                    text="关键限制需要复试核验。",
+                    evidence_ids=["E001"],
+                ),
+                ScoreReason(
+                    reason_type="strength",
+                    text="已有局部场景证据。",
+                    evidence_ids=["E001"],
+                ),
+            ],
+        }
+    )
+    radar_by_id["role_dim_04"] = radar_by_id["role_dim_04"].model_copy(
+        update={"score": 64.0, "confidence": "high"}
+    )
+    radar_by_id["role_dim_05"] = radar_by_id["role_dim_05"].model_copy(
+        update={"score": 58.0, "confidence": "medium"}
+    )
+    limiting_reason = ScoreReason(
+        reason_type="critical_error",
+        text="role_dim_03 存在岗位限制。",
+        evidence_ids=["E001"],
+    )
+    return snapshot.model_copy(
+        update={
+            "radar_dimensions": list(radar_by_id.values()),
+            "job_match": snapshot.job_match.model_copy(
+                update={"limiting_reasons": [limiting_reason]}
+            ),
+        }
     )
 
 
@@ -181,6 +233,14 @@ def _enterprise(
 
 
 class EnterpriseReportServiceTest(unittest.TestCase):
+    def test_reinterview_selects_only_top_three_gaps(self) -> None:
+        selected = select_reinterview_dimensions(
+            _snapshot_with_six_reinterview_gaps(), _profile()
+        )
+
+        self.assertLessEqual(len(selected), 3)
+        self.assertEqual(selected[0], "role_dim_03")
+
     def test_evidence_excerpt_quote_is_an_exact_answer_substring(self) -> None:
         excerpts = build_evidence_excerpts(
             _snapshot(), _evidences(), _turns()

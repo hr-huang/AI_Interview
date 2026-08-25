@@ -1179,11 +1179,100 @@ def build_decision_signals(
     return strengths, risks, unknowns
 
 
+def select_reinterview_dimensions(
+    snapshot: ScoreSnapshot,
+    profile: RoleCompetencyProfile,
+) -> list[str]:
+    """Select at most three dimensions that need a focused re-interview.
+
+    The score snapshot is already immutable, so this ranking is deliberately
+    deterministic.  A dimension with a critical/limiting signal wins over an
+    otherwise similar gap; unknowns and lower scores then break ties before
+    the Role Pack weight and its stable display order.
+    """
+
+    snapshot = _normalise_snapshot(snapshot)
+    profile = _normalise_profile(profile)
+    if (
+        snapshot.role_family != profile.role_family
+        or snapshot.role_profile_version != profile.version
+    ):
+        raise ReportConsistencyError(
+            "ScoreSnapshot 与 RoleCompetencyProfile 的版本或岗位不一致"
+        )
+
+    dimensions = _profile_dimension_index(profile)
+    radar_by_id = _unique_index(
+        snapshot.radar_dimensions,
+        "Radar Dimension",
+        id_field="dimension_id",
+    )
+    reasons_by_dimension = _dimension_reasons(snapshot)
+    assessments_by_dimension: dict[str, list[object]] = {}
+    for assessment in snapshot.requirement_assessments:
+        assessments_by_dimension.setdefault(assessment.dimension_id, []).append(
+            assessment
+        )
+    limiting_dimension_ids = _limiting_dimension_ids(snapshot)
+
+    candidates: list[tuple[tuple[int, int, int, float, float], str, int]] = []
+    for display_order, dimension in enumerate(profile.dimensions):
+        dimension_id = dimension.id
+        radar = radar_by_id.get(dimension_id)
+        reasons = reasons_by_dimension.get(dimension_id, [])
+        assessments = assessments_by_dimension.get(dimension_id, [])
+        has_limiting_reason = (
+            dimension_id in limiting_dimension_ids
+            or any(
+                reason.reason_type in {"critical_error", "risk"}
+                for reason in reasons
+            )
+            or any(
+                bool(
+                    getattr(assessment, "limiting_evidence_ids", [])
+                    or getattr(assessment, "unresolved_critical_error_ids", [])
+                )
+                for assessment in assessments
+            )
+        )
+        score = getattr(radar, "score", None) if radar is not None else None
+        confidence = getattr(radar, "confidence", "low")
+        is_unverified = (
+            radar is None
+            or getattr(radar, "level", "UNVERIFIED") == "UNVERIFIED"
+            or score is None
+        )
+
+        # A strong, high-confidence dimension with no limiting signal is not a
+        # re-interview gap, even when another dimension has a lower score.
+        if (
+            radar is not None
+            and confidence == "high"
+            and score is not None
+            and score >= 80
+            and not has_limiting_reason
+        ):
+            continue
+
+        priority = (
+            int(has_limiting_reason),
+            int(dimension.is_gating and confidence == "low"),
+            int(is_unverified),
+            100 - float(score or 0),
+            dimension.weight,
+        )
+        candidates.append((priority, dimension_id, display_order))
+
+    candidates.sort(key=lambda item: (item[0], -item[2]), reverse=True)
+    return [dimension_id for _, dimension_id, _ in candidates[:3]]
+
+
 __all__ = [
     "HiringDecisionDraft",
     "ReportConsistencyError",
     "build_decision_signals",
     "build_evidence_excerpts",
     "derive_hiring_decision",
+    "select_reinterview_dimensions",
     "validate_enterprise_assessment",
 ]
