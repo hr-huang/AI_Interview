@@ -190,6 +190,75 @@ describe('ReportPage', () => {
     expect(screen.getByText('节点只返回增量更新，状态机负责合并。')).toBeVisible()
   })
 
+  test('groups every dimension linked to a transcript turn in the shared evidence drawer', async () => {
+    vi.mocked(api.getReport).mockResolvedValue(report({
+      radar_dimensions: [
+        report().radar_dimensions[0],
+        {
+          name: '生产稳定性',
+          score: 72,
+          level: 'L2',
+          coverage: 0.7,
+          confidence: 'medium',
+          reasons: [{
+            reason_type: 'risk',
+            text: '生产故障恢复边界仍需验证。',
+            sources: [{
+              turn_id: 'turn_003',
+              conclusion: '回答覆盖了局部恢复流程。',
+              quote: '先隔离故障，再观察恢复指标',
+              interpretation: '能够描述故障处理的先后顺序。',
+              limitation: '尚未证明真实生产压力下的恢复能力。',
+            }],
+          }],
+        },
+      ],
+    }))
+    const user = userEvent.setup()
+    renderEnterprisePage()
+
+    expect(await screen.findByRole('heading', { name: '岗位胜任力报告' })).toBeVisible()
+    await user.click(screen.getByText('展开查看面试过程回顾'))
+    const transcript = screen.getByRole('heading', { name: '问题、回答与追问依据' }).closest('section')
+    expect(transcript).not.toBeNull()
+    const firstTurn = (transcript as HTMLElement).querySelector('.interview-transcript-list > li')
+    expect(firstTurn).not.toBeNull()
+    await user.click(within(firstTurn as HTMLElement).getByRole('button', { name: /查看本轮依据/ }))
+
+    const drawer = screen.getByRole('dialog')
+    expect(within(drawer).getByRole('heading', { name: 'Agent 编排' })).toBeVisible()
+    expect(within(drawer).getByRole('heading', { name: '生产稳定性' })).toBeVisible()
+    expect(within(drawer).getByText('能够解释状态流转。')).toBeVisible()
+    expect(within(drawer).getByText('生产故障恢复边界仍需验证。')).toBeVisible()
+    expect(within(drawer).getByText('节点只返回增量更新')).toBeVisible()
+    expect(within(drawer).getByText('先隔离故障，再观察恢复指标')).toBeVisible()
+  })
+
+  test('renders usable empty states when optional report sections are missing', async () => {
+    vi.mocked(api.getReport).mockResolvedValue(report({
+      candidate_overview: undefined as unknown as ReportViewModel['candidate_overview'],
+      enterprise_assessment: undefined as unknown as ReportViewModel['enterprise_assessment'],
+      job_match: undefined as unknown as ReportViewModel['job_match'],
+      narrative: undefined as unknown as ReportViewModel['narrative'],
+      radar_dimensions: undefined as unknown as ReportViewModel['radar_dimensions'],
+      interview_path: undefined as unknown as ReportViewModel['interview_path'],
+      interview_transcript: undefined as unknown as ReportViewModel['interview_transcript'],
+      assessment_limitations: undefined as unknown as ReportViewModel['assessment_limitations'],
+    }))
+    renderEnterprisePage()
+
+    expect(await screen.findByRole('heading', { name: '岗位胜任力报告' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: '候选人概览' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: '候选人总评' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: '企业复试计划' })).toBeVisible()
+    expect(screen.getByText('服务端没有返回能力维度。')).toBeVisible()
+    expect(screen.getByText('当前没有需要额外安排的结构化复试重点。')).toBeVisible()
+    await userEvent.setup().click(screen.getByText('展开查看面试过程回顾'))
+    expect(screen.getByText('当前没有返回面试记录。')).toBeVisible()
+    await userEvent.setup().click(screen.getByText('展开查看报告说明'))
+    expect(screen.getByText('服务端没有返回评估限制。')).toBeVisible()
+  })
+
   test('renders ordered transcript turns without exposing internal identifiers', async () => {
     vi.mocked(api.getReport).mockResolvedValue(report({
       interview_transcript: [

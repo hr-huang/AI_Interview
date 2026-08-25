@@ -85,7 +85,7 @@ describe('RadarChart', () => {
     expect(cssText).toContain('.radar-axis circle.radar-axis-hit')
   })
 
-  test('keeps hover, focus and selected halos statically visible', () => {
+  test('keeps hover, focus and selected halos continuously visible', () => {
     render(<RadarChart dimensions={dimensions} />)
 
     const svg = screen.getByRole('img', { name: '能力雷达图' })
@@ -103,7 +103,7 @@ describe('RadarChart', () => {
     expect(cssText).toContain('.radar-axis:focus-visible .radar-axis-halo')
     expect(cssText).toContain('.radar-axis.is-selected .radar-axis-halo')
     expect(cssText).toContain('animation: radar-halo-wave')
-    expect(cssText).toContain('-1.4s')
+    expect(cssText).not.toContain('-1.4s')
     expect(cssText).toContain('infinite')
     expect(cssText).not.toContain('animation-delay: calc(var(--radar-index)')
   })

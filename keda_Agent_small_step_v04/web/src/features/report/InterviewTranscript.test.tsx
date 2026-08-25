@@ -71,4 +71,54 @@ describe('InterviewTranscript', () => {
     expect(onTurnSelect).toHaveBeenCalledWith('turn_001')
     expect(screen.queryByText(/req_|ev_/)).not.toBeInTheDocument()
   })
+
+  test('repeats scroll and focus when the same turn receives a new focus request', () => {
+    const originalRequestAnimationFrame = window.requestAnimationFrame
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView
+    const requestAnimationFrame = vi.fn((callback: FrameRequestCallback) => {
+      callback(0)
+      return 0
+    })
+    const scrollIntoView = vi.fn()
+    Object.defineProperty(window, 'requestAnimationFrame', {
+      configurable: true,
+      writable: true,
+      value: requestAnimationFrame,
+    })
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      writable: true,
+      value: scrollIntoView,
+    })
+
+    try {
+      const { rerender } = render(
+        <InterviewTranscript
+          turns={turns}
+          focusRequest={{ turnId: 'turn_001', requestId: 1 }}
+        />,
+      )
+
+      expect(scrollIntoView).toHaveBeenCalledTimes(1)
+      rerender(
+        <InterviewTranscript
+          turns={turns}
+          focusRequest={{ turnId: 'turn_001', requestId: 2 }}
+        />,
+      )
+      expect(scrollIntoView).toHaveBeenCalledTimes(2)
+      expect(requestAnimationFrame).toHaveBeenCalledTimes(2)
+    } finally {
+      Object.defineProperty(window, 'requestAnimationFrame', {
+        configurable: true,
+        writable: true,
+        value: originalRequestAnimationFrame,
+      })
+      Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+        configurable: true,
+        writable: true,
+        value: originalScrollIntoView,
+      })
+    }
+  })
 })

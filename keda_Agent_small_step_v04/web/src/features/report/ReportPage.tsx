@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useParams } from 'react-router-dom'
 import { api } from '../../api/client'
 import type {
@@ -6,16 +6,15 @@ import type {
   DecisionSignalView,
   EnterpriseAssessmentView,
   RadarDimensionView,
-  ReasonView,
   ReportViewModel,
   ReinterviewFocusView,
 } from '../../api/types'
-import { EvidenceDrawer } from './EvidenceDrawer'
-import { InterviewTranscript } from './InterviewTranscript'
+import { EvidenceDrawer, type EvidenceDrawerGroup } from './EvidenceDrawer'
+import { InterviewTranscript, type TranscriptFocusRequest } from './InterviewTranscript'
 import { RadarChart } from './RadarChart'
 import './report.css'
 
-type SelectedReason = ReasonView | null
+type SelectedEvidenceGroups = EvidenceDrawerGroup[] | null
 
 function textValue(value: string | null | undefined, fallback = '—'): string {
   return typeof value === 'string' && value.trim() ? value : fallback
@@ -90,6 +89,7 @@ function ReportCollapsible({
 }
 
 function CandidateOverview({ overview }: { overview: CandidateOverviewView }) {
+  const jdFocus = overview.jd_focus ?? []
   return (
     <section className="report-panel report-candidate-panel" aria-labelledby="candidate-overview-title">
       <div className="report-section-heading">
@@ -116,7 +116,7 @@ function CandidateOverview({ overview }: { overview: CandidateOverviewView }) {
           </div>
           <div>
             <dt>本次岗位关注</dt>
-            <dd>{overview.jd_focus.length > 0 ? overview.jd_focus.join(' · ') : '按岗位标准核验'}</dd>
+            <dd>{jdFocus.length > 0 ? jdFocus.join(' · ') : '按岗位标准核验'}</dd>
           </div>
         </dl>
       </div>
@@ -131,6 +131,8 @@ function DecisionBrief({
   assessment: EnterpriseAssessmentView
   jobMatch: ReportViewModel['job_match']
 }) {
+  const conditions = assessment.conditions ?? []
+  const decisionReasons = assessment.decision_reasons ?? []
   const score = assessment.provisional_score ?? jobMatch.raw_score
   const hasScore = typeof score === 'number' && Number.isFinite(score)
   const confidence = confidenceLabel(assessment.confidence || jobMatch.confidence)
@@ -139,7 +141,7 @@ function DecisionBrief({
       <div className="report-decision-main">
         <p className="eyebrow">企业招聘结论</p>
         <h2 id="decision-brief-title">{textValue(assessment.decision_label, '待核验后决定')}</h2>
-        <p>{assessment.decision_reasons[0] || '当前结论基于已保存的面试证据，仍需结合人工复试。'}</p>
+        <p>{decisionReasons[0] || '当前结论基于已保存的面试证据，仍需结合人工复试。'}</p>
       </div>
       <div className="report-decision-signals" aria-label="招聘决策摘要">
         <div>
@@ -154,13 +156,13 @@ function DecisionBrief({
         </div>
         <div>
           <span>推进条件</span>
-          <strong>{assessment.conditions.length > 0 ? `${assessment.conditions.length} 项` : '无'}</strong>
-          <small>{assessment.conditions[0] || '当前没有额外推进条件。'}</small>
+          <strong>{conditions.length > 0 ? `${conditions.length} 项` : '无'}</strong>
+          <small>{conditions[0] || '当前没有额外推进条件。'}</small>
         </div>
       </div>
-      {assessment.conditions.length > 1 ? (
+      {conditions.length > 1 ? (
         <ul className="report-decision-conditions">
-          {assessment.conditions.map((condition) => <li key={condition}>{condition}</li>)}
+          {conditions.map((condition) => <li key={condition}>{condition}</li>)}
         </ul>
       ) : null}
     </section>
@@ -168,6 +170,7 @@ function DecisionBrief({
 }
 
 function OverallAssessment({ assessment, narrativeSummary }: { assessment: EnterpriseAssessmentView; narrativeSummary: string }) {
+  const overallAssessment = textValue(assessment.overall_assessment, '当前没有可发布的总评，仍需结合人工复试。')
   return (
     <section className="report-panel report-overall-panel" aria-labelledby="overall-assessment-title">
       <div className="report-section-heading">
@@ -177,8 +180,8 @@ function OverallAssessment({ assessment, narrativeSummary }: { assessment: Enter
         </div>
         <span>基于当前问答证据</span>
       </div>
-      <p className="report-overall-copy">{assessment.overall_assessment}</p>
-      {narrativeSummary && narrativeSummary !== assessment.overall_assessment ? (
+      <p className="report-overall-copy">{overallAssessment}</p>
+      {narrativeSummary && narrativeSummary !== overallAssessment ? (
         <p className="report-overall-context">{narrativeSummary}</p>
       ) : null}
     </section>
@@ -202,16 +205,19 @@ function DecisionSignalList({
       </div>
       {items.length > 0 ? (
         <ul className="narrative-list decision-signal-list">
-          {items.map((item, index) => (
-            <li key={`${item.title}-${index}`}>
-              <strong>{item.title}</strong>
-              <p>{item.text}</p>
-              <div className="narrative-meta">
-                <span>{item.dimension_names.join(' · ') || '岗位相关能力'}</span>
-                <span>置信度 {confidenceLabel(item.confidence)}</span>
-              </div>
-            </li>
-          ))}
+          {items.map((item) => {
+            const dimensionNames = item.dimension_names ?? []
+            return (
+              <li key={`${item.title}-${item.text}-${dimensionNames.join('|')}`}>
+                <strong>{item.title}</strong>
+                <p>{item.text}</p>
+                <div className="narrative-meta">
+                  <span>{dimensionNames.join(' · ') || '岗位相关能力'}</span>
+                  <span>置信度 {confidenceLabel(item.confidence)}</span>
+                </div>
+              </li>
+            )
+          })}
         </ul>
       ) : <EmptyReportCopy>当前没有返回内容。</EmptyReportCopy>}
     </section>
@@ -219,6 +225,9 @@ function DecisionSignalList({
 }
 
 function DecisionSignals({ assessment }: { assessment: EnterpriseAssessmentView }) {
+  const strengths = assessment.strengths ?? []
+  const risks = assessment.risks ?? []
+  const unknowns = assessment.unknowns ?? []
   return (
     <section className="report-panel report-signals-panel" aria-labelledby="signals-title">
       <div className="report-section-heading">
@@ -229,16 +238,16 @@ function DecisionSignals({ assessment }: { assessment: EnterpriseAssessmentView 
         <span>只呈现与招聘判断相关的信号</span>
       </div>
       <div className="narrative-grid decision-signal-grid">
-        <DecisionSignalList title="优势" items={assessment.strengths} tone="positive" />
-        <DecisionSignalList title="风险" items={assessment.risks} tone="risk" />
-        <DecisionSignalList title="待确认" items={assessment.unknowns} tone="unverified" />
+        <DecisionSignalList title="优势" items={strengths} tone="positive" />
+        <DecisionSignalList title="风险" items={risks} tone="risk" />
+        <DecisionSignalList title="待确认" items={unknowns} tone="unverified" />
       </div>
     </section>
   )
 }
 
 function ReinterviewPlan({ items }: { items: ReinterviewFocusView[] }) {
-  const plan = items.slice(0, 3)
+  const plan = (items ?? []).slice(0, 3)
   return (
     <section className="report-panel development-panel enterprise-reinterview-panel" aria-labelledby="reinterview-title">
       <div className="report-section-heading">
@@ -250,70 +259,113 @@ function ReinterviewPlan({ items }: { items: ReinterviewFocusView[] }) {
       </div>
       {plan.length > 0 ? (
         <div className="development-grid reinterview-grid">
-          {plan.map((item, index) => (
-            <article key={`${item.dimension_name}-${item.priority}-${index}`} className="reinterview-card">
-              <span className="development-index">优先级 {String(item.priority || index + 1).padStart(2, '0')}</span>
-              <h3>{item.dimension_name}</h3>
-              <p className="development-gap">{item.reason}</p>
-              <div className="reinterview-question">
-                <span>结构化主问题</span>
-                <p>{item.question}</p>
-              </div>
-              {item.follow_ups.length > 0 ? (
-                <div className="reinterview-followups">
-                  <span>追问方向</span>
-                  <ul>{item.follow_ups.map((followUp) => <li key={followUp}>{followUp}</li>)}</ul>
+          {plan.map((item, index) => {
+            const followUps = item.follow_ups ?? []
+            const passCriteria = item.pass_criteria ?? []
+            return (
+              <article key={`${item.priority}-${item.dimension_name}`} className="reinterview-card">
+                <span className="development-index">优先级 {String(item.priority || index + 1).padStart(2, '0')}</span>
+                <h3>{item.dimension_name}</h3>
+                <p className="development-gap">{item.reason}</p>
+                <div className="reinterview-question">
+                  <span>结构化主问题</span>
+                  <p>{item.question}</p>
                 </div>
-              ) : null}
-              {item.pass_criteria.length > 0 ? (
-                <div className="development-acceptance">
-                  <strong>通过标准</strong>
-                  <span>{item.pass_criteria.join('；')}</span>
-                </div>
-              ) : null}
-              <small className="reinterview-minutes">建议用时 {item.suggested_minutes} 分钟</small>
-            </article>
-          ))}
+                {followUps.length > 0 ? (
+                  <div className="reinterview-followups">
+                    <span>追问方向</span>
+                    <ul>{followUps.map((followUp) => <li key={followUp}>{followUp}</li>)}</ul>
+                  </div>
+                ) : null}
+                {passCriteria.length > 0 ? (
+                  <div className="development-acceptance">
+                    <strong>通过标准</strong>
+                    <span>{passCriteria.join('；')}</span>
+                  </div>
+                ) : null}
+                <small className="reinterview-minutes">建议用时 {item.suggested_minutes} 分钟</small>
+              </article>
+            )
+          })}
         </div>
       ) : <EmptyReportCopy>当前没有需要额外安排的结构化复试重点。</EmptyReportCopy>}
     </section>
   )
 }
 
-function findReasonForTurn(dimensions: RadarDimensionView[], turnId: string): ReasonView | null {
-  for (const dimension of dimensions) {
-    const reason = dimension.reasons.find((item) => item.sources.some((source) => source.turn_id === turnId))
-    if (reason) return reason
-  }
-  return null
+function groupsForDimension(dimension: RadarDimensionView): EvidenceDrawerGroup[] {
+  const reasons = dimension.reasons ?? []
+  const reason = reasons.find((item) => (item.sources ?? []).length > 0) ?? reasons[0]
+  return reason ? [{ dimensionName: dimension.name, reasons: [reason] }] : []
+}
+
+function groupsForTurn(dimensions: RadarDimensionView[], turnId: string): EvidenceDrawerGroup[] {
+  return dimensions.flatMap((dimension) => {
+    const reasons = (dimension.reasons ?? [])
+      .map((reason) => ({
+        ...reason,
+        sources: (reason.sources ?? []).filter((source) => source.turn_id === turnId),
+      }))
+      .filter((reason) => reason.sources.length > 0)
+    return reasons.length > 0 ? [{ dimensionName: dimension.name, reasons }] : []
+  })
 }
 
 function ReportView({ report, demo = report.demo }: { report: ReportViewModel; demo?: boolean }) {
-  const [selectedReason, setSelectedReason] = useState<SelectedReason>(null)
-  const [focusTurnId, setFocusTurnId] = useState<string | null>(null)
-  const enterprise = report.enterprise_assessment
-  const jobMatch = report.job_match
-  const dimensions = report.radar_dimensions
-  const path = report.interview_path
+  const [selectedGroups, setSelectedGroups] = useState<SelectedEvidenceGroups>(null)
+  const [focusRequest, setFocusRequest] = useState<TranscriptFocusRequest | null>(null)
+  const focusRequestIdRef = useRef(0)
+  const rawCandidateOverview = report.candidate_overview
+  const candidateOverview = {
+    ...(rawCandidateOverview ?? {}),
+    candidate_name: rawCandidateOverview?.candidate_name ?? '',
+    target_role: rawCandidateOverview?.target_role ?? report.target_role ?? '',
+    jd_focus: rawCandidateOverview?.jd_focus ?? [],
+    interview_rounds: rawCandidateOverview?.interview_rounds ?? 0,
+  } as CandidateOverviewView
+  const rawEnterprise = report.enterprise_assessment
+  const enterprise = {
+    ...(rawEnterprise ?? {}),
+    conditions: rawEnterprise?.conditions ?? [],
+    decision_reasons: rawEnterprise?.decision_reasons ?? [],
+    strengths: rawEnterprise?.strengths ?? [],
+    risks: rawEnterprise?.risks ?? [],
+    unknowns: rawEnterprise?.unknowns ?? [],
+    reinterview_plan: rawEnterprise?.reinterview_plan ?? [],
+    evidence_excerpts: rawEnterprise?.evidence_excerpts ?? [],
+  } as EnterpriseAssessmentView
+  const rawJobMatch = report.job_match
+  const jobMatch = {
+    ...(rawJobMatch ?? {}),
+    limiting_reasons: rawJobMatch?.limiting_reasons ?? [],
+  } as ReportViewModel['job_match']
+  const dimensions = (report.radar_dimensions ?? []).map((dimension) => ({
+    ...dimension,
+    reasons: dimension.reasons ?? [],
+  }))
+  const path = report.interview_path ?? []
   const transcript = report.interview_transcript ?? []
+  const narrativeSummary = report.narrative?.executive_summary ?? ''
+  const assessmentLimitations = report.assessment_limitations ?? []
   const demoVariant = report.demo_variant === 'boundary' ? 'boundary' : 'showcase'
   const score = enterprise.provisional_score ?? jobMatch.raw_score
   const hasScore = typeof score === 'number' && Number.isFinite(score)
 
-  const closeDrawer = useCallback(() => setSelectedReason(null), [])
+  const closeDrawer = useCallback(() => setSelectedGroups(null), [])
 
   function selectDimension(dimension: RadarDimensionView) {
-    const reason = dimension.reasons.find((item) => item.sources.length > 0) ?? dimension.reasons[0]
-    setSelectedReason(reason ?? null)
+    const groups = groupsForDimension(dimension)
+    setSelectedGroups(groups.length > 0 ? groups : null)
   }
 
   function focusTurn(turnId: string) {
-    setFocusTurnId(turnId)
+    focusRequestIdRef.current += 1
+    setFocusRequest({ turnId, requestId: focusRequestIdRef.current })
   }
 
   function selectTranscriptTurn(turnId: string) {
-    const reason = findReasonForTurn(dimensions, turnId)
-    if (reason) setSelectedReason(reason)
+    const groups = groupsForTurn(dimensions, turnId)
+    setSelectedGroups(groups.length > 0 ? groups : null)
     focusTurn(turnId)
   }
 
@@ -335,20 +387,20 @@ function ReportView({ report, demo = report.demo }: { report: ReportViewModel; d
         </div>
         <div className="report-fit-summary is-context" aria-label="候选人上下文">
           <span className="report-fit-kicker">候选人</span>
-          <strong>{textValue(report.candidate_overview.candidate_name, '匿名候选人')}</strong>
-          <span className="report-fit-level">{report.candidate_overview.interview_rounds} 轮面试记录</span>
-          <small>{report.candidate_overview.jd_focus.length > 0 ? report.candidate_overview.jd_focus.join(' · ') : '按岗位标准核验'}</small>
+          <strong>{textValue(candidateOverview.candidate_name, '匿名候选人')}</strong>
+          <span className="report-fit-level">{candidateOverview.interview_rounds} 轮面试记录</span>
+          <small>{candidateOverview.jd_focus.length > 0 ? candidateOverview.jd_focus.join(' · ') : '按岗位标准核验'}</small>
         </div>
       </header>
 
-      <CandidateOverview overview={report.candidate_overview} />
+      <CandidateOverview overview={candidateOverview} />
       <DecisionBrief assessment={enterprise} jobMatch={jobMatch} />
-      <OverallAssessment assessment={enterprise} narrativeSummary={report.narrative.executive_summary} />
+      <OverallAssessment assessment={enterprise} narrativeSummary={narrativeSummary} />
 
       <section className="report-metrics" aria-label="报告指标">
         <div><span>岗位覆盖率</span><strong>{percentage(jobMatch.coverage)}</strong><small>加权证据覆盖</small></div>
         <div><span>岗位置信度</span><strong>{confidenceLabel(enterprise.confidence || jobMatch.confidence)}</strong><small>服务端综合信号</small></div>
-        <div><span>面试轮次</span><strong>{report.candidate_overview.interview_rounds}</strong><small>完整记录保留在下方</small></div>
+        <div><span>面试轮次</span><strong>{candidateOverview.interview_rounds}</strong><small>完整记录保留在下方</small></div>
         <div><span>复试重点</span><strong>{Math.min(3, enterprise.reinterview_plan.length)}</strong><small>最多三项结构化核验</small></div>
       </section>
 
@@ -380,7 +432,7 @@ function ReportView({ report, demo = report.demo }: { report: ReportViewModel; d
           {jobMatch.limiting_reasons.length > 0 ? (
             <ul className="limiting-reason-list">
               {jobMatch.limiting_reasons.map((reason, index) => (
-                <li key={`${reason.reason_type}-${index}`}>
+                <li key={`${reason.reason_type}-${reason.text}`}>
                   <span>{reason.reason_type === 'unverified' ? '待核验' : '决策限制'}</span>
                   <p>{reason.text}</p>
                 </li>
@@ -397,7 +449,7 @@ function ReportView({ report, demo = report.demo }: { report: ReportViewModel; d
       <InterviewTranscript
         turns={transcript}
         path={path}
-        focusTurnId={focusTurnId}
+        focusRequest={focusRequest}
         onTurnSelect={selectTranscriptTurn}
       />
 
@@ -407,14 +459,14 @@ function ReportView({ report, demo = report.demo }: { report: ReportViewModel; d
             <p className="eyebrow">报告说明</p>
             <h2 id="limitations-title">报告说明</h2>
           </div>
-          {report.assessment_limitations.length > 0 ? (
-            <ul>{report.assessment_limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
+          {assessmentLimitations.length > 0 ? (
+            <ul>{assessmentLimitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
           ) : <EmptyReportCopy>服务端没有返回评估限制。</EmptyReportCopy>}
         </footer>
       </ReportCollapsible>
 
       <EvidenceDrawer
-        reason={selectedReason}
+        groups={selectedGroups}
         onClose={closeDrawer}
         onTurnSelect={focusTurn}
       />

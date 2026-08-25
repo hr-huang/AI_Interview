@@ -1,10 +1,15 @@
 import { useEffect, useMemo, useRef } from 'react'
 import type { InterviewPathView, InterviewTranscriptTurnView } from '../../api/types'
 
+export type TranscriptFocusRequest = {
+  turnId: string
+  requestId: number
+}
+
 type InterviewTranscriptProps = {
   turns: InterviewTranscriptTurnView[]
   path?: InterviewPathView[]
-  focusTurnId?: string | null
+  focusRequest?: TranscriptFocusRequest | null
   onTurnSelect?: (turnId: string) => void
 }
 
@@ -49,7 +54,7 @@ function turnDomId(turn: InterviewTranscriptTurnView): string {
   return `interview-turn-${turn.sequence_number}`
 }
 
-export function InterviewTranscript({ turns, path = [], focusTurnId, onTurnSelect }: InterviewTranscriptProps) {
+export function InterviewTranscript({ turns, path = [], focusRequest, onTurnSelect }: InterviewTranscriptProps) {
   const detailsRef = useRef<HTMLDetailsElement>(null)
   const orderedTurns = useMemo(
     () => [...turns].sort((left, right) => left.sequence_number - right.sequence_number),
@@ -57,8 +62,8 @@ export function InterviewTranscript({ turns, path = [], focusTurnId, onTurnSelec
   )
 
   useEffect(() => {
-    if (!focusTurnId) return
-    const targetTurn = orderedTurns.find((turn) => turn.turn_id === focusTurnId)
+    if (!focusRequest) return
+    const targetTurn = orderedTurns.find((turn) => turn.turn_id === focusRequest.turnId)
     if (!targetTurn) return
     detailsRef.current?.setAttribute('open', '')
     window.requestAnimationFrame(() => {
@@ -67,7 +72,7 @@ export function InterviewTranscript({ turns, path = [], focusTurnId, onTurnSelec
       row.scrollIntoView?.({ block: 'center', behavior: 'smooth' })
       row.focus()
     })
-  }, [focusTurnId, orderedTurns])
+  }, [focusRequest, orderedTurns])
 
   return (
     <details ref={detailsRef} className="report-collapsible report-transcript-collapsible">
@@ -142,7 +147,7 @@ export function InterviewTranscript({ turns, path = [], focusTurnId, onTurnSelec
               {path.map((item, index) => {
                 const turn = orderedTurns.find((candidate) => candidate.turn_id === item.turn_id)
                 return (
-                  <li key={`${item.turn_id}-${index}`}>
+                  <li key={`${item.turn_id}-${item.question_mode}-${item.outcome}`}>
                     <div className="path-step-index">{String(index + 1).padStart(2, '0')}</div>
                     <div className="path-step-copy">
                       <div className="path-step-head">
