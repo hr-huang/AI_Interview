@@ -1,9 +1,11 @@
-from datetime import date
+from datetime import date, datetime
 import unittest
 
 from pydantic import ValidationError
 
 from profile_agent.schemas.report_schema import (
+    AssessmentReport,
+    CandidateOverview,
     EnterpriseAssessment,
     CompetencyDimensionRubric,
     JobMatchResult,
@@ -11,9 +13,11 @@ from profile_agent.schemas.report_schema import (
     ReinterviewFocus,
     RequirementEvidenceAssessment,
     RequirementScore,
+    ReportNarrativeDraft,
     RubricCriterion,
     RubricQuality,
     RoleCompetencyProfile,
+    ScoreSnapshot,
     ScoreReason,
 )
 
@@ -57,12 +61,117 @@ def _dimension(
     )
 
 
+def _candidate_overview_fields() -> dict[str, object]:
+    return {
+        "candidate_id": "candidate_01",
+        "candidate_name": "候选人",
+        "target_role": "AI 应用工程师",
+        "education_summary": "计算机科学学士",
+        "experience_summary": "三年相关经验",
+        "jd_focus": ["Agent 编排", "RAG"],
+        "interview_rounds": 1,
+        "generated_at": datetime(2026, 8, 25, 12, 0),
+    }
+
+
+def _reinterview_focus_fields(**overrides: object) -> dict[str, object]:
+    fields: dict[str, object] = {
+        "priority": 1,
+        "dimension_id": "role_dim_03",
+        "dimension_name": "Context、RAG、Memory与工具工程",
+        "reason": "当前只验证了过期文档过滤。",
+        "question": "实时状态与历史记忆冲突时如何处理？",
+        "follow_ups": ["如何验证冲突策略有效？"],
+        "positive_signals": ["说明生命周期和冲突优先级"],
+        "risk_signals": ["只描述向量检索"],
+        "pass_criteria": ["给出可复现实验和回滚方式"],
+        "suggested_minutes": 8,
+        "related_evidence_ids": ["E003"],
+    }
+    fields.update(overrides)
+    return fields
+
+
+def _enterprise_assessment_fields(**overrides: object) -> dict[str, object]:
+    fields: dict[str, object] = {
+        "decision": "PROCEED",
+        "decision_label": "建议推进",
+        "confidence": "high",
+        "decision_reasons": ["关键能力有直接证据"],
+        "overall_assessment": "候选人具备目标岗位所需能力。",
+    }
+    fields.update(overrides)
+    return fields
+
+
+def _assessment_report() -> AssessmentReport:
+    return AssessmentReport(
+        target_role="AI 应用工程师",
+        score_snapshot=ScoreSnapshot(
+            role_family="ai_application_engineering",
+            role_profile_version="2026-H2",
+            scoring_engine_version="v1",
+            job_match=JobMatchResult(
+                published=False,
+                coverage=0.0,
+                confidence="low",
+            ),
+        ),
+        narrative=ReportNarrativeDraft(executive_summary="总结"),
+        candidate_overview=CandidateOverview(**_candidate_overview_fields()),
+        enterprise_assessment=EnterpriseAssessment(
+            **_enterprise_assessment_fields()
+        ),
+    )
+
+
 class ReportSchemaTest(unittest.TestCase):
+    def test_candidate_overview_rejects_unknown_fields(self) -> None:
+        fields = _candidate_overview_fields()
+        fields["unexpected"] = "must be rejected"
+
+        with self.assertRaises(ValidationError):
+            CandidateOverview(**fields)
+
     def test_enterprise_assessment_requires_decision_and_overall_assessment(
         self,
     ) -> None:
         with self.assertRaises(ValidationError):
             EnterpriseAssessment.model_validate({"strengths": []})
+
+    def test_enterprise_assessment_enforces_decision_and_score_boundaries(
+        self,
+    ) -> None:
+        for decision in (
+            "PROCEED",
+            "CONDITIONAL_PROCEED",
+            "INSUFFICIENT_EVIDENCE",
+            "NOT_RECOMMENDED",
+        ):
+            with self.subTest(decision=decision):
+                assessment = EnterpriseAssessment(
+                    **_enterprise_assessment_fields(decision=decision)
+                )
+                self.assertEqual(assessment.decision, decision)
+
+        with self.assertRaises(ValidationError):
+            EnterpriseAssessment(
+                **_enterprise_assessment_fields(decision="UNKNOWN")
+            )
+
+        for score in (0, 100):
+            with self.subTest(score=score):
+                assessment = EnterpriseAssessment(
+                    **_enterprise_assessment_fields(provisional_score=score)
+                )
+                self.assertEqual(assessment.provisional_score, score)
+
+        for score in (-1, 101):
+            with self.subTest(score=score):
+                with self.assertRaises(ValidationError):
+                    EnterpriseAssessment(
+                        **_enterprise_assessment_fields(provisional_score=score)
+                    )
 
     def test_reinterview_focus_requires_observable_signals_and_minutes(self) -> None:
         focus = ReinterviewFocus(
@@ -79,6 +188,63 @@ class ReportSchemaTest(unittest.TestCase):
             related_evidence_ids=["E003"],
         )
         self.assertEqual(focus.priority, 1)
+
+    def test_reinterview_focus_enforces_priority_and_minutes_boundaries(self) -> None:
+        for field, valid_values, invalid_values in (
+            ("priority", (1, 3), (0, 4)),
+            ("suggested_minutes", (3, 15), (2, 16)),
+        ):
+            for value in valid_values:
+                with self.subTest(field=field, value=value):
+                    focus = ReinterviewFocus(
+                        **_reinterview_focus_fields(**{field: value})
+                    )
+                    self.assertEqual(getattr(focus, field), value)
+
+            for value in invalid_values:
+                with self.subTest(field=field, value=value):
+                    with self.assertRaises(ValidationError):
+                        ReinterviewFocus(
+                            **_reinterview_focus_fields(**{field: value})
+                        )
+
+    def test_reinterview_focus_enforces_signal_list_boundaries(self) -> None:
+        bounds = {
+            "follow_ups": (1, 2),
+            "positive_signals": (1, 3),
+            "risk_signals": (1, 3),
+            "pass_criteria": (1, 3),
+        }
+
+        for field, (minimum, maximum) in bounds.items():
+            for length in (minimum, maximum):
+                with self.subTest(field=field, length=length):
+                    values = [f"{field}_{index}" for index in range(length)]
+                    focus = ReinterviewFocus(
+                        **_reinterview_focus_fields(**{field: values})
+                    )
+                    self.assertEqual(len(getattr(focus, field)), length)
+
+            for length in (minimum - 1, maximum + 1):
+                with self.subTest(field=field, length=length):
+                    values = [f"{field}_{index}" for index in range(length)]
+                    with self.assertRaises(ValidationError):
+                        ReinterviewFocus(
+                            **_reinterview_focus_fields(**{field: values})
+                        )
+
+    def test_assessment_report_requires_enterprise_contract_sections(self) -> None:
+        fields = _assessment_report().model_dump()
+
+        for missing_field in ("candidate_overview", "enterprise_assessment"):
+            with self.subTest(missing_field=missing_field):
+                incomplete = {
+                    key: value
+                    for key, value in fields.items()
+                    if key != missing_field
+                }
+                with self.assertRaises(ValidationError):
+                    AssessmentReport.model_validate(incomplete)
 
     def test_unverified_assessment_is_valid_without_numeric_score(self) -> None:
         assessment = RequirementEvidenceAssessment(
