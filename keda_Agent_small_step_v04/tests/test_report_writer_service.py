@@ -438,6 +438,55 @@ class ReportWriterServiceTest(unittest.TestCase):
                         llm_client=FakeLLM(advice_draft),
                     )
 
+    def test_enterprise_writer_falls_back_on_hiring_decision_in_any_focus_field(
+        self,
+    ) -> None:
+        malicious_fields = (
+            ("reason", "建议进入下一轮并继续推进。"),
+            ("question", "推荐录用该候选人。"),
+            ("follow_ups", ["建议淘汰该候选人。"]),
+            ("positive_signals", ["通过面试。"]),
+            ("risk_signals", ["通过筛选。"]),
+            ("pass_criteria", ["候选人继续推进。"]),
+            ("dimension_name", "推荐录用"),
+        )
+        for field_name, value in malicious_fields:
+            with self.subTest(field_name=field_name):
+                draft = make_enterprise_copy_draft()
+                setattr(draft.reinterview_plan[0], field_name, value)
+
+                result = write_enterprise_copy(
+                    self.snapshot,
+                    self.role_profile,
+                    self.evidence,
+                    ["role_dim_01", "role_dim_02"],
+                    llm_client=FakeLLM(draft),
+                )
+
+                rendered = repr(result.model_dump())
+                self.assertNotIn("下一轮", rendered)
+                self.assertNotIn("录用", rendered)
+                self.assertNotIn("淘汰", rendered)
+                self.assertNotIn("通过面试", rendered)
+                self.assertNotIn("通过筛选", rendered)
+
+    def test_enterprise_writer_allows_normal_task_progress_words(self) -> None:
+        draft = make_enterprise_copy_draft()
+        draft.reinterview_plan[0].reason = "需要说明如何推进任务和推进项目。"
+
+        result = write_enterprise_copy(
+            self.snapshot,
+            self.role_profile,
+            self.evidence,
+            ["role_dim_01", "role_dim_02"],
+            llm_client=FakeLLM(draft),
+        )
+
+        self.assertEqual(
+            result.reinterview_plan[0].reason,
+            "需要说明如何推进任务和推进项目。",
+        )
+
     def test_fallback_questions_are_dimension_specific(self) -> None:
         profile = load_role_profile("ai_application_engineering", "2026-H2")
         draft = fallback_enterprise_copy(

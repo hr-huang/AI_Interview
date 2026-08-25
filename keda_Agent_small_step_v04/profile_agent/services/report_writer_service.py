@@ -35,6 +35,10 @@ class GroundingValidationError(ValueError):
     """Raised when a narrative is not grounded in the supplied snapshot."""
 
 
+class HiringDecisionTextError(GroundingValidationError):
+    """Raised when public enterprise copy contains a hiring decision."""
+
+
 class EnterpriseCopyDraft(_ReportModel):
     """The prose-only output boundary for the enterprise report.
 
@@ -78,6 +82,35 @@ _PROHIBITED_HIRING_PHRASES = (
     "不予录用",
     "录用",
     "淘汰",
+)
+
+_HIRING_DECISION_PATTERNS = (
+    re.compile(
+        r"(?:建议|推荐|应当|可以|可|决定|应)"
+        r"[^。！？\n]{0,20}"
+        r"(?:进入(?:下一轮|复试|终面)|录用|淘汰)",
+        re.IGNORECASE,
+    ),
+    re.compile(r"(?:进入(?:下一轮|复试|终面))", re.IGNORECASE),
+    re.compile(r"(?:通过)(?:面试|筛选|招聘)", re.IGNORECASE),
+    re.compile(
+        r"(?:建议|推荐|应当|可以|可|决定|应)"
+        r"[^。！？\n]{0,20}继续推进",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:候选人|应聘者|面试者)[^。！？\n]{0,20}继续推进",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"继续推进[^。！？\n]{0,20}"
+        r"(?:候选人|应聘者|面试者|下一轮|复试|终面|面试|筛选|招聘|录用|淘汰)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:进入(?:下一轮|复试|终面))[^。！？\n]{0,20}继续推进",
+        re.IGNORECASE,
+    ),
 )
 
 _UNVERIFIED_NEGATIVE_PHRASES = (
@@ -696,23 +729,61 @@ def _normalise_enterprise_inputs(
     )
 
 
-def _enterprise_copy_texts(
-    draft: EnterpriseCopyDraft,
+_ENTERPRISE_NON_PUBLIC_FIELDS = frozenset(
+    {"priority", "dimension_id", "suggested_minutes", "related_evidence_ids"}
+)
+
+
+def _iter_enterprise_public_texts(
+    value: Any,
+    label: str = "",
+    *,
+    include_overall: bool = True,
 ) -> Iterable[tuple[str, str]]:
-    yield "overall_assessment", draft.overall_assessment
-    for index, focus in enumerate(draft.reinterview_plan):
-        prefix = f"reinterview_plan[{index}]"
-        yield f"{prefix}.dimension_name", focus.dimension_name
-        yield f"{prefix}.reason", focus.reason
-        yield f"{prefix}.question", focus.question
-        for follow_up_index, text in enumerate(focus.follow_ups):
-            yield f"{prefix}.follow_ups[{follow_up_index}]", text
-        for signal_index, text in enumerate(focus.positive_signals):
-            yield f"{prefix}.positive_signals[{signal_index}]", text
-        for signal_index, text in enumerate(focus.risk_signals):
-            yield f"{prefix}.risk_signals[{signal_index}]", text
-        for criterion_index, text in enumerate(focus.pass_criteria):
-            yield f"{prefix}.pass_criteria[{criterion_index}]", text
+    """Walk every user-facing string in an ``EnterpriseCopyDraft``.
+
+    The structured identifiers and scheduling metadata are intentionally not
+    public copy.  Recursing through the Pydantic fields keeps this boundary in
+    one place as the copy contract grows new prose fields.
+    """
+
+    if isinstance(value, str):
+        yield label, value
+        return
+    if isinstance(value, BaseModel):
+        for field_name in value.__class__.model_fields:
+            if field_name in _ENTERPRISE_NON_PUBLIC_FIELDS:
+                continue
+            if (
+                not include_overall
+                and isinstance(value, EnterpriseCopyDraft)
+                and field_name == "overall_assessment"
+            ):
+                continue
+            child_label = f"{label}.{field_name}" if label else field_name
+            yield from _iter_enterprise_public_texts(
+                getattr(value, field_name),
+                child_label,
+                include_overall=include_overall,
+            )
+        return
+    if isinstance(value, dict):
+        for key, child in value.items():
+            child_label = f"{label}[{key!r}]" if label else repr(key)
+            yield from _iter_enterprise_public_texts(
+                child,
+                child_label,
+                include_overall=include_overall,
+            )
+        return
+    if isinstance(value, (list, tuple, set, frozenset)):
+        for index, child in enumerate(value):
+            child_label = f"{label}[{index}]" if label else f"[{index}]"
+            yield from _iter_enterprise_public_texts(
+                child,
+                child_label,
+                include_overall=include_overall,
+            )
 
 
 def _validate_enterprise_copy_text(
@@ -732,12 +803,30 @@ def _validate_enterprise_copy_text(
             raise GroundingValidationError(
                 f"{label} 不得提供候选人成长建议: {growth_match.group(0)}"
             )
+    for pattern in _HIRING_DECISION_PATTERNS:
+        hiring_match = pattern.search(text)
+        if hiring_match:
+            raise HiringDecisionTextError(
+                f"{label} 不得新增招聘结论: {hiring_match.group(0)}"
+            )
     lowered = text.casefold()
     for phrase in _PROHIBITED_HIRING_PHRASES:
         if phrase.casefold() in lowered:
-            raise GroundingValidationError(
+            raise HiringDecisionTextError(
                 f"{label} 不得新增招聘结论: {phrase}"
             )
+
+
+def _validate_enterprise_copy_public_texts(
+    draft: EnterpriseCopyDraft,
+    *,
+    include_overall: bool = True,
+) -> None:
+    for label, text in _iter_enterprise_public_texts(
+        draft,
+        include_overall=include_overall,
+    ):
+        _validate_enterprise_copy_text(text, label)
 
 
 def _validate_enterprise_copy(
@@ -746,13 +835,6 @@ def _validate_enterprise_copy(
     *,
     known_evidence_ids: set[str] | None = None,
 ) -> None:
-    for label, text in _enterprise_copy_texts(draft):
-        # overall_assessment is replaced by a deterministic projection after
-        # validation; model prose cannot smuggle a hiring decision through it.
-        if label == "overall_assessment":
-            continue
-        _validate_enterprise_copy_text(text, label)
-
     actual_ids = [focus.dimension_id for focus in draft.reinterview_plan]
     if len(actual_ids) != len(selected_dimension_ids):
         raise GroundingValidationError(
@@ -958,12 +1040,27 @@ def write_enterprise_copy(
         selected,
         known_evidence_ids=set(evidence_by_id),
     )
-    return _canonicalize_enterprise_copy(
+    try:
+        # Check model-controlled public prose before canonicalization so a
+        # malicious dimension_name cannot be hidden by the locked profile
+        # name.  overall_assessment is ignored here and projected below.
+        _validate_enterprise_copy_public_texts(draft, include_overall=False)
+    except HiringDecisionTextError:
+        return fallback_enterprise_copy(
+            normalized_snapshot,
+            normalized_profile,
+            selected,
+            evidence=normalized_evidences,
+        )
+
+    canonical = _canonicalize_enterprise_copy(
         draft,
         selected,
         normalized_snapshot,
         normalized_profile,
     )
+    _validate_enterprise_copy_public_texts(canonical)
+    return canonical
 
 
 _FALLBACK_REINTERVIEW_CONTENT: dict[str, dict[str, object]] = {
@@ -1114,6 +1211,7 @@ def fallback_enterprise_copy(
         selected,
         known_evidence_ids=known_evidence_ids,
     )
+    _validate_enterprise_copy_public_texts(draft)
     return draft
 
 
