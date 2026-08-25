@@ -54,7 +54,6 @@ class ReasonView(_ViewModel):
 
 
 class RadarDimensionView(_ViewModel):
-    dimension_id: str
     name: str
     score: float | None
     level: str
@@ -77,7 +76,6 @@ class InterviewTranscriptTurnView(_ViewModel):
 
 
 class CandidateOverviewView(_ViewModel):
-    candidate_id: str
     candidate_name: str | None = None
     target_role: str
     education_summary: str | None = None
@@ -90,13 +88,12 @@ class CandidateOverviewView(_ViewModel):
 class DecisionSignalView(_ViewModel):
     title: str
     text: str
-    dimension_ids: list[str]
+    dimension_names: list[str]
     confidence: str
 
 
 class ReinterviewFocusView(_ViewModel):
     priority: int
-    dimension_id: str
     dimension_name: str
     reason: str
     question: str
@@ -129,7 +126,6 @@ class InterviewPathStepView(_ViewModel):
 
 
 class ClaimVerificationView(_ViewModel):
-    claim_id: str
     status: str
     explanation: str
 
@@ -165,48 +161,60 @@ class ReportViewModel(BaseModel):
 
 
 _INTERNAL_TEXT_ID = re.compile(
-    r"\b(?:role_dim_\d+|req_[A-Za-z0-9_]+|"
+    r"(?<![A-Za-z0-9_])(?:role_dim_[A-Za-z0-9_]+|req_[A-Za-z0-9_]+|"
     r"(?:d\d+_(?:min|exc|err|alt)_[A-Za-z0-9_]+)|"
-    r"(?:ev(?:idence)?_[A-Za-z0-9_]+)|E\d+)\b"
+    r"(?:ev(?:idence)?|claim|ast|assessment|candidate)_[A-Za-z0-9_]+)"
+    r"(?![A-Za-z0-9_])"
 )
-_INTERNAL_LABEL = re.compile(r"\b(?:RubricMatch|Requirement)\b")
+_INTERNAL_LABEL = re.compile(
+    r"(?<![A-Za-z0-9_])(?:RubricMatch|Requirement)(?![A-Za-z0-9_])"
+)
 
 
-def _clean_public_text(
+def _public_server_copy(
     value: str | None,
     *,
     labels: Mapping[str, str] | None = None,
+    field: str = "公开文案",
 ) -> str:
-    """Remove internal provenance tokens while retaining readable prose."""
+    """Validate generated copy before exposing it in the public view.
+
+    Known server-side IDs may be translated only when the caller supplies a
+    specific immutable label map.  Any remaining internal token is an error;
+    it is never deleted or collapsed into a misleading half-sentence.  The
+    ``E3 visa``-style text is intentionally outside the internal-token grammar.
+    """
 
     text = (value or "").strip()
     if labels:
-        # Replace longest keys first so a short ID cannot partially consume a
-        # longer one.  Labels are sourced from the immutable server-side
-        # profile/plan and are therefore safe to expose.
+        # Replace exact tokens only.  A token embedded in a normal identifier
+        # must not be partially rewritten.
         for internal, label in sorted(labels.items(), key=lambda item: -len(item[0])):
-            text = text.replace(internal, label)
-    text = _INTERNAL_TEXT_ID.sub("", text)
-    text = _INTERNAL_LABEL.sub("岗位要求", text)
+            token = re.compile(
+                rf"(?<![A-Za-z0-9_]){re.escape(internal)}(?![A-Za-z0-9_])"
+            )
+            text = token.sub(label, text)
+    if _INTERNAL_TEXT_ID.search(text) or _INTERNAL_LABEL.search(text):
+        raise ValueError(f"{field} 包含未翻译的内部标识，拒绝公开")
+    text = re.sub(r"(?<=[\u4e00-\u9fff])\s+(?=[\u4e00-\u9fff])", "", text)
     text = re.sub(r"\s{2,}", " ", text)
     text = re.sub(r"[：:，,、；;]\s*[。.!！]", "。", text)
     text = re.sub(r"[：:，,、；;]\s*(?:[，,、；;]|$)", "", text)
     return text.strip(" ，,、:：；;")
 
 
-def _public_quote(quote: str, answer: str) -> str:
-    """Keep excerpts short when legacy fixtures used the whole answer."""
+def _public_quote(quote: str, answer: str) -> str | None:
+    """Return an exact partial quote, omitting a complete answer.
 
-    clean_quote = quote.strip()
-    clean_answer = answer or ""
-    if not clean_quote or not clean_answer or clean_quote not in clean_answer:
-        return ""
-    if clean_quote != clean_answer:
-        return clean_quote
-    # Older frozen cases stored the complete answer as ``source_excerpt``.
-    # The browser contract keeps the complete answer in the transcript only.
-    shortened = clean_answer[:80].rstrip(" ，,、；;。.!！")
-    return shortened or clean_answer[:1]
+    Validation is deliberately performed on the raw strings.  Leading or
+    trailing whitespace is not normalized into a seemingly valid quote.
+    """
+
+    if not quote or not quote.strip() or not answer or quote not in answer:
+        return None
+    if quote == answer:
+        return None
+    return quote
 
 
 def _normalise_models(
@@ -330,15 +338,18 @@ def _rubric_index(
 def _reason_text(reason: ScoreReason, rubric_text_by_id: Mapping[str, str]) -> str:
     """Keep the locked reason text while exposing readable rubric text."""
 
+    labels = dict(rubric_text_by_id)
+    labels.update({"RubricMatch": "证据匹配", "Requirement": "岗位要求"})
     rubric_texts = [
         rubric_text_by_id[rubric_id]
         for rubric_id in reason.rubric_signal_ids
     ]
     if not rubric_texts:
-        return _clean_public_text(reason.text, labels=rubric_text_by_id)
-    return _clean_public_text(
+        return _public_server_copy(reason.text, labels=labels, field="评分理由")
+    return _public_server_copy(
         f"{reason.text}（规则依据：{'；'.join(rubric_texts)}）",
-        labels=rubric_text_by_id,
+        labels=labels,
+        field="评分理由",
     )
 
 
@@ -347,7 +358,7 @@ def _source_for_evidence(
     evidences_by_id: Mapping[str, Evidence],
     turns_by_id: Mapping[str, InterviewTurn],
     reason: ScoreReason | None = None,
-) -> EvidenceSourceView:
+) -> EvidenceSourceView | None:
     evidence = evidences_by_id.get(evidence_id)
     if evidence is None:
         raise ValueError(f"Reason 引用了不存在的 evidence_id: {evidence_id}")
@@ -359,6 +370,10 @@ def _source_for_evidence(
     answer = turn.answer or ""
     quote = _public_quote(evidence.source_excerpt, answer)
     if not quote:
+        if evidence.source_excerpt == answer and answer:
+            # The transcript is the sole public location for a complete
+            # answer.  Do not copy or shorten it into a source drawer.
+            return None
         raise ValueError(
             "Evidence.source_excerpt 不属于关联 turn.answer: " + evidence.id
         )
@@ -411,19 +426,94 @@ def _reason_view(
         if evidence_id in seen_evidence_ids:
             continue
         seen_evidence_ids.add(evidence_id)
-        sources.append(
-            _source_for_evidence(
-                evidence_id,
-                evidences_by_id,
-                turns_by_id,
-                reason,
-            )
+        source = _source_for_evidence(
+            evidence_id,
+            evidences_by_id,
+            turns_by_id,
+            reason,
         )
+        if source is not None:
+            sources.append(source)
     return ReasonView(
         reason_type=reason.reason_type,
         text=_reason_text(reason, rubric_text_by_id),
         sources=sources,
     )
+
+
+def _validate_enterprise_references(
+    report: AssessmentReport,
+    *,
+    profile_dimensions: Mapping[str, CompetencyDimensionRubric],
+    turns_by_id: Mapping[str, InterviewTurn],
+    evidences_by_id: Mapping[str, Evidence],
+) -> None:
+    """Validate all enterprise joins before any public helper projects them."""
+
+    enterprise = report.enterprise_assessment
+    dimension_ids = set(profile_dimensions)
+
+    for signal_group in (
+        enterprise.strengths,
+        enterprise.risks,
+        enterprise.unknowns,
+    ):
+        for signal in signal_group:
+            for dimension_id in signal.dimension_ids:
+                if dimension_id not in dimension_ids:
+                    raise ValueError(
+                        "Enterprise signal 引用了不存在的 Role Dimension: "
+                        + dimension_id
+                    )
+            for evidence_id in signal.evidence_ids:
+                if evidence_id not in evidences_by_id:
+                    raise ValueError(
+                        "Enterprise signal 引用了不存在的 evidence_id: "
+                        + evidence_id
+                    )
+
+    for focus in enterprise.reinterview_plan:
+        if focus.dimension_id not in dimension_ids:
+            raise ValueError(
+                "Enterprise reinterview 引用了不存在的 Role Dimension: "
+                + focus.dimension_id
+            )
+        for evidence_id in focus.related_evidence_ids:
+            if evidence_id not in evidences_by_id:
+                raise ValueError(
+                    "Enterprise reinterview 引用了不存在的 evidence_id: "
+                    + evidence_id
+                )
+
+    for excerpt in enterprise.evidence_excerpts:
+        evidence = evidences_by_id.get(excerpt.evidence_id)
+        if evidence is None:
+            raise ValueError(
+                "Enterprise evidence excerpt 引用了不存在的 evidence_id: "
+                + excerpt.evidence_id
+            )
+        if evidence.turn_id != excerpt.turn_id:
+            raise ValueError(
+                "Enterprise evidence excerpt 的 evidence.turn_id 与 excerpt.turn_id 不一致: "
+                + excerpt.evidence_id
+            )
+        turn = turns_by_id.get(excerpt.turn_id)
+        if turn is None:
+            raise ValueError(
+                "Enterprise evidence excerpt 引用了不存在的 turn_id: "
+                + excerpt.turn_id
+            )
+        answer = turn.answer or ""
+        if not excerpt.quote or not excerpt.quote.strip():
+            raise ValueError(
+                "Enterprise evidence excerpt quote 不能为空或仅含空白: "
+                + excerpt.evidence_id
+            )
+        if excerpt.quote not in answer:
+            raise ValueError(
+                "Enterprise evidence excerpt quote 不属于关联 turn.answer: "
+                + excerpt.evidence_id
+            )
 
 
 def _validate_report_references(
@@ -607,12 +697,12 @@ def _validate_report_references(
                 raise ValueError(
                     "Narrative 引用了不存在的 evidence_id: " + evidence_id
                 )
-    for action in narrative.development_actions:
-        if action.dimension_id not in dimension_ids:
-            raise ValueError(
-                "Narrative DevelopmentAction 引用了不存在的 Role Dimension: "
-                + action.dimension_id
-            )
+    _validate_enterprise_references(
+        report,
+        profile_dimensions=profile_dimensions,
+        turns_by_id=turns_by_id,
+        evidences_by_id=evidences_by_id,
+    )
 
 
 def _interview_transcript_view(
@@ -644,7 +734,10 @@ def _interview_transcript_view(
                 question=turn.question,
                 answer=turn.answer,
                 question_mode=turn.question_mode,
-                requirement_label=requirement.description,
+                requirement_label=_public_server_copy(
+                    requirement.description,
+                    field="Requirement 展示文案",
+                ),
                 asked_at=turn.asked_at,
                 answered_at=turn.answered_at,
                 evidence_status=evidence_status,
@@ -674,28 +767,44 @@ def _public_labels(
     return labels
 
 
+def _dimension_labels(
+    profile: RoleCompetencyProfile,
+) -> dict[str, str]:
+    return {dimension.id: dimension.name for dimension in profile.dimensions}
+
+
 def _candidate_overview_view(
     report: AssessmentReport,
-    *,
-    labels: Mapping[str, str],
 ) -> CandidateOverviewView:
     overview = report.candidate_overview
     return CandidateOverviewView(
-        candidate_id=overview.candidate_id,
-        candidate_name=overview.candidate_name,
-        target_role=_clean_public_text(overview.target_role, labels=labels),
+        candidate_name=_public_server_copy(
+            overview.candidate_name,
+            field="candidate_name",
+        )
+        or None,
+        target_role=_public_server_copy(
+            overview.target_role,
+            field="candidate_overview.target_role",
+        ),
         education_summary=(
-            _clean_public_text(overview.education_summary, labels=labels)
+            _public_server_copy(
+                overview.education_summary,
+                field="candidate_overview.education_summary",
+            )
             or None
         ),
         experience_summary=(
-            _clean_public_text(overview.experience_summary, labels=labels)
+            _public_server_copy(
+                overview.experience_summary,
+                field="candidate_overview.experience_summary",
+            )
             or None
         ),
         jd_focus=[
-            _clean_public_text(item, labels=labels)
+            _public_server_copy(item, field="candidate_overview.jd_focus")
             for item in overview.jd_focus
-            if _clean_public_text(item, labels=labels)
+            if _public_server_copy(item, field="candidate_overview.jd_focus")
         ],
         interview_rounds=overview.interview_rounds,
         generated_at=overview.generated_at,
@@ -705,12 +814,20 @@ def _candidate_overview_view(
 def _decision_signal_view(
     signal: Any,
     *,
-    labels: Mapping[str, str],
+    dimension_labels: Mapping[str, str],
 ) -> DecisionSignalView:
     return DecisionSignalView(
-        title=_clean_public_text(signal.title, labels=labels),
-        text=_clean_public_text(signal.text, labels=labels),
-        dimension_ids=list(signal.dimension_ids),
+        title=_public_server_copy(
+            signal.title,
+            labels=dimension_labels,
+            field="Enterprise signal.title",
+        ),
+        text=_public_server_copy(
+            signal.text,
+            labels=dimension_labels,
+            field="Enterprise signal.text",
+        ),
+        dimension_names=[dimension_labels[item] for item in signal.dimension_ids],
         confidence=signal.confidence,
     )
 
@@ -718,27 +835,55 @@ def _decision_signal_view(
 def _reinterview_focus_view(
     focus: Any,
     *,
-    labels: Mapping[str, str],
+    dimension_labels: Mapping[str, str],
 ) -> ReinterviewFocusView:
     return ReinterviewFocusView(
         priority=focus.priority,
-        dimension_id=focus.dimension_id,
-        dimension_name=_clean_public_text(focus.dimension_name, labels=labels),
-        reason=_clean_public_text(focus.reason, labels=labels),
-        question=_clean_public_text(focus.question, labels=labels),
+        dimension_name=_public_server_copy(
+            focus.dimension_name,
+            labels=dimension_labels,
+            field="Enterprise reinterview.dimension_name",
+        ),
+        reason=_public_server_copy(
+            focus.reason,
+            labels=dimension_labels,
+            field="Enterprise reinterview.reason",
+        ),
+        question=_public_server_copy(
+            focus.question,
+            labels=dimension_labels,
+            field="Enterprise reinterview.question",
+        ),
         follow_ups=[
-            _clean_public_text(item, labels=labels) for item in focus.follow_ups
+            _public_server_copy(
+                item,
+                labels=dimension_labels,
+                field="Enterprise reinterview.follow_ups",
+            )
+            for item in focus.follow_ups
         ],
         positive_signals=[
-            _clean_public_text(item, labels=labels)
+            _public_server_copy(
+                item,
+                labels=dimension_labels,
+                field="Enterprise reinterview.positive_signals",
+            )
             for item in focus.positive_signals
         ],
         risk_signals=[
-            _clean_public_text(item, labels=labels)
+            _public_server_copy(
+                item,
+                labels=dimension_labels,
+                field="Enterprise reinterview.risk_signals",
+            )
             for item in focus.risk_signals
         ],
         pass_criteria=[
-            _clean_public_text(item, labels=labels)
+            _public_server_copy(
+                item,
+                labels=dimension_labels,
+                field="Enterprise reinterview.pass_criteria",
+            )
             for item in focus.pass_criteria
         ],
         suggested_minutes=focus.suggested_minutes,
@@ -748,8 +893,6 @@ def _reinterview_focus_view(
 def _enterprise_evidence_excerpt_views(
     report: AssessmentReport,
     turns_by_id: Mapping[str, InterviewTurn],
-    *,
-    labels: Mapping[str, str],
 ) -> list[EvidenceExcerptView]:
     result: list[EvidenceExcerptView] = []
     for excerpt in report.enterprise_assessment.evidence_excerpts:
@@ -761,21 +904,29 @@ def _enterprise_evidence_excerpt_views(
             )
         quote = _public_quote(excerpt.quote, turn.answer or "")
         if not quote:
+            # The complete answer is already available in the transcript and
+            # must not be copied, shortened, or normalized into a public
+            # excerpt/source block.
+            if excerpt.quote == (turn.answer or ""):
+                continue
             raise ValueError(
                 "Enterprise evidence excerpt quote 不属于关联 turn.answer"
             )
         result.append(
             EvidenceExcerptView(
                 turn_id=turn.id,
-                conclusion=_clean_public_text(excerpt.conclusion, labels=labels),
-                quote=quote,
-                interpretation=_clean_public_text(
-                    excerpt.interpretation,
-                    labels=labels,
+                conclusion=_public_server_copy(
+                    excerpt.conclusion,
+                    field="Enterprise evidence conclusion",
                 ),
-                limitation=_clean_public_text(
+                quote=quote,
+                interpretation=_public_server_copy(
+                    excerpt.interpretation,
+                    field="Enterprise evidence interpretation",
+                ),
+                limitation=_public_server_copy(
                     excerpt.limitation,
-                    labels=labels,
+                    field="Enterprise evidence limitation",
                 ),
             )
         )
@@ -786,45 +937,57 @@ def _enterprise_assessment_view(
     report: AssessmentReport,
     turns_by_id: Mapping[str, InterviewTurn],
     *,
-    labels: Mapping[str, str],
+    dimension_labels: Mapping[str, str],
 ) -> EnterpriseAssessmentView:
     enterprise = report.enterprise_assessment
     return EnterpriseAssessmentView(
         decision=enterprise.decision,
-        decision_label=_clean_public_text(enterprise.decision_label, labels=labels),
+        decision_label=_public_server_copy(
+            enterprise.decision_label,
+            field="Enterprise decision_label",
+        ),
         provisional_score=enterprise.provisional_score,
         confidence=enterprise.confidence,
         conditions=[
-            _clean_public_text(item, labels=labels) for item in enterprise.conditions
+            _public_server_copy(
+                item,
+                labels=dimension_labels,
+                field="Enterprise condition",
+            )
+            for item in enterprise.conditions
         ],
         decision_reasons=[
-            _clean_public_text(item, labels=labels)
+            _public_server_copy(
+                item,
+                labels=dimension_labels,
+                field="Enterprise decision_reason",
+            )
             for item in enterprise.decision_reasons
         ],
-        overall_assessment=_clean_public_text(
+        overall_assessment=_public_server_copy(
             enterprise.overall_assessment,
-            labels=labels,
+            labels=dimension_labels,
+            field="Enterprise overall_assessment",
         ),
         strengths=[
-            _decision_signal_view(signal, labels=labels)
+            _decision_signal_view(signal, dimension_labels=dimension_labels)
             for signal in enterprise.strengths
         ],
         risks=[
-            _decision_signal_view(signal, labels=labels)
+            _decision_signal_view(signal, dimension_labels=dimension_labels)
             for signal in enterprise.risks
         ],
         unknowns=[
-            _decision_signal_view(signal, labels=labels)
+            _decision_signal_view(signal, dimension_labels=dimension_labels)
             for signal in enterprise.unknowns
         ],
         reinterview_plan=[
-            _reinterview_focus_view(focus, labels=labels)
+            _reinterview_focus_view(focus, dimension_labels=dimension_labels)
             for focus in enterprise.reinterview_plan
         ],
         evidence_excerpts=_enterprise_evidence_excerpt_views(
             report,
             turns_by_id,
-            labels=labels,
         ),
     )
 
@@ -832,20 +995,28 @@ def _enterprise_assessment_view(
 def _narrative_view(
     report: AssessmentReport,
     *,
-    labels: Mapping[str, str],
+    dimension_labels: Mapping[str, str],
 ) -> dict[str, Any]:
     narrative = report.narrative
 
     def item_view(item: Any) -> dict[str, Any]:
         return {
-            "text": _clean_public_text(item.text, labels=labels),
-            "dimension_ids": list(item.dimension_ids),
+            "text": _public_server_copy(
+                item.text,
+                labels=dimension_labels,
+                field="Narrative text",
+            ),
+            "dimension_names": [
+                dimension_labels[dimension_id]
+                for dimension_id in item.dimension_ids
+            ],
         }
 
     return {
-        "executive_summary": _clean_public_text(
+        "executive_summary": _public_server_copy(
             narrative.executive_summary,
-            labels=labels,
+            labels=dimension_labels,
+            field="Narrative executive_summary",
         ),
         "strengths": [item_view(item) for item in narrative.strengths],
         "risks": [item_view(item) for item in narrative.risks],
@@ -919,6 +1090,7 @@ def build_report_view(
         plan_requirements,
         rubric_text_by_id,
     )
+    dimension_labels = _dimension_labels(normalized_profile)
     _validate_report_references(
         normalized_report,
         profile_dimensions=dimensions,
@@ -934,12 +1106,11 @@ def build_report_view(
     )
     candidate_overview = _candidate_overview_view(
         normalized_report,
-        labels=labels,
     )
     enterprise_assessment = _enterprise_assessment_view(
         normalized_report,
         turns_by_id,
-        labels=labels,
+        dimension_labels=dimension_labels,
     )
 
     radar_by_id: dict[str, RadarDimensionResult] = {}
@@ -972,7 +1143,6 @@ def build_report_view(
         ]
         radar_dimensions.append(
             RadarDimensionView(
-                dimension_id=dimension.id,
                 name=dimension.name,
                 score=radar.score,
                 level=radar.level,
@@ -984,7 +1154,10 @@ def build_report_view(
 
     return ReportViewModel(
         demo=demo,
-        target_role=_clean_public_text(normalized_report.target_role, labels=labels),
+        target_role=_public_server_copy(
+            normalized_report.target_role,
+            field="Report target_role",
+        ),
         role_profile_version=normalized_report.score_snapshot.role_profile_version,
         scoring_engine_version=normalized_report.score_snapshot.scoring_engine_version,
         candidate_overview=candidate_overview,
@@ -996,33 +1169,53 @@ def build_report_view(
             rubric_text_by_id=rubric_text_by_id,
         ),
         radar_dimensions=radar_dimensions,
-        narrative=_narrative_view(normalized_report, labels=labels),
+        narrative=_narrative_view(
+            normalized_report,
+            dimension_labels=dimension_labels,
+        ),
         interview_path=[
             InterviewPathStepView(
                 turn_id=item.turn_id,
                 question_mode=item.question_mode,
-                outcome=_clean_public_text(item.outcome, labels=labels),
+                outcome=_public_server_copy(
+                    item.outcome,
+                    labels=labels,
+                    field="InterviewPath outcome",
+                ),
             )
             for item in normalized_report.interview_path
         ],
         interview_transcript=interview_transcript,
         claim_verifications=[
             ClaimVerificationView(
-                claim_id=item.claim_id,
                 status=item.status,
-                explanation=_clean_public_text(item.explanation, labels=labels),
+                explanation=_public_server_copy(
+                    item.explanation,
+                    labels=labels,
+                    field="ClaimVerification explanation",
+                ),
             )
             for item in normalized_report.score_snapshot.claim_verifications
         ],
         assessment_limitations=[
-            _clean_public_text(item, labels=labels)
+            _public_server_copy(
+                item,
+                labels=dimension_labels,
+                field="Assessment limitation",
+            )
             for item in normalized_report.assessment_limitations
         ],
         demo_variant=demo_variant,
-        demo_case_title=demo_case_title,
-        demo_case_description=_clean_public_text(
+        demo_case_title=(
+            _public_server_copy(
+                demo_case_title,
+                field="Demo case title",
+            )
+            or None
+        ),
+        demo_case_description=_public_server_copy(
             demo_case_description,
-            labels=labels,
+            field="Demo case description",
         )
         or None,
     )

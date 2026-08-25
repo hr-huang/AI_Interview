@@ -48,6 +48,28 @@ class TrackingLock:
         return False
 
 
+def _walk_dicts(value):
+    if isinstance(value, dict):
+        yield value
+        for child in value.values():
+            yield from _walk_dicts(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _walk_dicts(child)
+
+
+def _assert_no_public_demo_id(testcase, value):
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if key != "turn_id":
+                _assert_no_public_demo_id(testcase, child)
+    elif isinstance(value, list):
+        for child in value:
+            _assert_no_public_demo_id(testcase, child)
+    else:
+        testcase.assertNotIn("DEMO_STUDENT", str(value))
+
+
 class DemoApiTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
@@ -158,6 +180,17 @@ class DemoApiTest(unittest.TestCase):
         serialized = json.dumps(payload, ensure_ascii=False)
         for token in ("RubricMatch", "Requirement", "d03_min_02", "ev_DEMO_STUDENT"):
             self.assertNotIn(token, serialized)
+        self.assertNotIn("candidate_id", payload["candidate_overview"])
+        public_keys = {
+            key
+            for item in _walk_dicts(payload)
+            for key in item
+        }
+        self.assertNotIn("claim_id", public_keys)
+        self.assertNotIn("dimension_id", public_keys)
+        self.assertNotIn("dimension_ids", public_keys)
+        self.assertNotIn("role_dim_", serialized)
+        _assert_no_public_demo_id(self, payload)
 
     def test_saved_and_demo_reports_share_safe_enterprise_contract(self) -> None:
         case = build_public_student_showcase_case()
@@ -229,8 +262,8 @@ class DemoApiTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.json()["demo"])
         self.assertEqual(
-            response.json()["radar_dimensions"][0]["dimension_id"],
-            "role_dim_01",
+            response.json()["radar_dimensions"][0]["name"],
+            "Agent架构与任务编排",
         )
 
     def test_saved_report_with_turns_and_no_evidence_keeps_transcript_unverified(self) -> None:
