@@ -216,6 +216,63 @@ class EnterpriseReportServiceTest(unittest.TestCase):
         self.assertNotIn("role_dim_06", _flatten_dimensions(risks))
         self.assertIn("role_dim_06", _flatten_dimensions(unknowns))
 
+    def test_unverified_rubric_only_limiting_reason_does_not_become_global_risk(
+        self,
+    ) -> None:
+        reason = ScoreReason(
+            reason_type="risk",
+            text="该限制只关联未验证维度。",
+            evidence_ids=["E999"],
+            rubric_signal_ids=["d06_min_01"],
+        )
+        snapshot = _snapshot(
+            unverified_dimensions=["role_dim_06"],
+            limiting_reasons=[reason],
+        )
+
+        _, risks, unknowns = build_decision_signals(snapshot, _profile())
+
+        self.assertEqual(risks, [])
+        self.assertIn("role_dim_06", _flatten_dimensions(unknowns))
+
+    def test_guard_rejects_risk_signal_for_unverified_dimension(self) -> None:
+        snapshot = _snapshot(unverified_dimensions=["role_dim_06"])
+        snapshot.radar_dimensions[5].score_reasons = [
+            ScoreReason(
+                reason_type="risk",
+                text="该维度仍未验证。",
+                evidence_ids=["E001"],
+            )
+        ]
+        enterprise = _enterprise(
+            snapshot=snapshot,
+            unknowns=[_signal(dimension_ids=["role_dim_06"])],
+            risks=[_signal(title="不应出现的未验证风险", dimension_ids=["role_dim_06"])],
+        )
+
+        with self.assertRaises(ReportConsistencyError):
+            validate_enterprise_assessment(enterprise, snapshot, _turns())
+
+    def test_guard_does_not_require_risk_for_unverified_rubric_only_limitation(
+        self,
+    ) -> None:
+        reason = ScoreReason(
+            reason_type="risk",
+            text="该限制只关联未验证维度。",
+            evidence_ids=["E999"],
+            rubric_signal_ids=["d06_min_01"],
+        )
+        snapshot = _snapshot(
+            unverified_dimensions=["role_dim_06"],
+            limiting_reasons=[reason],
+        )
+        enterprise = _enterprise(
+            snapshot=snapshot,
+            unknowns=[_signal(dimension_ids=["role_dim_06"])],
+        )
+
+        validate_enterprise_assessment(enterprise, snapshot, _turns())
+
     def test_invalid_source_excerpt_is_skipped_without_answer_fallback(self) -> None:
         evidence = _evidences()[0].model_copy(
             update={"source_excerpt": "回答中没有这段文字"}
@@ -224,6 +281,46 @@ class EnterpriseReportServiceTest(unittest.TestCase):
         excerpts = build_evidence_excerpts(_snapshot(), [evidence], _turns())
 
         self.assertEqual(excerpts, [])
+
+    def test_excerpt_with_wrong_turn_id_is_skipped(self) -> None:
+        evidence = _evidences()[0].model_copy(update={"turn_id": "turn_02"})
+
+        excerpts = build_evidence_excerpts(_snapshot(), [evidence], _turns())
+
+        self.assertEqual(excerpts, [])
+
+    def test_empty_source_excerpt_is_skipped_without_answer_fallback(self) -> None:
+        evidence = _evidences()[0].model_copy(update={"source_excerpt": ""})
+
+        excerpts = build_evidence_excerpts(_snapshot(), [evidence], _turns())
+
+        self.assertEqual(excerpts, [])
+
+    def test_full_answer_source_excerpt_is_skipped(self) -> None:
+        evidence = _evidences()[0].model_copy(
+            update={"source_excerpt": _turns()[0].answer}
+        )
+
+        excerpts = build_evidence_excerpts(_snapshot(), [evidence], _turns())
+
+        self.assertEqual(excerpts, [])
+
+    def test_unreferenced_evidence_is_not_projected_to_excerpts(self) -> None:
+        extra = Evidence(
+            id="E002",
+            turn_id="turn_01",
+            requirement_ids=["req_01"],
+            polarity="supporting",
+            strength="strong",
+            observation="未被评分原因引用。",
+            source_excerpt="再决定是否重试",
+        )
+
+        excerpts = build_evidence_excerpts(
+            _snapshot(), _evidences() + [extra], _turns()
+        )
+
+        self.assertEqual([excerpt.evidence_id for excerpt in excerpts], ["E001"])
 
     def test_excerpt_uses_readable_criteria_and_unmet_minimum_limitation(self) -> None:
         snapshot = _snapshot()
@@ -286,6 +383,15 @@ class EnterpriseReportServiceTest(unittest.TestCase):
         self.assertGreaterEqual(len(risks), 2)
         self.assertEqual(risks[0].dimension_ids, ["role_dim_03"])
         self.assertEqual(risks[1].dimension_ids, ["role_dim_02"])
+
+    def test_strengths_are_bounded_and_ties_use_stable_dimension_order(self) -> None:
+        strengths, _, _ = build_decision_signals(_snapshot(), _profile())
+
+        self.assertEqual(len(strengths), 3)
+        self.assertEqual(
+            [signal.dimension_ids[0] for signal in strengths],
+            ["role_dim_01", "role_dim_02", "role_dim_03"],
+        )
 
     def test_low_confidence_with_unverified_dimension_is_conditional(self) -> None:
         snapshot = _snapshot(

@@ -257,7 +257,11 @@ def _risk_dimension_ids(snapshot: ScoreSnapshot) -> set[str]:
     # actually published that limiting reason.
     dimension_ids.update(_limiting_dimension_ids(snapshot))
 
-    return dimension_ids
+    # An UNVERIFIED dimension is an unknown, never a report risk.  Keep this
+    # boundary here as well as in signal construction so the guard cannot
+    # accept a risk signal merely because a raw reason happened to be attached
+    # to an unverified radar dimension.
+    return dimension_ids - set(_unverified_dimension_ids(snapshot))
 
 
 def _append_unique(values: list[str], value: str, *, limit: int = 3) -> None:
@@ -420,9 +424,7 @@ def _enterprise_texts(enterprise: EnterpriseAssessment) -> Iterable[str]:
 
 
 def _has_report_risk(snapshot: ScoreSnapshot) -> bool:
-    return bool(snapshot.job_match.limiting_reasons) or _has_contradictory_claim(
-        snapshot
-    )
+    return bool(_risk_dimension_ids(snapshot)) or _has_contradictory_claim(snapshot)
 
 
 def validate_enterprise_assessment(
@@ -796,7 +798,13 @@ def build_evidence_excerpts(
             continue
         quote = evidence.source_excerpt
         answer = turn.answer or ""
-        if not quote or not quote.strip() or not answer or quote not in answer:
+        if (
+            not quote
+            or not quote.strip()
+            or not answer
+            or quote == answer
+            or quote not in answer
+        ):
             continue
 
         dimension_name = next(
@@ -1052,7 +1060,7 @@ def build_decision_signals(
                     linked_dimensions.append(dimension_id)
         if not linked_dimensions:
             for dimension in profile.dimensions:
-                if any(
+                rubric_matches_dimension = any(
                     rubric_id
                     in {
                         criterion.id
@@ -1064,10 +1072,13 @@ def build_decision_signals(
                         )
                     }
                     for rubric_id in reason.rubric_signal_ids
-                ) and (
-                    radar_by_id.get(dimension.id) is None
-                    or radar_by_id[dimension.id].level != "UNVERIFIED"
-                ):
+                )
+                if not rubric_matches_dimension:
+                    continue
+                radar = radar_by_id.get(dimension.id)
+                if radar is not None and radar.level == "UNVERIFIED":
+                    linked_unverified = True
+                else:
                     linked_dimensions.append(dimension.id)
         if linked_dimensions:
             for dimension_id in linked_dimensions:
