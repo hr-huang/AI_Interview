@@ -56,25 +56,21 @@ export interface FreezePlanResponse {
   candidate_url: string
 }
 
-export interface EvidenceSourceView {
-  evidence_id: string
+export interface EvidenceExcerptView {
   turn_id: string
-  question: string
-  answer: string
-  observation: string
-  source_excerpt: string
+  conclusion: string
+  quote: string
+  interpretation: string
+  limitation: string
 }
 
 export interface ReasonView {
   reason_type: string
   text: string
-  evidence_ids: string[]
-  rubric_signal_ids: string[]
-  sources: EvidenceSourceView[]
+  sources: EvidenceExcerptView[]
 }
 
 export interface RadarDimensionView {
-  dimension_id: string
   name: string
   score: number | null
   level: string
@@ -83,21 +79,63 @@ export interface RadarDimensionView {
   reasons: ReasonView[]
 }
 
-export interface JobMatchView extends JsonObject {
-  raw_score?: number | null
-  published?: boolean
-  fit_level?: string | null
-  coverage?: number
-  confidence?: string
-  limiting_reasons?: JsonObject[]
+export interface CandidateOverviewView {
+  candidate_name: string | null
+  target_role: string
+  education_summary: string | null
+  experience_summary: string | null
+  jd_focus: string[]
+  interview_rounds: number
+  generated_at: string
 }
 
-export interface InterviewPathView extends JsonObject {
+export interface DecisionSignalView {
+  title: string
+  text: string
+  dimension_names: string[]
+  confidence: string
+}
+
+export interface ReinterviewFocusView {
+  priority: number
+  dimension_name: string
+  reason: string
+  question: string
+  follow_ups: string[]
+  positive_signals: string[]
+  risk_signals: string[]
+  pass_criteria: string[]
+  suggested_minutes: number
+}
+
+export interface EnterpriseAssessmentView {
+  decision: string
+  decision_label: string
+  provisional_score: number | null
+  confidence: string
+  conditions: string[]
+  decision_reasons: string[]
+  overall_assessment: string
+  strengths: DecisionSignalView[]
+  risks: DecisionSignalView[]
+  unknowns: DecisionSignalView[]
+  reinterview_plan: ReinterviewFocusView[]
+  evidence_excerpts: EvidenceExcerptView[]
+}
+
+export interface JobMatchView {
+  raw_score: number | null
+  published: boolean
+  fit_level: string | null
+  coverage: number
+  confidence: string
+  limiting_reasons: ReasonView[]
+}
+
+export interface InterviewPathView {
   turn_id: string
   question_mode: string
-  requirement_id: string
   outcome: string
-  evidence_ids: string[]
 }
 
 export interface InterviewTranscriptTurnView {
@@ -106,21 +144,29 @@ export interface InterviewTranscriptTurnView {
   question: string
   answer: string | null
   question_mode: string
-  requirement_id: string
   requirement_label: string
   asked_at: string
   answered_at: string | null
-  evidence_ids: string[]
   evidence_status: 'supporting' | 'limiting' | 'mixed' | 'none'
+  evidence_cta: string
 }
 
-export interface ClaimVerificationView extends JsonObject {
-  claim_id?: string
-  status?: string
-  outcome?: string
-  supporting_evidence_ids?: string[]
-  contradicting_evidence_ids?: string[]
-  evidence_ids?: string[]
+export interface ClaimVerificationView {
+  status: string
+  explanation: string
+}
+
+export interface NarrativeItemView {
+  text: string
+  dimension_names: string[]
+}
+
+export interface NarrativeView {
+  executive_summary: string
+  strengths: NarrativeItemView[]
+  risks: NarrativeItemView[]
+  unverified_areas: NarrativeItemView[]
+  fit_contexts: NarrativeItemView[]
 }
 
 export interface ReportViewModel {
@@ -128,9 +174,11 @@ export interface ReportViewModel {
   target_role: string
   role_profile_version: string
   scoring_engine_version: string
+  candidate_overview: CandidateOverviewView
+  enterprise_assessment: EnterpriseAssessmentView
   job_match: JobMatchView
   radar_dimensions: RadarDimensionView[]
-  narrative: JsonObject
+  narrative: NarrativeView
   interview_path: InterviewPathView[]
   interview_transcript: InterviewTranscriptTurnView[]
   claim_verifications: ClaimVerificationView[]

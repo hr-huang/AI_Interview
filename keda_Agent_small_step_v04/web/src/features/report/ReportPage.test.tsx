@@ -19,6 +19,55 @@ const report = (overrides: Partial<ReportViewModel> = {}): ReportViewModel => ({
   target_role: 'AI Agent / AI应用工程师',
   role_profile_version: '2026-H2',
   scoring_engine_version: 'v1',
+  candidate_overview: {
+    candidate_name: '候选人 A',
+    target_role: 'AI Agent / AI应用工程师',
+    education_summary: '计算机相关专业本科',
+    experience_summary: '具备 Agent 工作流与生产系统实践。',
+    jd_focus: ['Agent 编排', '生产稳定性'],
+    interview_rounds: 1,
+    generated_at: '2026-08-25T10:00:00Z',
+  },
+  enterprise_assessment: {
+    decision: 'CONDITIONAL_PROCEED',
+    decision_label: '有条件进入结构化复试',
+    provisional_score: 86,
+    confidence: 'high',
+    conditions: ['复核生产场景下的故障边界。'],
+    decision_reasons: ['核心能力已形成初步支持证据。'],
+    overall_assessment: '候选人能够清晰拆分 Agent 状态与人工介入边界，适合进入下一轮验证。',
+    strengths: [{
+      title: '状态边界清楚',
+      text: '能够说明状态流转与可复核节点。',
+      dimension_names: ['Agent 编排'],
+      confidence: 'high',
+    }],
+    risks: [],
+    unknowns: [{
+      title: '生产迁移待确认',
+      text: '尚未证明大规模场景下的迁移能力。',
+      dimension_names: ['生产稳定性'],
+      confidence: 'low',
+    }],
+    reinterview_plan: [{
+      priority: 1,
+      dimension_name: '生产稳定性',
+      reason: '需要确认复杂故障下的排查与恢复边界。',
+      question: '请设计一次生产故障演练，并说明如何判断恢复完成。',
+      follow_ups: ['如果指标恢复但用户仍受影响，你会如何继续定位？'],
+      positive_signals: ['能给出可观测指标与回滚边界。'],
+      risk_signals: ['只描述工具，不说明失败条件。'],
+      pass_criteria: ['明确输入、输出、失败条件与验证方式。'],
+      suggested_minutes: 15,
+    }],
+    evidence_excerpts: [{
+      turn_id: 'turn_003',
+      conclusion: '回答支持当前能力判断。',
+      quote: '节点只返回增量更新',
+      interpretation: '能够说明状态更新与合并职责。',
+      limitation: '尚未证明更大规模场景下的迁移能力。',
+    }],
+  },
   job_match: {
     raw_score: 86,
     published: true,
@@ -29,7 +78,6 @@ const report = (overrides: Partial<ReportViewModel> = {}): ReportViewModel => ({
   },
   radar_dimensions: [
     {
-      dimension_id: 'role_dim_01',
       name: 'Agent 编排',
       score: 86,
       level: 'L3',
@@ -39,23 +87,19 @@ const report = (overrides: Partial<ReportViewModel> = {}): ReportViewModel => ({
         {
           reason_type: 'strength',
           text: '能够解释状态流转。',
-          evidence_ids: ['E003'],
-          rubric_signal_ids: ['rubric_01'],
           sources: [
             {
-              evidence_id: 'E003',
               turn_id: 'turn_003',
-              question: '你如何设计 State？',
-              answer: '节点只返回增量更新，状态机负责合并。',
-              observation: '回答包含可复核的状态边界。',
-              source_excerpt: '节点只返回增量更新',
+              conclusion: '回答支持当前能力判断。',
+              quote: '节点只返回增量更新',
+              interpretation: '回答包含可复核的状态边界。',
+              limitation: '尚未证明更大规模场景下的迁移能力。',
             },
           ],
         },
       ],
     },
     {
-      dimension_id: 'role_dim_02',
       name: '待核验能力',
       score: null,
       level: 'UNVERIFIED',
@@ -65,8 +109,6 @@ const report = (overrides: Partial<ReportViewModel> = {}): ReportViewModel => ({
         {
           reason_type: 'unverified',
           text: '当前没有足够证据。',
-          evidence_ids: [],
-          rubric_signal_ids: [],
           sources: [],
         },
       ],
@@ -74,29 +116,30 @@ const report = (overrides: Partial<ReportViewModel> = {}): ReportViewModel => ({
   ],
   narrative: {
     executive_summary: '当前证据覆盖有限。',
-    strengths: [{ text: '状态边界清楚。', dimension_ids: ['role_dim_01'], evidence_ids: ['E003'] }],
+    strengths: [{ text: '状态边界清楚。', dimension_names: ['Agent 编排'] }],
     risks: [],
-    unverified_areas: [{ text: '业务场景待核验。', dimension_ids: ['role_dim_02'], evidence_ids: [] }],
+    unverified_areas: [{ text: '业务场景待核验。', dimension_names: ['生产稳定性'] }],
     fit_contexts: [],
-    development_actions: [
-      {
-        dimension_id: 'role_dim_02',
-        current_gap: '缺少场景验证。',
-        actions: ['补充一个独立场景。'],
-        acceptance_criteria: ['说明边界、验证方式与结果。'],
-      },
-    ],
   },
   interview_path: [
     {
       turn_id: 'turn_003',
       question_mode: 'scenario',
-      requirement_id: 'req_01',
       outcome: 'supporting',
-      evidence_ids: ['E003'],
     },
   ],
-  interview_transcript: [],
+  interview_transcript: [{
+    turn_id: 'turn_003',
+    sequence_number: 3,
+    question: '你如何设计 State？',
+    answer: '节点只返回增量更新，状态机负责合并。',
+    question_mode: 'scenario',
+    requirement_label: 'Agent 编排',
+    asked_at: '2026-08-25T10:02:00Z',
+    answered_at: '2026-08-25T10:03:00Z',
+    evidence_status: 'supporting',
+    evidence_cta: '查看本轮依据',
+  }],
   claim_verifications: [],
   assessment_limitations: ['仅基于本次面试证据。'],
   ...overrides,
@@ -117,29 +160,37 @@ afterEach(() => {
 })
 
 describe('ReportPage', () => {
-  test('loads a real assessment report and opens original question and answer for a score reason', async () => {
+  test('presents an enterprise decision and opens grounded excerpts from a radar dimension', async () => {
     vi.mocked(api.getReport).mockResolvedValue(report())
     const user = userEvent.setup()
     renderEnterprisePage()
 
     expect(await screen.findByRole('heading', { name: '岗位胜任力报告' })).toBeVisible()
     expect(api.getReport).toHaveBeenCalledWith('ast_001')
-    expect(screen.getByText('Agent 编排')).toBeVisible()
+    expect(screen.getByText('有条件进入结构化复试')).toBeVisible()
+    expect(screen.getByRole('heading', { name: '候选人总评' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: '企业复试计划' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: '能力雷达' })).toBeVisible()
     expect(screen.getByText('当前证据覆盖有限。')).toBeVisible()
-    expect(screen.getByText('展开查看动态追问路径')).toBeVisible()
+    expect(screen.queryByText('展开查看为什么得到这个评价')).not.toBeInTheDocument()
+    expect(screen.queryByText('候选人成长建议')).not.toBeInTheDocument()
+    expect(screen.queryByText(/RubricMatch|Requirement|d03_min_02|ev_/)).not.toBeInTheDocument()
 
     const radarTable = screen.getByRole('table')
     await user.click(within(radarTable).getByRole('button', { name: /Agent 编排/ }))
     expect(screen.getByRole('dialog')).toBeVisible()
-    await user.click(screen.getByRole('button', { name: /^关闭$/ }))
-    await user.click(screen.getByText('展开查看评分原因与证据'))
-    await user.click(screen.getByRole('button', { name: /查看证据 E003/ }))
-    expect(screen.getByRole('dialog')).toBeVisible()
-    expect(screen.getByText(/你如何设计 State/)).toBeVisible()
-    expect(screen.getByText(/节点只返回增量更新/)).toBeVisible()
+    expect(screen.getByText('关键回答摘录')).toBeVisible()
+    expect(screen.getByText('为什么支持该判断')).toBeVisible()
+    expect(screen.getByText('尚未证明')).toBeVisible()
+    expect(screen.getByText('节点只返回增量更新')).toBeVisible()
+    expect(within(screen.getByRole('dialog')).queryByText('节点只返回增量更新，状态机负责合并。')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /查看完整面试记录中的本轮/ })).toBeVisible()
+
+    await user.click(screen.getByRole('button', { name: /查看完整面试记录中的本轮/ }))
+    expect(screen.getByText('节点只返回增量更新，状态机负责合并。')).toBeVisible()
   })
 
-  test('renders ordered transcript turns and does not open a drawer for unlinked evidence', async () => {
+  test('renders ordered transcript turns without exposing internal identifiers', async () => {
     vi.mocked(api.getReport).mockResolvedValue(report({
       interview_transcript: [
         {
@@ -148,12 +199,11 @@ describe('ReportPage', () => {
           question: '第二个问题：请说明边界？',
           answer: null,
           question_mode: 'follow_up',
-          requirement_id: 'req_02',
           requirement_label: '边界验证',
           asked_at: '2026-08-24T10:02:00Z',
           answered_at: null,
-          evidence_ids: [],
           evidence_status: 'none',
+          evidence_cta: '查看本轮依据',
         },
         {
           turn_id: 'turn_transcript_001',
@@ -161,12 +211,11 @@ describe('ReportPage', () => {
           question: '第一个问题：请介绍项目？',
           answer: '第一个回答。',
           question_mode: 'project_deep_dive',
-          requirement_id: 'req_01',
           requirement_label: '项目经验',
           asked_at: '2026-08-24T10:00:00Z',
           answered_at: '2026-08-24T10:01:00Z',
-          evidence_ids: ['E003'],
           evidence_status: 'supporting',
+          evidence_cta: '查看本轮依据',
         },
         {
           turn_id: 'turn_transcript_003',
@@ -174,12 +223,11 @@ describe('ReportPage', () => {
           question: '第三个问题：请说明迁移？',
           answer: '第三个回答。',
           question_mode: 'scenario',
-          requirement_id: 'req_03',
           requirement_label: '迁移场景',
           asked_at: '2026-08-24T10:04:00Z',
           answered_at: '2026-08-24T10:05:00Z',
-          evidence_ids: ['E_UNLINKED'],
           evidence_status: 'supporting',
+          evidence_cta: '查看本轮依据',
         },
       ] satisfies InterviewTranscriptTurnView[],
     }))
@@ -187,20 +235,18 @@ describe('ReportPage', () => {
     renderEnterprisePage()
 
     expect(await screen.findByRole('heading', { name: '岗位胜任力报告' })).toBeVisible()
-    await user.click(screen.getByText('展开查看完整面试记录'))
+    await user.click(screen.getByText('展开查看面试过程回顾'))
 
-    const transcriptPanel = screen.getByRole('heading', { name: '候选人的完整回答' }).closest('section')
+    const transcriptPanel = screen.getByRole('heading', { name: '问题、回答与追问依据' }).closest('section')
     expect(transcriptPanel).not.toBeNull()
-    const rows = within(transcriptPanel as HTMLElement).getAllByRole('listitem')
+    const rows = (transcriptPanel as HTMLElement).querySelectorAll('.interview-transcript-list > li')
     expect(rows).toHaveLength(3)
     expect(rows[0]).toHaveTextContent('第一个问题：请介绍项目？')
     expect(rows[1]).toHaveTextContent('第二个问题：请说明边界？')
     expect(rows[1]).toHaveTextContent('未提交回答')
     expect(rows[2]).toHaveTextContent('第三个问题：请说明迁移？')
 
-    await user.click(screen.getByRole('button', { name: /查看证据 E_UNLINKED/ }))
-
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.queryByText(/req_|ev_|E003/)).not.toBeInTheDocument()
   })
 
   test('shows loading and API errors as accessible page states', async () => {

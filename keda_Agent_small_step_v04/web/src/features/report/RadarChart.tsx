@@ -52,6 +52,10 @@ function dimensionButtonLabel(dimension: RadarDimensionView): string {
     : `${dimension.name}，分数 ${Math.round(score)}，等级 ${dimension.level}，覆盖率 ${coverageLabel(dimension.coverage)}，置信度 ${confidenceLabel(dimension.confidence)}`
 }
 
+function dimensionKey(dimension: RadarDimensionView, index: number): string {
+  return `${index}:${dimension.name}`
+}
+
 export function RadarChart({ dimensions, onDimensionSelect }: RadarChartProps) {
   const [selectedDimensionId, setSelectedDimensionId] = useState<string | null>(null)
   const [activeDimensionId, setActiveDimensionId] = useState<string | null>(null)
@@ -68,16 +72,16 @@ export function RadarChart({ dimensions, onDimensionSelect }: RadarChartProps) {
 
   const verifiedCount = verifiedPoints.length
 
-  function selectDimension(dimension: RadarDimensionView) {
-    setSelectedDimensionId(dimension.dimension_id)
+  function selectDimension(dimension: RadarDimensionView, index: number) {
+    setSelectedDimensionId(dimensionKey(dimension, index))
     onDimensionSelect?.(dimension)
   }
 
-  function handleAxisKeyDown(event: ReactKeyboardEvent<SVGGElement>, dimension: RadarDimensionView) {
+  function handleAxisKeyDown(event: ReactKeyboardEvent<SVGGElement>, dimension: RadarDimensionView, index: number) {
     const isSpace = event.key === ' ' || event.key === 'Space' || event.key === 'Spacebar' || event.code === 'Space'
     if (event.key !== 'Enter' && !isSpace) return
     event.preventDefault()
-    selectDimension(dimension)
+    selectDimension(dimension, index)
   }
 
   return (
@@ -104,14 +108,15 @@ export function RadarChart({ dimensions, onDimensionSelect }: RadarChartProps) {
             const [x, y] = axisPoints[index]
             const [labelX, labelY] = labelPoints[index]
             const unverified = scoreForDimension(dimension) === null
-            const selected = selectedDimensionId === dimension.dimension_id
-            const active = activeDimensionId === dimension.dimension_id
+            const key = dimensionKey(dimension, index)
+            const selected = selectedDimensionId === key
+            const active = activeDimensionId === key
             const anchor = labelX < CENTER_X - 8 ? 'end' : labelX > CENTER_X + 8 ? 'start' : 'middle'
             return (
               <g
-                key={dimension.dimension_id}
+                key={key}
                 className={`radar-axis ${unverified ? 'is-unverified' : ''} ${selected ? 'is-selected' : ''} ${active ? 'is-active' : ''}`}
-                data-radar-axis={dimension.dimension_id}
+                data-radar-axis={key}
                 data-radar-unverified={unverified ? 'true' : 'false'}
                 data-radar-selected={selected ? 'true' : 'false'}
                 data-radar-active={active ? 'true' : 'false'}
@@ -121,22 +126,16 @@ export function RadarChart({ dimensions, onDimensionSelect }: RadarChartProps) {
                 aria-label={dimensionButtonLabel(dimension)}
                 aria-pressed={selected}
                 style={{ '--radar-index': index } as CSSProperties}
-                onClick={() => selectDimension(dimension)}
-                onKeyDown={(event) => handleAxisKeyDown(event, dimension)}
-                onMouseEnter={() => setActiveDimensionId(dimension.dimension_id)}
+                onClick={() => selectDimension(dimension, index)}
+                onKeyDown={(event) => handleAxisKeyDown(event, dimension, index)}
+                onMouseEnter={() => setActiveDimensionId(key)}
                 onMouseLeave={() => setActiveDimensionId(null)}
-                onFocus={() => setActiveDimensionId(dimension.dimension_id)}
+                onFocus={() => setActiveDimensionId(key)}
                 onBlur={() => setActiveDimensionId(null)}
               >
                 <line x1={CENTER_X} y1={CENTER_Y} x2={x} y2={y} />
-                <circle
-                  className="radar-axis-halo"
-                  cx={x}
-                  cy={y}
-                  r="8"
-                  aria-hidden="true"
-                  style={{ '--radar-index': index } as CSSProperties}
-                />
+                <circle className="radar-axis-halo radar-axis-halo-inner" cx={x} cy={y} r="9" aria-hidden="true" />
+                <circle className="radar-axis-halo radar-axis-halo-outer" cx={x} cy={y} r="8" aria-hidden="true" />
                 <circle className="radar-axis-hit" cx={x} cy={y} r="22" aria-hidden="true" />
                 <circle className="radar-axis-point" cx={x} cy={y} r="8" />
                 <text x={labelX} y={labelY} textAnchor={anchor}>
@@ -159,7 +158,7 @@ export function RadarChart({ dimensions, onDimensionSelect }: RadarChartProps) {
         </svg>
         <p className="radar-interaction-hint">
           <span aria-hidden="true">↗</span>
-          点击任一能力维度，查看评分依据与原始问答
+          点击任一能力点，查看评分依据与关键证据
         </p>
         {verifiedCount < total ? (
           <p className="radar-coverage-note">
@@ -186,13 +185,15 @@ export function RadarChart({ dimensions, onDimensionSelect }: RadarChartProps) {
           <tbody>
             {dimensions.map((dimension) => {
               const score = scoreForDimension(dimension)
-              const selected = selectedDimensionId === dimension.dimension_id
-              const active = activeDimensionId === dimension.dimension_id
+              const index = dimensions.indexOf(dimension)
+              const key = dimensionKey(dimension, index)
+              const selected = selectedDimensionId === key
+              const active = activeDimensionId === key
               return (
                 <tr
-                  key={dimension.dimension_id}
+                  key={key}
                   className={`${score === null ? 'is-unverified ' : ''}${selected ? 'is-selected ' : ''}${active ? 'is-active' : ''}`}
-                  data-radar-row={dimension.dimension_id}
+                  data-radar-row={key}
                   data-radar-selected={selected ? 'true' : 'false'}
                   data-radar-active={active ? 'true' : 'false'}
                 >
@@ -201,10 +202,10 @@ export function RadarChart({ dimensions, onDimensionSelect }: RadarChartProps) {
                       className={`radar-dimension-button ${selected ? 'is-selected' : ''} ${active ? 'is-active' : ''}`}
                       type="button"
                       aria-label={dimensionButtonLabel(dimension)}
-                      onClick={() => selectDimension(dimension)}
-                      onMouseEnter={() => setActiveDimensionId(dimension.dimension_id)}
+                      onClick={() => selectDimension(dimension, index)}
+                      onMouseEnter={() => setActiveDimensionId(key)}
                       onMouseLeave={() => setActiveDimensionId(null)}
-                      onFocus={() => setActiveDimensionId(dimension.dimension_id)}
+                      onFocus={() => setActiveDimensionId(key)}
                       onBlur={() => setActiveDimensionId(null)}
                     >
                       <span className="radar-dimension-label">

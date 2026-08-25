@@ -6,7 +6,6 @@ import './report.css'
 
 const dimensions: RadarDimensionView[] = [
   {
-    dimension_id: 'custom_a',
     name: 'Agent 编排',
     score: 86,
     level: 'L3',
@@ -15,7 +14,6 @@ const dimensions: RadarDimensionView[] = [
     reasons: [],
   },
   {
-    dimension_id: 'custom_b',
     name: '待核验能力',
     score: null,
     level: 'UNVERIFIED',
@@ -63,15 +61,17 @@ describe('RadarChart', () => {
     fireEvent.keyDown(axis, { key: ' ' })
 
     expect(onDimensionSelect).toHaveBeenCalledTimes(2)
-    expect(onDimensionSelect).toHaveBeenLastCalledWith(expect.objectContaining({ dimension_id: 'custom_a' }))
-    expect(svg.querySelectorAll('.radar-axis-halo')).toHaveLength(dimensions.length)
+    expect(onDimensionSelect).toHaveBeenLastCalledWith(expect.objectContaining({ name: 'Agent 编排' }))
+    expect(svg.querySelectorAll('.radar-axis-halo')).toHaveLength(dimensions.length * 2)
+    expect(svg.querySelectorAll('.radar-axis-halo-inner')).toHaveLength(dimensions.length)
+    expect(svg.querySelectorAll('.radar-axis-halo-outer')).toHaveLength(dimensions.length)
   })
 
   test('keeps the halo visible above a transparent 22-radius hit target', () => {
     render(<RadarChart dimensions={dimensions} />)
 
     const svg = screen.getByRole('img', { name: '能力雷达图' })
-    const axis = svg.querySelector('[data-radar-axis="custom_a"]')
+    const axis = svg.querySelector('[data-radar-axis="0:Agent 编排"]')
     const hitTarget = axis?.querySelector('.radar-axis-hit')
     const halo = axis?.querySelector('.radar-axis-halo')
 
@@ -102,7 +102,9 @@ describe('RadarChart', () => {
     expect(cssText).toContain('.radar-axis:hover .radar-axis-halo')
     expect(cssText).toContain('.radar-axis:focus-visible .radar-axis-halo')
     expect(cssText).toContain('.radar-axis.is-selected .radar-axis-halo')
-    const selectedHaloRule = cssRules.find((rule) => rule.cssText.includes('.radar-axis.is-selected .radar-axis-halo'))
-    expect(selectedHaloRule?.cssText).toContain('animation: none')
+    expect(cssText).toContain('animation: radar-halo-wave')
+    expect(cssText).toContain('-1.4s')
+    expect(cssText).toContain('infinite')
+    expect(cssText).not.toContain('animation-delay: calc(var(--radar-index)')
   })
 })
