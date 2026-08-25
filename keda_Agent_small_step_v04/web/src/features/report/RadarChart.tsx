@@ -1,4 +1,4 @@
-import { useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { RadarDimensionView } from '../../api/types'
 
 type RadarChartProps = {
@@ -53,7 +53,7 @@ function dimensionButtonLabel(dimension: RadarDimensionView): string {
 }
 
 function dimensionKey(dimension: RadarDimensionView): string {
-  return dimension.dimension_id || dimension.name
+  return dimension.name
 }
 
 export function RadarChart({ dimensions, onDimensionSelect }: RadarChartProps) {
@@ -75,16 +75,16 @@ export function RadarChart({ dimensions, onDimensionSelect }: RadarChartProps) {
 
   const verifiedCount = verifiedPoints.length
 
-  function selectDimension(dimension: RadarDimensionView, index: number) {
+  function selectDimension(dimension: RadarDimensionView) {
     setSelectedDimensionId(dimensionKey(dimension))
     onDimensionSelect?.(dimension)
   }
 
-  function handleAxisKeyDown(event: ReactKeyboardEvent<SVGGElement>, dimension: RadarDimensionView, index: number) {
+  function handleAxisKeyDown(event: ReactKeyboardEvent<SVGGElement>, dimension: RadarDimensionView) {
     const isSpace = event.key === ' ' || event.key === 'Space' || event.key === 'Spacebar' || event.code === 'Space'
     if (event.key !== 'Enter' && !isSpace) return
     event.preventDefault()
-    selectDimension(dimension, index)
+    selectDimension(dimension)
   }
 
   return (
@@ -123,14 +123,12 @@ export function RadarChart({ dimensions, onDimensionSelect }: RadarChartProps) {
                 data-radar-unverified={unverified ? 'true' : 'false'}
                 data-radar-selected={selected ? 'true' : 'false'}
                 data-radar-active={active ? 'true' : 'false'}
-                data-radar-index={index}
                 role="button"
                 tabIndex={0}
                 aria-label={dimensionButtonLabel(dimension)}
                 aria-pressed={selected}
-                style={{ '--radar-index': index } as CSSProperties}
-                onClick={() => selectDimension(dimension, index)}
-                onKeyDown={(event) => handleAxisKeyDown(event, dimension, index)}
+                onClick={() => selectDimension(dimension)}
+                onKeyDown={(event) => handleAxisKeyDown(event, dimension)}
                 onMouseEnter={() => setActiveDimensionId(key)}
                 onMouseLeave={() => setActiveDimensionId(null)}
                 onFocus={() => setActiveDimensionId(key)}
@@ -204,7 +202,7 @@ export function RadarChart({ dimensions, onDimensionSelect }: RadarChartProps) {
                       className={`radar-dimension-button ${selected ? 'is-selected' : ''} ${active ? 'is-active' : ''}`}
                       type="button"
                       aria-label={dimensionButtonLabel(dimension)}
-                      onClick={() => selectDimension(dimension, index)}
+                      onClick={() => selectDimension(dimension)}
                       onMouseEnter={() => setActiveDimensionId(key)}
                       onMouseLeave={() => setActiveDimensionId(null)}
                       onFocus={() => setActiveDimensionId(key)}

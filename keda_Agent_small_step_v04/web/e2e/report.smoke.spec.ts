@@ -97,7 +97,6 @@ const reportFixture: ReportViewModel = {
     }],
   },
   radar_dimensions: Array.from({ length: 6 }, (_, index) => ({
-    dimension_id: `role_dim_0${index + 1}`,
     name: ['Agent 编排', '任务建模', '上下文工程', 'AI 交付', '可靠性', '持续演进'][index],
     score: [88, 84, 79, 81, 68, 62][index],
     level: 'L3',
@@ -173,6 +172,14 @@ async function openReport(page: import('@playwright/test').Page, path = '/demo/a
 
 for (const viewportWidth of [390, 840, 960, 1100, 1440]) {
   test(`keeps radar internals and match panel collision-free at ${viewportWidth}px`, async ({ page }) => {
+    const consoleErrors: string[] = []
+    const failedResponses: string[] = []
+    page.on('console', (message) => {
+      if (message.type() === 'error') consoleErrors.push(message.text())
+    })
+    page.on('response', (response) => {
+      if (response.status() >= 400) failedResponses.push(`${response.status()} ${response.url()}`)
+    })
     await page.setViewportSize({ width: viewportWidth, height: viewportWidth === 390 ? 844 : 1000 })
     await openReport(page)
 
@@ -187,6 +194,7 @@ for (const viewportWidth of [390, 840, 960, 1100, 1440]) {
     const reinterviewPanel = await rect(page.locator('.enterprise-reinterview-panel'))
 
     expect(await page.evaluate(() => document.body.scrollWidth)).toBeLessThanOrEqual(viewport.width)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width)
     expect(intersects(decision, overall)).toBe(false)
     if (viewportWidth === 390) {
       expect(decision.top).toBeLessThanOrEqual(viewport.height)
@@ -223,12 +231,15 @@ for (const viewportWidth of [390, 840, 960, 1100, 1440]) {
     }
 
     for (const axis of await page.locator('.radar-axis').all()) {
+      await expect(axis).not.toHaveAttribute('data-radar-index')
       await expect(axis.locator('.radar-axis-halo')).toHaveCount(2)
       for (const halo of await axis.locator('.radar-axis-halo').all()) {
         await expect.poll(() => halo.evaluate((element) => getComputedStyle(element).animationName)).toBe('radar-halo-wave')
         await expect.poll(() => halo.evaluate((element) => getComputedStyle(element).animationIterationCount)).toBe('infinite')
       }
     }
+    expect(consoleErrors).toEqual([])
+    expect(failedResponses).toEqual([])
   })
 }
 
@@ -271,7 +282,7 @@ test('uses the same enterprise report sections for demo and saved report endpoin
   expect(failedResponses).toEqual([])
 })
 
-test('selects a radar dimension with keyboard and preserves a static reduced-motion halo', async ({ browser }) => {
+test('selects a radar dimension with keyboard and disables both halos for every axis under reduced motion', async ({ browser }) => {
   const context = await browser.newContext({
     viewport: { width: 960, height: 1000 },
     reducedMotion: 'reduce',
@@ -279,14 +290,19 @@ test('selects a radar dimension with keyboard and preserves a static reduced-mot
   const page = await context.newPage()
   await openReport(page)
 
-  const axis = page.locator('[data-radar-axis="role_dim_01"]')
+  const axis = page.locator('[data-radar-axis="Agent 编排"]')
   await axis.focus()
   await axis.press('Enter')
 
   await expect(axis).toHaveAttribute('data-radar-selected', 'true')
-  await expect(page.locator('[data-radar-row="role_dim_01"]')).toHaveAttribute('data-radar-selected', 'true')
-  await expect.poll(() => axis.locator('.radar-axis-halo').first().evaluate((element) => getComputedStyle(element).animationName)).toBe('none')
-  await expect.poll(() => axis.locator('.radar-axis-halo').first().evaluate((element) => getComputedStyle(element).opacity)).toBe('0.42')
+  await expect(page.locator('[data-radar-row="Agent 编排"]')).toHaveAttribute('data-radar-selected', 'true')
+  for (const currentAxis of await page.locator('.radar-axis').all()) {
+    await expect(currentAxis.locator('.radar-axis-halo')).toHaveCount(2)
+    for (const halo of await currentAxis.locator('.radar-axis-halo').all()) {
+      await expect.poll(() => halo.evaluate((element) => getComputedStyle(element).animationName)).toBe('none')
+      await expect.poll(() => halo.evaluate((element) => getComputedStyle(element).opacity)).toBe('0.42')
+    }
+  }
 
   await context.close()
 })

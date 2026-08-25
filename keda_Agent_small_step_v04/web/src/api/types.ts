@@ -71,7 +71,6 @@ export interface ReasonView {
 }
 
 export interface RadarDimensionView {
-  dimension_id?: string
   name: string
   score: number | null
   level: string

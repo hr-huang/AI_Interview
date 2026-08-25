@@ -4,11 +4,8 @@ import type { RadarDimensionView } from '../../api/types'
 import { RadarChart } from './RadarChart'
 import './report.css'
 
-type TestRadarDimension = RadarDimensionView & { dimension_id: string }
-
-const dimensions: TestRadarDimension[] = [
+const dimensions: RadarDimensionView[] = [
   {
-    dimension_id: 'role_dim_01',
     name: 'Agent 编排',
     score: 86,
     level: 'L3',
@@ -17,7 +14,6 @@ const dimensions: TestRadarDimension[] = [
     reasons: [],
   },
   {
-    dimension_id: 'role_dim_02',
     name: '待核验能力',
     score: null,
     level: 'UNVERIFIED',
@@ -28,12 +24,14 @@ const dimensions: TestRadarDimension[] = [
 ]
 
 describe('RadarChart', () => {
-  test('uses the stable dimension identity for radar controls instead of render order', () => {
+  test('uses the public dimension name for radar controls instead of render order', () => {
     render(<RadarChart dimensions={dimensions} />)
 
     const svg = screen.getByRole('img', { name: '能力雷达图' })
-    expect(svg.querySelector('[data-radar-axis="role_dim_01"]')).toBeInTheDocument()
-    expect(svg.querySelector('[data-radar-axis="role_dim_02"]')).toBeInTheDocument()
+    const firstAxis = svg.querySelector('[data-radar-axis="Agent 编排"]')
+    expect(firstAxis).toBeInTheDocument()
+    expect(firstAxis).not.toHaveAttribute('data-radar-index')
+    expect(svg.querySelector('[data-radar-axis="待核验能力"]')).toBeInTheDocument()
     expect(svg.querySelector('[data-radar-axis="0:Agent 编排"]')).not.toBeInTheDocument()
   })
 
@@ -68,7 +66,7 @@ describe('RadarChart', () => {
 
     expect(axis).toHaveAttribute('tabindex', '0')
     expect(axis).toHaveAttribute('aria-label', expect.stringContaining('Agent 编排'))
-    expect(axis.getAttribute('style')).toContain('--radar-index: 0')
+    expect(axis.getAttribute('style') ?? '').not.toContain('--radar-index')
 
     fireEvent.keyDown(axis, { key: 'Enter' })
     fireEvent.keyDown(axis, { key: ' ' })
@@ -84,7 +82,7 @@ describe('RadarChart', () => {
     render(<RadarChart dimensions={dimensions} />)
 
     const svg = screen.getByRole('img', { name: '能力雷达图' })
-    const axis = svg.querySelector('[data-radar-axis="role_dim_01"]')
+    const axis = svg.querySelector('[data-radar-axis="Agent 编排"]')
     const hitTarget = axis?.querySelector('.radar-axis-hit')
     const halo = axis?.querySelector('.radar-axis-halo')
 
