@@ -94,28 +94,15 @@ def _reason_text(reason: ScoreReason) -> str:
 
 
 def _critical_error_texts(snapshot: ScoreSnapshot) -> list[str]:
-    """Collect critical-error text in stable order without fabricating IDs."""
+    """Collect published gating critical-error text in stable order.
+
+    ``ScoreSnapshot`` does not carry the Role Pack's ``is_gating`` flag.  The
+    score engine therefore publishes gating critical errors through
+    ``job_match.limiting_reasons``; critical-error reasons attached only to a
+    radar or requirement remain ordinary risk evidence.
+    """
 
     texts: list[str] = []
-    for radar in snapshot.radar_dimensions:
-        texts.extend(
-            reason.text
-            for reason in radar.score_reasons
-            if reason.reason_type == "critical_error"
-        )
-    for assessment in snapshot.requirement_assessments:
-        texts.extend(
-            reason.text
-            for reason in assessment.assessment_reasons
-            if reason.reason_type == "critical_error"
-        )
-        if assessment.unresolved_critical_error_ids and not any(
-            reason.reason_type == "critical_error"
-            for reason in assessment.assessment_reasons
-        ):
-            texts.append(
-                f"维度“{assessment.dimension_id}”存在未解除的关键错误。"
-            )
     texts.extend(
         reason.text
         for reason in snapshot.job_match.limiting_reasons
@@ -159,6 +146,82 @@ def _has_contradictory_claim(snapshot: ScoreSnapshot) -> bool:
         claim.status == "contradictory"
         for claim in snapshot.claim_verifications
     )
+
+
+def _risk_dimension_ids(snapshot: ScoreSnapshot) -> set[str]:
+    """Return dimensions that must be represented by report risk signals."""
+
+    dimension_ids: set[str] = set()
+    evidence_to_dimensions: dict[str, set[str]] = {}
+    rubric_to_dimensions: dict[str, set[str]] = {}
+
+    def register(
+        dimension_id: str,
+        evidence_ids: Iterable[str],
+        rubric_ids: Iterable[str],
+    ) -> None:
+        for evidence_id in evidence_ids:
+            evidence_to_dimensions.setdefault(evidence_id, set()).add(
+                dimension_id
+            )
+        for rubric_id in rubric_ids:
+            rubric_to_dimensions.setdefault(rubric_id, set()).add(dimension_id)
+
+    for radar in snapshot.radar_dimensions:
+        for reason in radar.score_reasons:
+            if reason.reason_type in {"risk", "critical_error"}:
+                dimension_ids.add(radar.dimension_id)
+                register(
+                    radar.dimension_id,
+                    reason.evidence_ids,
+                    reason.rubric_signal_ids,
+                )
+        if radar.level == "L0":
+            dimension_ids.add(radar.dimension_id)
+
+    for assessment in snapshot.requirement_assessments:
+        risk_reasons = [
+            reason
+            for reason in assessment.assessment_reasons
+            if reason.reason_type in {"risk", "critical_error"}
+        ]
+        if (
+            assessment.limiting_evidence_ids
+            or assessment.unresolved_critical_error_ids
+            or risk_reasons
+        ):
+            dimension_ids.add(assessment.dimension_id)
+        register(
+            assessment.dimension_id,
+            assessment.limiting_evidence_ids
+            + [
+                evidence_id
+                for reason in risk_reasons
+                for evidence_id in reason.evidence_ids
+            ],
+            [
+                rubric_id
+                for reason in risk_reasons
+                for rubric_id in reason.rubric_signal_ids
+            ],
+        )
+
+    # A JobMatch limiting reason has no dimension field.  Resolve its
+    # provenance through the dimension-scoped limiting/critical reasons above
+    # whenever the evidence or rubric signal is available.
+    for reason in snapshot.job_match.limiting_reasons:
+        for radar in snapshot.radar_dimensions:
+            if radar.dimension_id in reason.text:
+                dimension_ids.add(radar.dimension_id)
+        for assessment in snapshot.requirement_assessments:
+            if assessment.dimension_id in reason.text:
+                dimension_ids.add(assessment.dimension_id)
+        for evidence_id in reason.evidence_ids:
+            dimension_ids.update(evidence_to_dimensions.get(evidence_id, set()))
+        for rubric_id in reason.rubric_signal_ids:
+            dimension_ids.update(rubric_to_dimensions.get(rubric_id, set()))
+
+    return dimension_ids
 
 
 def _append_unique(values: list[str], value: str, *, limit: int = 3) -> None:
@@ -286,7 +349,25 @@ _ALL_VERIFIED_PATTERNS = (
 
 
 def _contains_all_verified_claim(text: str) -> bool:
-    return any(pattern.search(text) for pattern in _ALL_VERIFIED_PATTERNS)
+    negative_prefixes = (
+        "并非",
+        "不是",
+        "并不",
+        "并未",
+        "未",
+        "尚未",
+        "没有",
+        "不代表",
+        "not",
+        "no",
+    )
+    for pattern in _ALL_VERIFIED_PATTERNS:
+        for match in pattern.finditer(text):
+            prefix = text[: match.start()].casefold().rstrip(" ，,、:：；;。.!！")
+            if any(prefix.endswith(item) for item in negative_prefixes):
+                continue
+            return True
+    return False
 
 
 def _enterprise_texts(enterprise: EnterpriseAssessment) -> Iterable[str]:
@@ -324,9 +405,18 @@ def validate_enterprise_assessment(
 
     unverified_dimension_ids = _unverified_dimension_ids(snapshot)
     if unverified_dimension_ids:
-        if not enterprise.unknowns:
+        unknown_dimension_ids = {
+            dimension_id
+            for signal in enterprise.unknowns
+            for dimension_id in signal.dimension_ids
+        }
+        missing_unknowns = sorted(
+            set(unverified_dimension_ids) - unknown_dimension_ids
+        )
+        if missing_unknowns:
             errors.append(
-                "存在未验证维度时 enterprise_assessment.unknowns 不能为空"
+                "enterprise_assessment.unknowns 未覆盖未验证维度: "
+                + ", ".join(missing_unknowns)
             )
         if any(
             _contains_all_verified_claim(text)
@@ -334,8 +424,23 @@ def validate_enterprise_assessment(
         ):
             errors.append("未验证维度不能被描述为全部能力均已验证")
 
-    if _has_report_risk(snapshot) and not enterprise.risks:
-        errors.append("存在限制或矛盾证据时 enterprise_assessment.risks 不能为空")
+    if _has_report_risk(snapshot):
+        if not enterprise.risks:
+            errors.append("存在限制或矛盾证据时 enterprise_assessment.risks 不能为空")
+        else:
+            reported_risk_dimensions = {
+                dimension_id
+                for signal in enterprise.risks
+                for dimension_id in signal.dimension_ids
+            }
+            missing_risks = sorted(
+                _risk_dimension_ids(snapshot) - reported_risk_dimensions
+            )
+            if missing_risks:
+                errors.append(
+                    "enterprise_assessment.risks 未覆盖限制/关键错误维度: "
+                    + ", ".join(missing_risks)
+                )
 
     if enterprise.decision == "PROCEED" and (
         enterprise.confidence == "low"
@@ -366,8 +471,8 @@ def validate_enterprise_assessment(
         if turn is None:
             errors.append(f"证据摘录引用了不存在的 turn_id: {excerpt.turn_id}")
             continue
-        answer = (turn.answer or "").strip()
-        quote = excerpt.quote.strip()
+        answer = turn.answer or ""
+        quote = excerpt.quote
         if not quote or not answer or quote not in answer:
             errors.append(
                 "证据摘录 quote 不在其关联 InterviewTurn 的原回答中: "

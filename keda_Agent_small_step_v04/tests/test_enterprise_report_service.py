@@ -187,6 +187,24 @@ class EnterpriseReportServiceTest(unittest.TestCase):
 
         self.assertEqual(decision.code, "NOT_RECOMMENDED")
 
+    def test_non_gating_critical_error_is_not_negative(self) -> None:
+        snapshot = _snapshot()
+        snapshot.radar_dimensions[0].score_reasons = [
+            ScoreReason(
+                reason_type="critical_error",
+                text="非门槛维度存在待核验关键错误。",
+                evidence_ids=["E001"],
+            ),
+            ScoreReason(
+                reason_type="unverified",
+                text="仍需观察该维度的迁移能力。",
+            ),
+        ]
+
+        decision = derive_hiring_decision(snapshot)
+
+        self.assertEqual(decision.code, "CONDITIONAL_PROCEED")
+
     def test_contradicting_limiting_evidence_requires_conditional_decision(self) -> None:
         reason = ScoreReason(
             reason_type="risk",
@@ -219,6 +237,18 @@ class EnterpriseReportServiceTest(unittest.TestCase):
         with self.assertRaises(ReportConsistencyError):
             validate_enterprise_assessment(enterprise, snapshot, _turns())
 
+    def test_guard_requires_unknowns_to_cover_every_unverified_dimension(self) -> None:
+        snapshot = _snapshot(
+            unverified_dimensions=["role_dim_05", "role_dim_06"]
+        )
+        enterprise = _enterprise(
+            snapshot=snapshot,
+            unknowns=[_signal(dimension_ids=["role_dim_05"])],
+        )
+
+        with self.assertRaises(ReportConsistencyError):
+            validate_enterprise_assessment(enterprise, snapshot, _turns())
+
     def test_guard_rejects_empty_risks_for_limiting_reasons(self) -> None:
         reason = ScoreReason(
             reason_type="risk",
@@ -230,6 +260,50 @@ class EnterpriseReportServiceTest(unittest.TestCase):
 
         with self.assertRaises(ReportConsistencyError):
             validate_enterprise_assessment(enterprise, snapshot, _turns())
+
+    def test_guard_requires_risks_to_cover_limiting_dimension(self) -> None:
+        snapshot = _snapshot()
+        snapshot.radar_dimensions[1].score_reasons = [
+            ScoreReason(
+                reason_type="risk",
+                text="该维度存在限制证据。",
+                evidence_ids=["E001"],
+            ),
+            ScoreReason(
+                reason_type="unverified",
+                text="仍需补充场景观察。",
+            ),
+        ]
+        enterprise = _enterprise(
+            snapshot=snapshot,
+            risks=[_signal(title="错误维度风险", dimension_ids=["role_dim_01"])],
+        )
+
+        with self.assertRaises(ReportConsistencyError):
+            validate_enterprise_assessment(enterprise, snapshot, _turns())
+
+    def test_guard_allows_extra_risks_when_required_dimensions_are_covered(self) -> None:
+        snapshot = _snapshot()
+        snapshot.radar_dimensions[1].score_reasons = [
+            ScoreReason(
+                reason_type="risk",
+                text="该维度存在限制证据。",
+                evidence_ids=["E001"],
+            ),
+            ScoreReason(
+                reason_type="unverified",
+                text="仍需补充场景观察。",
+            ),
+        ]
+        enterprise = _enterprise(
+            snapshot=snapshot,
+            risks=[
+                _signal(title="门槛维度风险", dimension_ids=["role_dim_02"]),
+                _signal(title="额外观察风险", dimension_ids=["role_dim_01"]),
+            ],
+        )
+
+        validate_enterprise_assessment(enterprise, snapshot, _turns())
 
     def test_guard_rejects_proceed_when_confidence_is_low(self) -> None:
         snapshot = _snapshot(confidence="low")
@@ -300,6 +374,34 @@ class EnterpriseReportServiceTest(unittest.TestCase):
 
         with self.assertRaises(ReportConsistencyError):
             validate_enterprise_assessment(enterprise, snapshot, _turns())
+
+    def test_guard_rejects_quote_with_normalized_whitespace(self) -> None:
+        snapshot = _snapshot()
+        excerpt = EvidenceExcerpt(
+            evidence_id="E001",
+            turn_id="turn_01",
+            conclusion="已验证失败边界。",
+            quote=" 我会先定义失败边界，再决定是否重试。",
+            interpretation="回答提供了具体边界。",
+            limitation="尚未验证高并发。",
+        )
+        enterprise = _enterprise(
+            snapshot=snapshot,
+            evidence_excerpts=[excerpt],
+        )
+
+        with self.assertRaises(ReportConsistencyError):
+            validate_enterprise_assessment(enterprise, snapshot, _turns())
+
+    def test_guard_allows_explicit_negative_all_verified_phrase(self) -> None:
+        snapshot = _snapshot(unverified_dimensions=["role_dim_06"])
+        enterprise = _enterprise(
+            snapshot=snapshot,
+            overall_assessment="并非全部能力已验证，role_dim_06 尚未验证。",
+            unknowns=[_signal(dimension_ids=["role_dim_06"])],
+        )
+
+        validate_enterprise_assessment(enterprise, snapshot, _turns())
 
     def test_valid_conditional_assessment_passes_guard(self) -> None:
         snapshot = _snapshot(unverified_dimensions=["role_dim_06"])
