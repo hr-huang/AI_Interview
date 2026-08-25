@@ -52,8 +52,8 @@ function dimensionButtonLabel(dimension: RadarDimensionView): string {
     : `${dimension.name}，分数 ${Math.round(score)}，等级 ${dimension.level}，覆盖率 ${coverageLabel(dimension.coverage)}，置信度 ${confidenceLabel(dimension.confidence)}`
 }
 
-function dimensionKey(dimension: RadarDimensionView, index: number): string {
-  return `${index}:${dimension.name}`
+function dimensionKey(dimension: RadarDimensionView): string {
+  return dimension.dimension_id || dimension.name
 }
 
 export function RadarChart({ dimensions, onDimensionSelect }: RadarChartProps) {
@@ -66,14 +66,17 @@ export function RadarChart({ dimensions, onDimensionSelect }: RadarChartProps) {
     .map((dimension, index) => {
       const score = scoreForDimension(dimension)
       if (score === null) return null
-      return pointAt(index, total, (RADIUS * score) / 100)
+      return {
+        key: dimensionKey(dimension),
+        point: pointAt(index, total, (RADIUS * score) / 100),
+      }
     })
-    .filter((point): point is [number, number] => point !== null)
+    .filter((point): point is { key: string; point: [number, number] } => point !== null)
 
   const verifiedCount = verifiedPoints.length
 
   function selectDimension(dimension: RadarDimensionView, index: number) {
-    setSelectedDimensionId(dimensionKey(dimension, index))
+    setSelectedDimensionId(dimensionKey(dimension))
     onDimensionSelect?.(dimension)
   }
 
@@ -108,7 +111,7 @@ export function RadarChart({ dimensions, onDimensionSelect }: RadarChartProps) {
             const [x, y] = axisPoints[index]
             const [labelX, labelY] = labelPoints[index]
             const unverified = scoreForDimension(dimension) === null
-            const key = dimensionKey(dimension, index)
+            const key = dimensionKey(dimension)
             const selected = selectedDimensionId === key
             const active = activeDimensionId === key
             const anchor = labelX < CENTER_X - 8 ? 'end' : labelX > CENTER_X + 8 ? 'start' : 'middle'
@@ -149,11 +152,11 @@ export function RadarChart({ dimensions, onDimensionSelect }: RadarChartProps) {
             <polygon
               className={`radar-score-polygon ${verifiedCount < 3 ? 'is-partial' : ''}`}
               data-radar-score-polygon="true"
-              points={pointsAttribute(verifiedPoints)}
+              points={pointsAttribute(verifiedPoints.map(({ point }) => point))}
             />
           ) : null}
-          {verifiedPoints.map(([x, y], index) => (
-            <circle className="radar-score-point" key={`${x}-${y}-${index}`} cx={x} cy={y} r="7" />
+          {verifiedPoints.map(({ key, point: [x, y] }) => (
+            <circle className="radar-score-point" key={`score-${key}`} cx={x} cy={y} r="7" />
           ))}
         </svg>
         <p className="radar-interaction-hint">
@@ -183,10 +186,9 @@ export function RadarChart({ dimensions, onDimensionSelect }: RadarChartProps) {
             </tr>
           </thead>
           <tbody>
-            {dimensions.map((dimension) => {
+            {dimensions.map((dimension, index) => {
               const score = scoreForDimension(dimension)
-              const index = dimensions.indexOf(dimension)
-              const key = dimensionKey(dimension, index)
+              const key = dimensionKey(dimension)
               const selected = selectedDimensionId === key
               const active = activeDimensionId === key
               return (

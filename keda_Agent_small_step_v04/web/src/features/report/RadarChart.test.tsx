@@ -4,8 +4,11 @@ import type { RadarDimensionView } from '../../api/types'
 import { RadarChart } from './RadarChart'
 import './report.css'
 
-const dimensions: RadarDimensionView[] = [
+type TestRadarDimension = RadarDimensionView & { dimension_id: string }
+
+const dimensions: TestRadarDimension[] = [
   {
+    dimension_id: 'role_dim_01',
     name: 'Agent 编排',
     score: 86,
     level: 'L3',
@@ -14,6 +17,7 @@ const dimensions: RadarDimensionView[] = [
     reasons: [],
   },
   {
+    dimension_id: 'role_dim_02',
     name: '待核验能力',
     score: null,
     level: 'UNVERIFIED',
@@ -24,6 +28,15 @@ const dimensions: RadarDimensionView[] = [
 ]
 
 describe('RadarChart', () => {
+  test('uses the stable dimension identity for radar controls instead of render order', () => {
+    render(<RadarChart dimensions={dimensions} />)
+
+    const svg = screen.getByRole('img', { name: '能力雷达图' })
+    expect(svg.querySelector('[data-radar-axis="role_dim_01"]')).toBeInTheDocument()
+    expect(svg.querySelector('[data-radar-axis="role_dim_02"]')).toBeInTheDocument()
+    expect(svg.querySelector('[data-radar-axis="0:Agent 编排"]')).not.toBeInTheDocument()
+  })
+
   test('renders dimensions from data and never converts unverified to zero', () => {
     render(<RadarChart dimensions={dimensions} />)
 
@@ -71,7 +84,7 @@ describe('RadarChart', () => {
     render(<RadarChart dimensions={dimensions} />)
 
     const svg = screen.getByRole('img', { name: '能力雷达图' })
-    const axis = svg.querySelector('[data-radar-axis="0:Agent 编排"]')
+    const axis = svg.querySelector('[data-radar-axis="role_dim_01"]')
     const hitTarget = axis?.querySelector('.radar-axis-hit')
     const halo = axis?.querySelector('.radar-axis-halo')
 
