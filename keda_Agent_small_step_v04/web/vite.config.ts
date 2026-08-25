@@ -16,5 +16,7 @@ export default defineConfig({
     setupFiles: './src/test/setup.ts',
     css: true,
     globals: true,
+    include: ['src/**/*.{test,spec}.?(c|m)[jt]s?(x)'],
+    exclude: ['e2e/**'],
   },
 })

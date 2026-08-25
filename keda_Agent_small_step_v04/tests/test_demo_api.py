@@ -7,6 +7,13 @@ from fastapi.testclient import TestClient
 
 from profile_agent.calibration.report_cases import get_report_calibration_case
 from profile_agent.calibration.offline_runner import run_offline_calibration_case
+from profile_agent.schemas.report_schema import (
+    AssessmentReport,
+    JobMatchResult,
+    RadarDimensionResult,
+    ReportNarrativeDraft,
+    ScoreSnapshot,
+)
 from profile_agent.web.app import create_app
 from profile_agent.web.container import WebContainer
 from profile_agent.web.repository import SqliteAssessmentRepository
@@ -133,6 +140,69 @@ class DemoApiTest(unittest.TestCase):
             response.json()["radar_dimensions"][0]["dimension_id"],
             "role_dim_01",
         )
+
+    def test_saved_report_with_turns_and_no_evidence_keeps_transcript_unverified(self) -> None:
+        case = get_report_calibration_case("C03")
+        profile = self.container.role_profile
+        report = AssessmentReport(
+            target_role=case.target_role,
+            score_snapshot=ScoreSnapshot(
+                role_family=profile.role_family,
+                role_profile_version=profile.version,
+                scoring_engine_version="test-engine",
+                radar_dimensions=[
+                    RadarDimensionResult(
+                        dimension_id=dimension.id,
+                        name=dimension.name,
+                        score=None,
+                        level="UNVERIFIED",
+                        coverage=0,
+                        confidence="low",
+                    )
+                    for dimension in profile.dimensions
+                ],
+                job_match=JobMatchResult(
+                    published=False,
+                    coverage=0,
+                    confidence="low",
+                ),
+            ),
+            narrative=ReportNarrativeDraft(executive_summary="无证据的完整转录。"),
+        )
+        record = AssessmentRecord.new(
+            assessment_id="ast_transcript_without_evidence",
+            target_role=case.target_role,
+            jd_text="Agent Workflow",
+            resume_text="candidate",
+        ).model_copy(
+            update={
+                "status": AssessmentStatus.COMPLETE,
+                "report": report.model_dump(mode="json"),
+                "final_plan": case.plan.model_dump(mode="json"),
+            }
+        )
+        self.repository.create(record)
+        self.graph.values = {
+            "interview_turns": case.turns,
+            "evidences": [],
+        }
+
+        response = self.client.get(
+            "/api/assessments/ast_transcript_without_evidence/report"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload["interview_transcript"]), len(case.turns))
+        self.assertTrue(payload["interview_transcript"])
+        self.assertTrue(
+            all(
+                turn["evidence_status"] == "none"
+                and turn["evidence_ids"] == []
+                for turn in payload["interview_transcript"]
+            )
+        )
+        self.assertTrue(all(item["reasons"] == [] for item in payload["radar_dimensions"]))
 
     def test_saved_report_checkpoint_read_uses_interview_lock(self) -> None:
         case = get_report_calibration_case("C03")

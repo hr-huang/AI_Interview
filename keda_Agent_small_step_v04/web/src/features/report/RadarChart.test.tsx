@@ -84,4 +84,25 @@ describe('RadarChart', () => {
     const cssText = cssRules.map((rule) => rule.cssText).join('\n')
     expect(cssText).toContain('.radar-axis circle.radar-axis-hit')
   })
+
+  test('keeps hover, focus and selected halos statically visible', () => {
+    render(<RadarChart dimensions={dimensions} />)
+
+    const svg = screen.getByRole('img', { name: '能力雷达图' })
+    const axis = within(svg).getByRole('button', { name: /Agent 编排/ })
+    const halo = axis.querySelector('.radar-axis-halo') as SVGCircleElement
+
+    fireEvent.click(axis)
+
+    expect(axis).toHaveClass('is-selected')
+    expect(getComputedStyle(halo).opacity).toBe('0.42')
+
+    const cssRules = Array.from(document.styleSheets).flatMap((sheet) => Array.from(sheet.cssRules))
+    const cssText = cssRules.map((rule) => rule.cssText).join('\n')
+    expect(cssText).toContain('.radar-axis:hover .radar-axis-halo')
+    expect(cssText).toContain('.radar-axis:focus-visible .radar-axis-halo')
+    expect(cssText).toContain('.radar-axis.is-selected .radar-axis-halo')
+    const selectedHaloRule = cssRules.find((rule) => rule.cssText.includes('.radar-axis.is-selected .radar-axis-halo'))
+    expect(selectedHaloRule?.cssText).toContain('animation: none')
+  })
 })

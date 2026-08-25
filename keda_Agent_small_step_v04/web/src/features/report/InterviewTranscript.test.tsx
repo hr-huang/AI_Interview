@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, test, vi } from 'vitest'
 import type { InterviewTranscriptTurnView } from '../../api/types'
@@ -7,7 +7,7 @@ import { InterviewTranscript } from './InterviewTranscript'
 const turns: InterviewTranscriptTurnView[] = [
   {
     turn_id: 'turn_002',
-    sequence_number: 2,
+    sequence_number: 7,
     question: '请说明你如何验证边界？',
     answer: '我会先定义失败条件，再补充一个可复现的验证场景。',
     question_mode: 'follow_up',
@@ -20,7 +20,7 @@ const turns: InterviewTranscriptTurnView[] = [
   },
   {
     turn_id: 'turn_001',
-    sequence_number: 1,
+    sequence_number: 3,
     question: '请介绍一个你负责的项目？',
     answer: '我负责把状态流转拆成可复核的节点，并记录每次变更。',
     question_mode: 'scenario',
@@ -55,6 +55,8 @@ describe('InterviewTranscript', () => {
     expect(rows).toHaveLength(2)
     expect(rows[0]).toHaveTextContent('项目落地经验')
     expect(rows[1]).toHaveTextContent('验证边界条件')
+    expect(within(rows[0]).getByText('03')).toBeVisible()
+    expect(within(rows[1]).getByText('07')).toBeVisible()
 
     await user.click(screen.getByRole('button', { name: /查看证据 ev_001/ }))
 

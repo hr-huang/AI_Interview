@@ -185,12 +185,17 @@ def get_report(assessment_id: str, request: Request) -> ReportViewModel:
         raise HTTPException(status_code=409, detail="评估计划尚未冻结")
 
     values = _checkpoint_values(container, assessment_id)
-    turns = values.get("interview_turns") or []
-    evidences = values.get("evidences") or []
-    if not turns or not evidences:
+    turns = values.get("interview_turns")
+    evidences = values.get("evidences")
+    if not isinstance(turns, list) or not turns:
         # A completed report without its graph history cannot satisfy the
         # evidence-traceability contract.  Do not return a silently degraded
         # report view.
+        raise HTTPException(status_code=409, detail="报告证据链尚未可读")
+    if not isinstance(evidences, list):
+        # The checkpoint must explicitly contain the evidence collection.  An
+        # empty collection is valid (the transcript remains unverified), but
+        # a missing or malformed collection indicates a damaged checkpoint.
         raise HTTPException(status_code=409, detail="报告证据链尚未可读")
 
     try:

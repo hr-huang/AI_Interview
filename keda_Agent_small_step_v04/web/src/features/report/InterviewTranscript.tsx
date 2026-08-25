@@ -51,10 +51,10 @@ export function InterviewTranscript({ turns, onEvidenceSelect }: InterviewTransc
 
         {orderedTurns.length > 0 ? (
           <ol className="interview-transcript-list">
-            {orderedTurns.map((turn, index) => (
+            {orderedTurns.map((turn) => (
               <li className="interview-transcript-row" key={turn.turn_id}>
                 <div className="interview-transcript-row-head">
-                  <span className="interview-transcript-index">{String(index + 1).padStart(2, '0')}</span>
+                  <span className="interview-transcript-index">{String(turn.sequence_number).padStart(2, '0')}</span>
                   <div className="interview-transcript-meta">
                     <strong>{turn.requirement_label}</strong>
                     <span>{questionModeLabel(turn.question_mode)}</span>
