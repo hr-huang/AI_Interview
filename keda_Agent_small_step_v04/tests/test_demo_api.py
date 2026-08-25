@@ -18,6 +18,10 @@ from profile_agent.web.app import create_app
 from profile_agent.web.container import WebContainer
 from profile_agent.web.repository import SqliteAssessmentRepository
 from profile_agent.web.schemas import AssessmentRecord, AssessmentStatus
+from tests.report_test_helpers import (
+    make_test_candidate_overview,
+    make_test_enterprise_assessment,
+)
 
 
 class SavedStateGraph:
@@ -168,6 +172,12 @@ class DemoApiTest(unittest.TestCase):
                 ),
             ),
             narrative=ReportNarrativeDraft(executive_summary="无证据的完整转录。"),
+            candidate_overview=make_test_candidate_overview(
+                case.target_role,
+                candidate_id="ast_transcript_without_evidence",
+                interview_rounds=len(case.turns),
+            ),
+            enterprise_assessment=make_test_enterprise_assessment(),
         )
         record = AssessmentRecord.new(
             assessment_id="ast_transcript_without_evidence",

@@ -11,7 +11,6 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from inspect import Parameter, signature
 from typing import Any
 
 from profile_agent.schemas.claim_schema import ClaimRegistry
@@ -127,10 +126,10 @@ def _resolve_service(
             "calculate_score_snapshot",
             "score",
         ),
-        "enterprise_copy_writer": (
+        "narrative_writer": (
+            "narrative_writer",
             "enterprise_copy_writer",
             "write_enterprise_copy",
-            "narrative_writer",
             "write_report_narrative",
             "writer",
         ),
@@ -456,49 +455,6 @@ def _project_legacy_narrative(
     )
 
 
-def _invoke_enterprise_copy_writer(
-    writer: Callable[..., Any],
-    snapshot: ScoreSnapshot,
-    profile: RoleCompetencyProfile,
-    evidences: list[Evidence],
-    selected_dimension_ids: list[str],
-) -> Any:
-    """Call either the Task 4 writer contract or the legacy writer once.
-
-    Offline fixtures before Task 4 exposed ``(snapshot, evidences,
-    role_profile)``.  Signature inspection lets those callers remain usable
-    without attempting a second call after the new four-argument invocation
-    fails.  A callable with an opaque signature receives the current contract.
-    """
-
-    try:
-        parameters = list(signature(writer).parameters.values())
-    except (TypeError, ValueError):
-        parameters = []
-    positional = [
-        parameter
-        for parameter in parameters
-        if parameter.kind
-        in (Parameter.POSITIONAL_ONLY, Parameter.POSITIONAL_OR_KEYWORD)
-    ]
-    has_varargs = any(
-        parameter.kind is Parameter.VAR_POSITIONAL for parameter in parameters
-    )
-    parameter_names = [parameter.name for parameter in positional]
-    legacy_shape = (
-        not has_varargs
-        and len(positional) <= 3
-    ) or (
-        len(parameter_names) >= 3
-        and parameter_names[1] in {"evidence", "evidences"}
-        and parameter_names[2] == "role_profile"
-        and "selected_dimension_ids" not in parameter_names
-    )
-    if legacy_shape:
-        return writer(snapshot, evidences, profile)
-    return writer(snapshot, profile, evidences, selected_dimension_ids)
-
-
 def _normalise_inputs(
     plan: InterviewPlan,
     runtime_state: InterviewRuntimeState,
@@ -611,7 +567,7 @@ def generate_assessment_report(
     enterprise_copy_writer = _resolve_service(
         semantic_services,
         narrative_writer,
-        "enterprise_copy_writer",
+        "narrative_writer",
         write_enterprise_copy,
     )
 
@@ -673,8 +629,7 @@ def generate_assessment_report(
 
     try:
         enterprise_copy = EnterpriseCopyDraft.model_validate(
-            _invoke_enterprise_copy_writer(
-                enterprise_copy_writer,
+            enterprise_copy_writer(
                 snapshot,
                 profile,
                 evidences,
@@ -684,8 +639,8 @@ def generate_assessment_report(
     except ReportConsistencyError:
         raise
     except Exception:
-        # A writer outage, old three-argument offline writer, or malformed
-        # draft is recovered by the dimension-specific deterministic copy.
+        # A writer outage or malformed draft is recovered by the
+        # dimension-specific deterministic copy.
         enterprise_copy = fallback_enterprise_copy(
             snapshot,
             profile,

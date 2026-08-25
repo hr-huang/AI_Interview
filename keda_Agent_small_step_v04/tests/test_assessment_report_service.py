@@ -12,7 +12,6 @@ from profile_agent.schemas.interview_schema import (
 from profile_agent.schemas.report_schema import (
     RequirementBindingDraft,
     RequirementScoringBinding,
-    ReportNarrativeDraft,
     RoleCompetencyProfile,
     RubricMatch,
     RubricMatchBatch,
@@ -27,7 +26,7 @@ from profile_agent.schemas.runtime_schema import (
 )
 from profile_agent.schemas.job_schema import JobProfile, JobRequirement
 from profile_agent.schemas.resume_schema import ResumeProfile
-from profile_agent.services.report_writer_service import fallback_report_narrative
+from profile_agent.services.report_writer_service import fallback_enterprise_copy
 
 
 class FakeSemanticServices:
@@ -48,11 +47,27 @@ class FakeSemanticServices:
         self.received_blueprints.append(blueprint)
         return self.matches
 
-    def write_narrative(self, snapshot, evidences, role_profile):
+    def write_narrative(
+        self,
+        snapshot,
+        role_profile,
+        evidences,
+        selected_dimension_ids,
+    ):
         self.calls.append("writer")
         if self.writer is not None:
-            return self.writer(snapshot, evidences, role_profile)
-        return fallback_report_narrative(snapshot, evidences, role_profile)
+            return self.writer(
+                snapshot,
+                role_profile,
+                evidences,
+                selected_dimension_ids,
+            )
+        return fallback_enterprise_copy(
+            snapshot,
+            role_profile,
+            selected_dimension_ids,
+            evidence=evidences,
+        )
 
     def as_mapping(self) -> dict[str, object]:
         services = {
@@ -415,7 +430,7 @@ class AssessmentReportServiceTest(unittest.TestCase):
                 }
             )
 
-        def fail_writer(snapshot, evidences, role_profile):
+        def fail_writer(snapshot, role_profile, evidences, selected_dimension_ids):
             raise RuntimeError("narrative writer offline")
 
         report = _generate(
@@ -527,7 +542,7 @@ class AssessmentReportServiceTest(unittest.TestCase):
     def test_writer_failure_uses_fallback_without_losing_scores(self) -> None:
         baseline = _generate(_make_services())
 
-        def fail_writer(snapshot, evidences, role_profile):
+        def fail_writer(snapshot, role_profile, evidences, selected_dimension_ids):
             raise RuntimeError("narrative writer offline")
 
         failing_services = _make_services(writer=fail_writer)

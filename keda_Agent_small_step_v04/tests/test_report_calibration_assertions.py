@@ -21,6 +21,10 @@ from profile_agent.schemas.report_schema import (
     ScoreSnapshot,
     ScoringBlueprint,
 )
+from tests.report_test_helpers import (
+    make_test_candidate_overview,
+    make_test_enterprise_assessment,
+)
 
 
 def _requirement_ids(case) -> list[str]:
@@ -251,6 +255,12 @@ def _report_for(
         target_role=case.target_role,
         score_snapshot=snapshot,
         narrative=ReportNarrativeDraft(executive_summary="测试报告摘要"),
+        candidate_overview=make_test_candidate_overview(
+            case.target_role,
+            candidate_id=f"candidate_{case.id}",
+            interview_rounds=len(case.turns),
+        ),
+        enterprise_assessment=make_test_enterprise_assessment(),
     )
 
 
