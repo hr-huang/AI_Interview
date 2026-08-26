@@ -42,6 +42,9 @@ class WebContainer:
     dispatcher: object
     role_profile: RoleCompetencyProfile
     interview_graph: object | None = None
+    # Optional runtime retriever.  ``None`` intentionally means an unavailable
+    # RAG provider; graph construction must remain free of HTTP/client setup.
+    question_retriever: object | None = None
     checkpoint_connection: sqlite3.Connection | None = None
     interview_lock: RLock = field(default_factory=RLock)
 
@@ -55,6 +58,7 @@ class WebContainer:
         document_extractor: DocumentExtractor | None = None,
         role_profile: RoleCompetencyProfile | None = None,
         interview_graph: object | None = None,
+        question_retriever: object | None = None,
         checkpoint_connection: sqlite3.Connection | None = None,
         interview_lock: RLock | None = None,
     ) -> WebContainer:
@@ -66,6 +70,7 @@ class WebContainer:
             role_profile=role_profile
             or load_role_profile("ai_application_engineering", "2026-H2"),
             interview_graph=interview_graph,
+            question_retriever=question_retriever,
             checkpoint_connection=checkpoint_connection,
             interview_lock=interview_lock or RLock(),
         )
@@ -88,7 +93,10 @@ class WebContainer:
         )
         try:
             interview_graph = build_interview_graph(
-                checkpointer=SqliteSaver(checkpoint_connection)
+                checkpointer=SqliteSaver(checkpoint_connection),
+                # Provider/index setup is explicitly injected when enabled;
+                # the default remains lazy and degrades to unavailable.
+                question_retriever=None,
             )
         except Exception:
             checkpoint_connection.close()
@@ -103,5 +111,6 @@ class WebContainer:
                 "2026-H2",
             ),
             interview_graph=interview_graph,
+            question_retriever=None,
             checkpoint_connection=checkpoint_connection,
         )

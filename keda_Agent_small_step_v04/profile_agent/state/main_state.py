@@ -29,6 +29,7 @@ from profile_agent.schemas.runtime_schema import (
     InterviewRuntimeState,
     InterviewTurn,
 )
+from profile_agent.schemas.question_rag_schema import QuestionRetrievalResult
 
 
 class MainState(TypedDict, total=False):
@@ -67,6 +68,9 @@ class MainState(TypedDict, total=False):
     next_action: InterviewAction
     current_question: GeneratedQuestion | None
     current_turn_id: str | None
+    # Transient hand-off between retrieve_question and generate_question.  The
+    # selected result is copied into the private turn trace, then cleared.
+    question_retrieval_result: QuestionRetrievalResult | None
 
     # 7) 面试结束后的最终评估报告
     assessment_report: AssessmentReport

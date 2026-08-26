@@ -212,6 +212,23 @@ class InterviewGraphTest(unittest.TestCase):
         self.assertEqual(len(self.question_calls), 1)
         self.assertEqual(len(self.answer_calls), 0)
 
+    def test_default_retrieval_degrades_without_provider_and_keeps_trace_private(self) -> None:
+        graph = self.build_graph()
+        config = self.config("default-retrieval-unavailable")
+
+        result = graph.invoke(self.make_initial_state(), config)
+        payload = self.interrupt_payload(result)
+        state = graph.get_state(config).values
+        edges = {(edge.source, edge.target) for edge in graph.get_graph().edges}
+
+        self.assertIn(("supervisor", "retrieve_question"), edges)
+        self.assertIn(("retrieve_question", "generate_question"), edges)
+        self.assertEqual(
+            state["interview_turns"][0].retrieval_trace.status,
+            "unavailable",
+        )
+        self.assertNotIn("retrieval_trace", payload)
+
     def test_resume_answers_same_turn_and_processes_before_next_decision(self) -> None:
         graph = self.build_graph()
         config = self.config("follow-up")

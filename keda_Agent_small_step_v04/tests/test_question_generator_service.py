@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import unittest
 
 from profile_agent.schemas.claim_schema import ClaimItem, ClaimRegistry
@@ -10,6 +10,12 @@ from profile_agent.schemas.interview_schema import (
     InterviewPlan,
 )
 from profile_agent.schemas.runtime_schema import InterviewTurn
+from profile_agent.schemas.question_rag_schema import (
+    InterviewQuestionRecord,
+    QuestionRetrievalResult,
+    QuestionRetrievalTrace,
+    RetrievedQuestion,
+)
 from profile_agent.services.question_generator_service import generate_question
 
 
@@ -123,6 +129,95 @@ def make_turn(
 
 
 class QuestionGeneratorServiceTest(unittest.TestCase):
+    def test_selected_retrieval_record_adds_only_safe_grounding_fields(self) -> None:
+        fake_llm = FakeLLM(GeneratedQuestion(text="请说明你的方案。"))
+        record = InterviewQuestionRecord(
+            question_id="q_private_001",
+            question_text="ORIGINAL_RAG_QUESTION",
+            role="ai_agent_engineer",
+            role_version="2026-H2",
+            dimension_id="role_dim_01",
+            skills=["SKILL_ONE", "SKILL_TWO"],
+            question_mode="scenario",
+            difficulty="intermediate",
+            expected_signals=["NEVER_LEAK_EXPECTED_SIGNAL"],
+            critical_errors=["NEVER_LEAK_CRITICAL_ERROR"],
+            follow_up_seeds=["NEVER_LEAK_FOLLOW_UP"],
+            company_tags=[],
+            source_id="src_private_001",
+            source_url="https://example.com/private",
+            source_title="Private title must not be copied",
+            source_type="SOURCE_TYPE",
+            published_at=date(2026, 7, 1),
+            verified_at=date(2026, 8, 20),
+            valid_until=date(2027, 2, 20),
+            trust_level="medium",
+            status="active",
+            version=1,
+            content_hash="sha256:private",
+        )
+        retrieval_result = QuestionRetrievalResult(
+            status="hit",
+            as_of=date(2026, 8, 26),
+            selected_question=RetrievedQuestion(
+                record=record,
+                score=0.91,
+                index_version="index-private",
+            ),
+            trace=QuestionRetrievalTrace(
+                status="hit",
+                question_id=record.question_id,
+                source_id=record.source_id,
+                score=0.91,
+                index_version="index-private",
+            ),
+        )
+
+        generate_question(
+            action=make_action(),
+            plan=make_plan(),
+            retrieval_result=retrieval_result,
+            llm_client=fake_llm,
+        )
+
+        prompt = "\n".join(content for _, content in fake_llm.calls[0][0])
+        self.assertIn("ORIGINAL_RAG_QUESTION", prompt)
+        self.assertIn("能够说明并发状态更新中的一致性保证", prompt)
+        self.assertIn("SKILL_ONE", prompt)
+        self.assertIn("SKILL_TWO", prompt)
+        self.assertIn("SOURCE_TYPE", prompt)
+        self.assertIn("2026-07-01", prompt)
+        for forbidden in (
+            "NEVER_LEAK_EXPECTED_SIGNAL",
+            "NEVER_LEAK_CRITICAL_ERROR",
+            "NEVER_LEAK_FOLLOW_UP",
+            "q_private_001",
+            "src_private_001",
+            "index-private",
+            "https://example.com/private",
+            "Private title must not be copied",
+        ):
+            self.assertNotIn(forbidden, prompt)
+
+    def test_no_match_or_unavailable_retrieval_keeps_the_legacy_prompt(self) -> None:
+        legacy_llm = FakeLLM(GeneratedQuestion(text="请说明你的方案。"))
+        degraded_llm = FakeLLM(GeneratedQuestion(text="请说明你的方案。"))
+        legacy_kwargs = {
+            "action": make_action(),
+            "plan": make_plan(),
+        }
+
+        generate_question(**legacy_kwargs, llm_client=legacy_llm)
+        generate_question(
+            **legacy_kwargs,
+            retrieval_result=QuestionRetrievalResult(status="unavailable"),
+            llm_client=degraded_llm,
+        )
+
+        legacy_prompt = "\n".join(content for _, content in legacy_llm.calls[0][0])
+        degraded_prompt = "\n".join(content for _, content in degraded_llm.calls[0][0])
+        self.assertEqual(legacy_prompt, degraded_prompt)
+
     def test_generates_one_trimmed_question_with_target_requirement_and_claim_context(self) -> None:
         fake_llm = FakeLLM(GeneratedQuestion(text="  请说明你如何保证并发更新的一致性？  "))
 

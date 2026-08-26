@@ -7,6 +7,7 @@ from profile_agent.schemas.interview_schema import (
     GeneratedQuestion,
     InterviewPlan,
 )
+from profile_agent.schemas.question_rag_schema import QuestionRetrievalResult
 from profile_agent.schemas.runtime_schema import InterviewTurn
 
 
@@ -97,18 +98,63 @@ def _history_text(recent_turns: list[InterviewTurn] | None) -> str:
     )
 
 
+def _retrieval_grounding_text(
+    retrieval_result: QuestionRetrievalResult | None,
+    *,
+    business_constraint: str,
+) -> str:
+    """Project only candidate-safe fields from a selected question record.
+
+    Retrieval scores, identifiers, index metadata, and rubric material are
+    intentionally not copied into the generator prompt.  A non-hit result is
+    a transparent no-op so legacy generation remains byte-for-byte stable.
+    """
+
+    if retrieval_result is None or retrieval_result.status != "hit":
+        return ""
+    selected = retrieval_result.selected_question
+    if selected is None:
+        return ""
+    record = selected.record
+    skills = ", ".join(skill.strip() for skill in record.skills)
+    return f"""
+检索题目安全上下文（只可用于改写问题，不得泄露答案提示）：
+Original question:
+{record.question_text.strip()}
+
+Business constraint:
+{business_constraint.strip()}
+
+Skill names:
+{skills}
+
+Source type:
+{record.source_type.strip()}
+
+Source date:
+{record.published_at.isoformat()}
+""".strip()
+
+
 def generate_question(
     action: AskAction,
     plan: InterviewPlan,
     claim_registry: ClaimRegistry | None = None,
     recent_turns: list[InterviewTurn] | None = None,
     llm_client=llm,
+    retrieval_result: QuestionRetrievalResult | None = None,
 ) -> GeneratedQuestion:
     target, requirement = _find_requirement(
         plan=plan,
         target_id=action.target_id,
         requirement_id=action.primary_requirement_id,
     )
+
+    grounding_text = _retrieval_grounding_text(
+        retrieval_result,
+        business_constraint=requirement.description,
+    )
+    grounding_block = f"\n\n{grounding_text}" if grounding_text else ""
 
     messages = [
         ("system", _SYSTEM_PROMPT),
@@ -128,7 +174,7 @@ Related Claim text:
 {_claim_text(target, claim_registry)}
 
 最近2个已回答 turn:
-{_history_text(recent_turns)}
+{_history_text(recent_turns)}{grounding_block}
 
 请生成一个符合全部约束的面试问题。
 """.strip(),
