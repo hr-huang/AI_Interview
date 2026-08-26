@@ -1,0 +1,378 @@
+"""Load and audit the versioned, canonical JSON interview question bank.
+
+The JSON bank is the source of truth.  This module deliberately contains no
+indexing or network code: it validates source records, computes their stable
+content identity, and reports lifecycle boundaries for callers that build a
+disposable retrieval index later.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Collection, Iterable, Iterator, Mapping
+from dataclasses import dataclass
+from datetime import date, timedelta
+import hashlib
+import json
+from pathlib import Path
+from typing import Any
+
+from pydantic import ValidationError
+
+from profile_agent.schemas.question_rag_schema import InterviewQuestionRecord
+
+
+SUPPORTED_ROLE = "ai_agent_engineer"
+SUPPORTED_DIMENSION_IDS = frozenset(
+    f"role_dim_{index:02d}" for index in range(1, 7)
+)
+SUPPORTED_SCHEMA_VERSIONS = frozenset(
+    {
+        1,
+        "1",
+        "v1",
+        "question_bank.v1",
+        "question_bank/v1",
+    }
+)
+DEFAULT_EXPIRING_WITHIN_DAYS = 30
+
+
+def normalize_question_text(value: str) -> str:
+    """Collapse runs of Unicode whitespace into one ordinary space.
+
+    Question text and skill labels are kept case-sensitive; normalization only
+    removes formatting noise so content identity is stable across line wraps
+    and indentation changes.
+    """
+
+    if not isinstance(value, str):
+        raise TypeError("question text must be a string")
+    return " ".join(value.split())
+
+
+def _as_question_record(
+    record: InterviewQuestionRecord | Mapping[str, Any],
+) -> InterviewQuestionRecord:
+    if isinstance(record, InterviewQuestionRecord):
+        return record
+    if isinstance(record, Mapping):
+        try:
+            return InterviewQuestionRecord.model_validate(record)
+        except ValidationError as exc:
+            raise ValueError(f"invalid interview question record: {exc}") from exc
+    raise TypeError(
+        "question records must be InterviewQuestionRecord instances or mappings"
+    )
+
+
+def build_question_content_hash(
+    record: InterviewQuestionRecord | Mapping[str, Any],
+) -> str:
+    """Build the deterministic identity hash for semantic question fields.
+
+    Provenance, lifecycle, version and question id are intentionally omitted:
+    changing any of those fields must not make the same semantic question look
+    like a new question.  Whitespace in the question text and skill labels is
+    normalized, and skill order is not significant.
+    """
+
+    record = _as_question_record(record)
+    payload = {
+        "question_text": normalize_question_text(record.question_text),
+        "role": record.role,
+        "dimension_id": record.dimension_id,
+        "skills": sorted(normalize_question_text(value) for value in record.skills),
+        "question_mode": record.question_mode,
+        "difficulty": record.difficulty,
+    }
+    digest = hashlib.sha256(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    return f"sha256:{digest}"
+
+
+def _read_question_bank(path: str | Path) -> Mapping[str, Any]:
+    bank_path = Path(path)
+    try:
+        raw = bank_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ValueError(f"unable to read question bank: {bank_path}") from exc
+
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"invalid question bank JSON: {bank_path}") from exc
+
+    if not isinstance(payload, Mapping):
+        raise ValueError("question bank JSON root must be an object")
+    return payload
+
+
+def _validate_bank_root(
+    payload: Mapping[str, Any],
+    *,
+    allow_test_only: bool,
+    expected_role: str,
+    expected_role_version: str | None,
+) -> list[Mapping[str, Any]]:
+    schema_version = payload.get("schema_version", payload.get("version"))
+    if schema_version not in SUPPORTED_SCHEMA_VERSIONS:
+        raise ValueError(
+            "question bank schema_version must be one of "
+            + ", ".join(sorted(map(str, SUPPORTED_SCHEMA_VERSIONS)))
+        )
+
+    test_only = payload.get("test_only", False)
+    if not isinstance(test_only, bool):
+        raise ValueError("question bank test_only must be a boolean")
+    if test_only and not allow_test_only:
+        raise ValueError(
+            "test-only question bank requires an explicit test dependency"
+        )
+
+    root_role = payload.get("role")
+    if root_role is not None and root_role != expected_role:
+        raise ValueError(f"unsupported question bank role: {root_role!r}")
+
+    root_role_version = payload.get("role_version")
+    if (
+        expected_role_version is not None
+        and root_role_version is not None
+        and root_role_version != expected_role_version
+    ):
+        raise ValueError(
+            "question bank role_version does not match "
+            f"{expected_role_version!r}"
+        )
+
+    questions = payload.get("questions")
+    if questions is None:
+        questions = payload.get("records")
+    if not isinstance(questions, list):
+        raise ValueError("question bank questions must be a list")
+    if not all(isinstance(question, Mapping) for question in questions):
+        raise ValueError("each question bank item must be an object")
+    return questions
+
+
+def load_question_bank(
+    path: str | Path,
+    *,
+    allow_test_only: bool = False,
+    test_dependency: object | None = None,
+    expected_role: str = SUPPORTED_ROLE,
+    expected_role_version: str | None = None,
+    supported_dimension_ids: Collection[str] | None = None,
+) -> list[InterviewQuestionRecord]:
+    """Load, validate and de-duplicate canonical records from a JSON bank.
+
+    ``allow_test_only`` is intentionally opt-in.  A test dependency can be
+    supplied by callers that need the synthetic ``example.com`` fixture; a
+    production command should leave both options at their safe defaults.
+    """
+
+    if expected_role != SUPPORTED_ROLE:
+        raise ValueError(f"unsupported question bank role: {expected_role!r}")
+
+    payload = _read_question_bank(path)
+    questions = _validate_bank_root(
+        payload,
+        allow_test_only=allow_test_only or test_dependency is not None,
+        expected_role=expected_role,
+        expected_role_version=expected_role_version,
+    )
+    dimensions = (
+        frozenset(supported_dimension_ids)
+        if supported_dimension_ids is not None
+        else SUPPORTED_DIMENSION_IDS
+    )
+
+    records: list[InterviewQuestionRecord] = []
+    seen_question_ids: set[str] = set()
+    seen_content_hashes: set[str] = set()
+
+    for index, question in enumerate(questions):
+        try:
+            record = InterviewQuestionRecord.model_validate(question)
+        except ValidationError as exc:
+            raise ValueError(f"invalid question bank record at index {index}: {exc}") from exc
+
+        if record.role != expected_role:
+            raise ValueError(
+                f"unsupported question role at index {index}: {record.role!r}"
+            )
+        if record.dimension_id not in dimensions:
+            raise ValueError(
+                f"unsupported question dimension at index {index}: "
+                f"{record.dimension_id!r}"
+            )
+        if expected_role_version is not None and record.role_version != expected_role_version:
+            raise ValueError(
+                f"question role_version mismatch at index {index}: "
+                f"{record.role_version!r}"
+            )
+        if record.question_id in seen_question_ids:
+            raise ValueError(f"duplicate question_id: {record.question_id}")
+
+        computed_hash = build_question_content_hash(record)
+        if record.content_hash != computed_hash:
+            raise ValueError(
+                f"content_hash mismatch for question_id {record.question_id}: "
+                f"stored {record.content_hash!r}, computed {computed_hash!r}"
+            )
+        if computed_hash in seen_content_hashes:
+            raise ValueError(
+                "duplicate content_hash: "
+                f"{computed_hash} (question_id {record.question_id})"
+            )
+
+        seen_question_ids.add(record.question_id)
+        seen_content_hashes.add(computed_hash)
+        records.append(record)
+
+    return records
+
+
+@dataclass(frozen=True)
+class QuestionBankAudit(Mapping[str, object]):
+    """Read-only lifecycle findings for a loaded question bank.
+
+    Lists in this report are newly allocated by :func:`audit_question_bank`;
+    auditing never changes the source records or their ordering.
+    """
+
+    as_of: date
+    expiring_within_days: int
+    expired_question_ids: list[str]
+    expiring_question_ids: list[str]
+    inactive_question_ids: list[str]
+    eligible_question_ids: list[str]
+
+    @property
+    def expired_ids(self) -> list[str]:
+        return list(self.expired_question_ids)
+
+    @property
+    def expiring_ids(self) -> list[str]:
+        return list(self.expiring_question_ids)
+
+    @property
+    def active_question_ids(self) -> list[str]:
+        return list(self.eligible_question_ids)
+
+    @property
+    def has_expired(self) -> bool:
+        return bool(self.expired_question_ids)
+
+    @property
+    def has_expiring(self) -> bool:
+        return bool(self.expiring_question_ids)
+
+    def _as_mapping(self) -> dict[str, object]:
+        return {
+            "as_of": self.as_of,
+            "expiring_within_days": self.expiring_within_days,
+            "expired_question_ids": list(self.expired_question_ids),
+            "expiring_question_ids": list(self.expiring_question_ids),
+            "inactive_question_ids": list(self.inactive_question_ids),
+            "eligible_question_ids": list(self.eligible_question_ids),
+            # Short aliases make the report convenient for CLI serializers.
+            "expired": list(self.expired_question_ids),
+            "expiring": list(self.expiring_question_ids),
+        }
+
+    def __getitem__(self, key: str) -> object:
+        return self._as_mapping()[key]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._as_mapping())
+
+    def __len__(self) -> int:
+        return len(self._as_mapping())
+
+
+def audit_question_bank(
+    records: Iterable[InterviewQuestionRecord | Mapping[str, Any]],
+    as_of: date | None = None,
+    *,
+    expiring_within_days: int = DEFAULT_EXPIRING_WITHIN_DAYS,
+    today: date | None = None,
+    expiry_warning_days: int | None = None,
+) -> QuestionBankAudit:
+    """Report expired and soon-to-expire records without mutating them.
+
+    A record is expiring when it is active, not yet expired, and its
+    ``valid_until`` date is within the inclusive warning window.  Eligibility
+    mirrors runtime retrieval: only active records with ``valid_until >=
+    as_of`` are eligible.
+    """
+
+    if as_of is not None and today is not None:
+        raise ValueError("pass only one of as_of and today")
+    if today is not None:
+        as_of = today
+    if as_of is None:
+        as_of = date.today()
+    if not isinstance(as_of, date):
+        raise TypeError("as_of must be a date")
+
+    if expiry_warning_days is not None:
+        if expiring_within_days != DEFAULT_EXPIRING_WITHIN_DAYS:
+            raise ValueError(
+                "pass only one of expiring_within_days and expiry_warning_days"
+            )
+        expiring_within_days = expiry_warning_days
+    if not isinstance(expiring_within_days, int) or isinstance(
+        expiring_within_days, bool
+    ):
+        raise TypeError("expiring_within_days must be an integer")
+    if expiring_within_days < 0:
+        raise ValueError("expiring_within_days must not be negative")
+
+    # Materialize into a tuple so sorting/reporting cannot reorder a caller's
+    # list, and validate mappings without modifying the provided records.
+    snapshot = tuple(_as_question_record(record) for record in records)
+    expiring_cutoff = as_of + timedelta(days=expiring_within_days)
+
+    expired_question_ids = sorted(
+        record.question_id
+        for record in snapshot
+        if record.valid_until < as_of
+    )
+    expiring_question_ids = sorted(
+        record.question_id
+        for record in snapshot
+        if (
+            record.status == "active"
+            and as_of <= record.valid_until <= expiring_cutoff
+        )
+    )
+    inactive_question_ids = sorted(
+        record.question_id for record in snapshot if record.status != "active"
+    )
+    eligible_question_ids = sorted(
+        record.question_id
+        for record in snapshot
+        if record.status == "active" and record.valid_until >= as_of
+    )
+
+    return QuestionBankAudit(
+        as_of=as_of,
+        expiring_within_days=expiring_within_days,
+        expired_question_ids=expired_question_ids,
+        expiring_question_ids=expiring_question_ids,
+        inactive_question_ids=inactive_question_ids,
+        eligible_question_ids=eligible_question_ids,
+    )
+
+
+__all__ = [
+    "DEFAULT_EXPIRING_WITHIN_DAYS",
+    "QuestionBankAudit",
+    "SUPPORTED_DIMENSION_IDS",
+    "SUPPORTED_ROLE",
+    "audit_question_bank",
+    "build_question_content_hash",
+    "load_question_bank",
+    "normalize_question_text",
+]
