@@ -118,6 +118,135 @@ class QuestionBankServiceTests(unittest.TestCase):
                 allow_test_only=True,
             )
 
+    def test_rejects_boolean_and_float_schema_versions(self) -> None:
+        for schema_version in (True, 1.0, "unknown"):
+            with self.subTest(schema_version=schema_version):
+                payload = self._load_fixture_json()
+                payload["schema_version"] = schema_version
+
+                with self.assertRaisesRegex(ValueError, "schema_version"):
+                    load_question_bank(
+                        self._write_bank(payload),
+                        allow_test_only=True,
+                    )
+
+    def test_rejects_missing_or_mismatched_root_metadata(self) -> None:
+        for field in ("role", "role_version", "questions"):
+            with self.subTest(field=field):
+                payload = self._load_fixture_json()
+                payload.pop(field)
+
+                with self.assertRaises(ValueError):
+                    load_question_bank(
+                        self._write_bank(payload),
+                        allow_test_only=True,
+                    )
+
+        payload = self._load_fixture_json()
+        payload["role"] = "other_role"
+        with self.assertRaisesRegex(ValueError, "role"):
+            load_question_bank(
+                self._write_bank(payload),
+                allow_test_only=True,
+            )
+
+        payload = self._load_fixture_json()
+        payload["role_version"] = "2026-H1"
+        with self.assertRaisesRegex(ValueError, "role_version"):
+            load_question_bank(
+                self._write_bank(payload),
+                allow_test_only=True,
+            )
+
+    def test_rejects_invalid_source_when_loading(self) -> None:
+        payload = self._load_fixture_json()
+        payload["questions"][0]["source_url"] = "not-a-url"
+
+        with self.assertRaisesRegex(ValueError, "source"):
+            load_question_bank(
+                self._write_bank(payload),
+                allow_test_only=True,
+            )
+
+    def test_audit_separates_lifecycle_states_and_source_findings(self) -> None:
+        records = load_question_bank(FIXTURE_PATH, allow_test_only=True)
+        as_of = date(2026, 8, 26)
+        needs_review = records[0].model_copy(
+            update={
+                "status": "needs_review",
+                "valid_until": as_of + timedelta(days=7),
+            }
+        )
+        retired = records[1].model_copy(
+            update={
+                "status": "retired",
+                "valid_until": as_of + timedelta(days=8),
+            }
+        )
+        missing_source = records[2].model_copy(
+            update={
+                "source_id": "",
+                "source_url": "",
+                "valid_until": as_of + timedelta(days=9),
+            }
+        )
+        invalid_source_url = records[3].model_copy(
+            update={
+                "source_url": "not-a-url",
+                "valid_until": as_of + timedelta(days=10),
+            }
+        )
+        invalid_source_type = records[4].model_copy(
+            update={
+                "source_type": "not_allowed",
+                "valid_until": as_of + timedelta(days=11),
+            }
+        )
+
+        report = audit_question_bank(
+            [
+                needs_review,
+                retired,
+                missing_source,
+                invalid_source_url,
+                invalid_source_type,
+                records[5],
+            ],
+            as_of=as_of,
+            expiring_within_days=30,
+        )
+
+        self.assertEqual(report.needs_review_question_ids, [needs_review.question_id])
+        self.assertEqual(report.retired_question_ids, [retired.question_id])
+        self.assertEqual(
+            report.inactive_question_ids,
+            sorted([needs_review.question_id, retired.question_id]),
+        )
+        self.assertEqual(
+            report.expiring_soon_question_ids,
+            sorted(
+                [
+                    needs_review.question_id,
+                    retired.question_id,
+                    missing_source.question_id,
+                    invalid_source_url.question_id,
+                    invalid_source_type.question_id,
+                ]
+            ),
+        )
+        self.assertEqual(
+            report.missing_source_question_ids,
+            [missing_source.question_id],
+        )
+        self.assertEqual(
+            report.invalid_source_question_ids,
+            sorted([invalid_source_url.question_id, invalid_source_type.question_id]),
+        )
+        self.assertEqual(
+            report.eligible_question_ids,
+            [records[5].question_id],
+        )
+
     def test_rejects_unsupported_dimension_id(self) -> None:
         payload = self._load_fixture_json()
         payload["questions"][0]["dimension_id"] = "role_dim_99"

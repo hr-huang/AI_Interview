@@ -15,6 +15,7 @@ import hashlib
 import json
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from pydantic import ValidationError
 
@@ -24,6 +25,12 @@ from profile_agent.schemas.question_rag_schema import InterviewQuestionRecord
 SUPPORTED_ROLE = "ai_agent_engineer"
 SUPPORTED_DIMENSION_IDS = frozenset(
     f"role_dim_{index:02d}" for index in range(1, 7)
+)
+SUPPORTED_SOURCE_TYPES = frozenset(
+    {
+        "public_interview_experience",
+        "test_only_synthetic",
+    }
 )
 SUPPORTED_SCHEMA_VERSIONS = frozenset(
     {
@@ -63,6 +70,74 @@ def _as_question_record(
     raise TypeError(
         "question records must be InterviewQuestionRecord instances or mappings"
     )
+
+
+def _source_issue(record: Any) -> str | None:
+    """Return ``missing`` or ``invalid`` for a record's source metadata."""
+
+    for field_name in ("source_id", "source_url", "source_title", "source_type"):
+        value = getattr(record, field_name, None)
+        if not isinstance(value, str) or not value.strip():
+            return "missing"
+
+    parsed_url = urlparse(record.source_url.strip())
+    if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
+        return "invalid"
+    if record.source_type not in SUPPORTED_SOURCE_TYPES:
+        return "invalid"
+    return None
+
+
+@dataclass(frozen=True)
+class _AuditRecord:
+    """Small fallback view so audit can report incomplete source mappings."""
+
+    question_id: str
+    valid_until: date
+    status: str | None
+    source_id: Any = None
+    source_url: Any = None
+    source_title: Any = None
+    source_type: Any = None
+
+
+def _coerce_audit_record(
+    record: InterviewQuestionRecord | Mapping[str, Any],
+    index: int,
+) -> InterviewQuestionRecord | _AuditRecord:
+    if isinstance(record, InterviewQuestionRecord):
+        return record
+    if not isinstance(record, Mapping):
+        raise TypeError(
+            "question records must be InterviewQuestionRecord instances or mappings"
+        )
+
+    try:
+        return InterviewQuestionRecord.model_validate(record)
+    except ValidationError:
+        question_id = record.get("question_id")
+        if not isinstance(question_id, str) or not question_id.strip():
+            question_id = f"<record:{index}>"
+        valid_until = record.get("valid_until")
+        if isinstance(valid_until, str):
+            try:
+                valid_until = date.fromisoformat(valid_until)
+            except ValueError:
+                valid_until = date.max
+        if not isinstance(valid_until, date):
+            valid_until = date.max
+        status = record.get("status")
+        if not isinstance(status, str):
+            status = None
+        return _AuditRecord(
+            question_id=question_id,
+            valid_until=valid_until,
+            status=status,
+            source_id=record.get("source_id"),
+            source_url=record.get("source_url"),
+            source_title=record.get("source_title"),
+            source_type=record.get("source_type"),
+        )
 
 
 def build_question_content_hash(
@@ -116,7 +191,11 @@ def _validate_bank_root(
     expected_role_version: str | None,
 ) -> list[Mapping[str, Any]]:
     schema_version = payload.get("schema_version", payload.get("version"))
-    if schema_version not in SUPPORTED_SCHEMA_VERSIONS:
+    if (
+        isinstance(schema_version, bool)
+        or type(schema_version) not in {int, str}
+        or schema_version not in SUPPORTED_SCHEMA_VERSIONS
+    ):
         raise ValueError(
             "question bank schema_version must be one of "
             + ", ".join(sorted(map(str, SUPPORTED_SCHEMA_VERSIONS)))
@@ -131,13 +210,14 @@ def _validate_bank_root(
         )
 
     root_role = payload.get("role")
-    if root_role is not None and root_role != expected_role:
+    if root_role != expected_role:
         raise ValueError(f"unsupported question bank role: {root_role!r}")
 
     root_role_version = payload.get("role_version")
+    if not isinstance(root_role_version, str) or not root_role_version.strip():
+        raise ValueError("question bank role_version must be a non-blank string")
     if (
         expected_role_version is not None
-        and root_role_version is not None
         and root_role_version != expected_role_version
     ):
         raise ValueError(
@@ -190,6 +270,7 @@ def load_question_bank(
     records: list[InterviewQuestionRecord] = []
     seen_question_ids: set[str] = set()
     seen_content_hashes: set[str] = set()
+    bank_role_version = payload["role_version"]
 
     for index, question in enumerate(questions):
         try:
@@ -210,6 +291,17 @@ def load_question_bank(
             raise ValueError(
                 f"question role_version mismatch at index {index}: "
                 f"{record.role_version!r}"
+            )
+        if record.role_version != bank_role_version:
+            raise ValueError(
+                f"question role_version does not match bank root at index {index}: "
+                f"{record.role_version!r}"
+            )
+        source_issue = _source_issue(record)
+        if source_issue is not None:
+            raise ValueError(
+                f"invalid source for question_id {record.question_id}: "
+                f"{source_issue}"
             )
         if record.question_id in seen_question_ids:
             raise ValueError(f"duplicate question_id: {record.question_id}")
@@ -244,9 +336,19 @@ class QuestionBankAudit(Mapping[str, object]):
     as_of: date
     expiring_within_days: int
     expired_question_ids: list[str]
-    expiring_question_ids: list[str]
+    expiring_soon_question_ids: list[str]
+    needs_review_question_ids: list[str]
+    retired_question_ids: list[str]
+    missing_source_question_ids: list[str]
+    invalid_source_question_ids: list[str]
     inactive_question_ids: list[str]
     eligible_question_ids: list[str]
+
+    @property
+    def expiring_question_ids(self) -> list[str]:
+        """Compatibility alias for the complete expiring-soon finding."""
+
+        return list(self.expiring_soon_question_ids)
 
     @property
     def expired_ids(self) -> list[str]:
@@ -254,7 +356,23 @@ class QuestionBankAudit(Mapping[str, object]):
 
     @property
     def expiring_ids(self) -> list[str]:
-        return list(self.expiring_question_ids)
+        return list(self.expiring_soon_question_ids)
+
+    @property
+    def needs_review_ids(self) -> list[str]:
+        return list(self.needs_review_question_ids)
+
+    @property
+    def retired_ids(self) -> list[str]:
+        return list(self.retired_question_ids)
+
+    @property
+    def missing_source_ids(self) -> list[str]:
+        return list(self.missing_source_question_ids)
+
+    @property
+    def invalid_source_ids(self) -> list[str]:
+        return list(self.invalid_source_question_ids)
 
     @property
     def active_question_ids(self) -> list[str]:
@@ -266,19 +384,28 @@ class QuestionBankAudit(Mapping[str, object]):
 
     @property
     def has_expiring(self) -> bool:
-        return bool(self.expiring_question_ids)
+        return bool(self.expiring_soon_question_ids)
 
     def _as_mapping(self) -> dict[str, object]:
         return {
             "as_of": self.as_of,
             "expiring_within_days": self.expiring_within_days,
             "expired_question_ids": list(self.expired_question_ids),
-            "expiring_question_ids": list(self.expiring_question_ids),
+            "expiring_soon_question_ids": list(self.expiring_soon_question_ids),
+            "expiring_question_ids": list(self.expiring_soon_question_ids),
+            "needs_review_question_ids": list(self.needs_review_question_ids),
+            "retired_question_ids": list(self.retired_question_ids),
+            "missing_source_question_ids": list(self.missing_source_question_ids),
+            "invalid_source_question_ids": list(self.invalid_source_question_ids),
             "inactive_question_ids": list(self.inactive_question_ids),
             "eligible_question_ids": list(self.eligible_question_ids),
             # Short aliases make the report convenient for CLI serializers.
             "expired": list(self.expired_question_ids),
-            "expiring": list(self.expiring_question_ids),
+            "expiring": list(self.expiring_soon_question_ids),
+            "needs_review": list(self.needs_review_question_ids),
+            "retired": list(self.retired_question_ids),
+            "missing_source": list(self.missing_source_question_ids),
+            "invalid_source": list(self.invalid_source_question_ids),
         }
 
     def __getitem__(self, key: str) -> object:
@@ -301,10 +428,10 @@ def audit_question_bank(
 ) -> QuestionBankAudit:
     """Report expired and soon-to-expire records without mutating them.
 
-    A record is expiring when it is active, not yet expired, and its
-    ``valid_until`` date is within the inclusive warning window.  Eligibility
-    mirrors runtime retrieval: only active records with ``valid_until >=
-    as_of`` are eligible.
+    A record is expiring when it is not yet expired and its ``valid_until``
+    date is within the inclusive warning window, regardless of lifecycle
+    status.  Eligibility mirrors runtime retrieval: only active records with
+    ``valid_until >= as_of`` and valid source metadata are eligible.
     """
 
     if as_of is not None and today is not None:
@@ -330,8 +457,13 @@ def audit_question_bank(
         raise ValueError("expiring_within_days must not be negative")
 
     # Materialize into a tuple so sorting/reporting cannot reorder a caller's
-    # list, and validate mappings without modifying the provided records.
-    snapshot = tuple(_as_question_record(record) for record in records)
+    # list, and validate mappings without modifying the provided records.  The
+    # fallback view lets audit preserve source findings even when a raw mapping
+    # is missing one of the source fields that the loader would reject.
+    snapshot = tuple(
+        _coerce_audit_record(record, index)
+        for index, record in enumerate(records)
+    )
     expiring_cutoff = as_of + timedelta(days=expiring_within_days)
 
     expired_question_ids = sorted(
@@ -339,13 +471,30 @@ def audit_question_bank(
         for record in snapshot
         if record.valid_until < as_of
     )
-    expiring_question_ids = sorted(
+    expiring_soon_question_ids = sorted(
         record.question_id
         for record in snapshot
-        if (
-            record.status == "active"
-            and as_of <= record.valid_until <= expiring_cutoff
-        )
+        if as_of <= record.valid_until <= expiring_cutoff
+    )
+    needs_review_question_ids = sorted(
+        record.question_id
+        for record in snapshot
+        if record.status == "needs_review"
+    )
+    retired_question_ids = sorted(
+        record.question_id
+        for record in snapshot
+        if record.status == "retired"
+    )
+    missing_source_question_ids = sorted(
+        record.question_id
+        for record in snapshot
+        if _source_issue(record) == "missing"
+    )
+    invalid_source_question_ids = sorted(
+        record.question_id
+        for record in snapshot
+        if _source_issue(record) == "invalid"
     )
     inactive_question_ids = sorted(
         record.question_id for record in snapshot if record.status != "active"
@@ -353,14 +502,22 @@ def audit_question_bank(
     eligible_question_ids = sorted(
         record.question_id
         for record in snapshot
-        if record.status == "active" and record.valid_until >= as_of
+        if (
+            record.status == "active"
+            and record.valid_until >= as_of
+            and _source_issue(record) is None
+        )
     )
 
     return QuestionBankAudit(
         as_of=as_of,
         expiring_within_days=expiring_within_days,
         expired_question_ids=expired_question_ids,
-        expiring_question_ids=expiring_question_ids,
+        expiring_soon_question_ids=expiring_soon_question_ids,
+        needs_review_question_ids=needs_review_question_ids,
+        retired_question_ids=retired_question_ids,
+        missing_source_question_ids=missing_source_question_ids,
+        invalid_source_question_ids=invalid_source_question_ids,
         inactive_question_ids=inactive_question_ids,
         eligible_question_ids=eligible_question_ids,
     )
@@ -371,6 +528,7 @@ __all__ = [
     "QuestionBankAudit",
     "SUPPORTED_DIMENSION_IDS",
     "SUPPORTED_ROLE",
+    "SUPPORTED_SOURCE_TYPES",
     "audit_question_bank",
     "build_question_content_hash",
     "load_question_bank",
