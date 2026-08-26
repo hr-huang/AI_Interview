@@ -87,6 +87,35 @@ malformed hit、限额传递等），逐项实现后定向测试 **20/20 passed*
 `QuestionStoreSearchResult` envelope；本模块对不可信返回已拒绝裸 list/裸 record，并保留
 明确的 unavailable 降级。
 
+## 最终复审结构化修复追加
+
+针对最终复审的 3 项 Important，query 构造改为单向 canonical allowlist 投影，停止依赖
+“先拼接原文再用黑名单补漏”的路径：
+
+- 新增集中、可审计的 `_CANONICAL_QUERY_TERMS` 与 Role Pack 六个合法 dimension ID。静态
+  role/mode/difficulty/dimension 字段只接受受控枚举或 ID；objective、requirement、
+  coverage gap、JD、resume、recent answer 只扫描白名单技术短语，并输出白名单中的
+  canonical spelling。未匹配的原文 span、标点、候选人标识和凭证值不会进入 query；无
+  安全锚点时使用固定 `none` 占位符。
+- 白名单显式保留 `JWT validation`、`Bearer authentication`、`Basic auth flow`、
+  `Bearer token flow`、`token 生命周期`、`authorization policy` 及既有
+  tokenization/password/credential 技术语，同时保留 Role Pack 的 Agent/RAG/Context/
+  Memory/检索/工具调用/参数校验/权限/评测等 canonical 标签。未识别的长 objective、
+  JD、简历和最近回答尾部不再以 head/tail 原文方式进入 query。
+- PII fallback cleaner 使用 ASCII-aware 边界，中文相邻的 email、URL、手机号也能被识别；
+  query 主路径本身不输出清洗后的原文，因此各种英文凭证赋值（包括 `is` 连接词、引号、
+  空格赋值、全字母值及 Bearer/sk/JWT 形态）天然只会得到受控字段，不会把 secret 送入
+  embedding。Retriever/ranking/filter/trace 实现保持不变。
+
+本轮 TDD 先在旧原文拼接实现上运行新增测试，按预期得到 **24 tests / 40 failures**，
+暴露自然语言凭证赋值、中文相邻 PII、认证术语误删和未识别尾部泄漏；结构化重构后定向
+测试 **25/25 passed**，全后端 `unittest discover -s tests` **520/520 passed**。
+`compileall -q profile_agent tests` 与 `git diff --check` 均通过，未执行真实网络、真实
+Embedding 或 Qdrant 请求。
+
+剩余边界：canonical 技术短语集合是与当前 Role Pack 同步的显式快照，新增 Role Pack
+维度或技能时需同步审阅该集合；未知 dimension ID 会安全报错而不会猜测或注入原文。
+
 ## 第二轮复审修复追加
 
 针对剩余 2 项 Important 与 1 项 Minor：

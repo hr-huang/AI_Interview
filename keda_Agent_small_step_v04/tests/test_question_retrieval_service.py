@@ -259,6 +259,13 @@ class IntentBuilderTests(unittest.TestCase):
                 plan=make_plan(dimension_id=None),
             )
 
+    def test_builder_rejects_dimension_outside_role_pack_allowlist(self) -> None:
+        with self.assertRaisesRegex(ValueError, "unsupported role dimension_id"):
+            build_question_retrieval_intent(
+                action=make_action(),
+                plan=make_plan(dimension_id="role_dim_untrusted"),
+            )
+
     def test_builder_rejects_duplicate_requirement_ids_in_selected_target(self) -> None:
         plan = make_plan()
         plan.targets[0].evidence_requirements.append(
@@ -299,6 +306,19 @@ class IntentBuilderTests(unittest.TestCase):
             ("access key split-access-secret", "split-access-secret"),
             ("client secret: split-client-secret", "split-client-secret"),
             ("API KEY=split-uppercase-secret", "split-uppercase-secret"),
+            ("API key is split-natural-api-secret", "split-natural-api-secret"),
+            ("private key is 'split-natural-private-secret'", "split-natural-private-secret"),
+            ("access key is split-natural-access-secret", "split-natural-access-secret"),
+            ("client secret is split-natural-client-secret", "split-natural-client-secret"),
+            ("auth token is split-natural-auth-secret", "split-natural-auth-secret"),
+            ("token is split-natural-token-secret", "split-natural-token-secret"),
+            ("password split-password-secret", "split-password-secret"),
+            ("password is 'split-password-is-secret'", "split-password-is-secret"),
+            ("secret split-secret-value", "split-secret-value"),
+            ("credential split-credential-value", "split-credential-value"),
+            ("authorization split-authorization-value", "split-authorization-value"),
+            ("API key abcdef", "abcdef"),
+            ("secret openai", "openai"),
             ("AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE", "AKIAIOSFODNN7EXAMPLE"),
             ("AWS_SECRET_ACCESS_KEY=aws-secret", "aws-secret"),
             (
@@ -350,6 +370,31 @@ class IntentBuilderTests(unittest.TestCase):
                 self.assertEqual(embedding.inputs, [intent.query_text])
                 self.assertNotIn(secret_value, embedding.inputs[0])
 
+    def test_builder_redacts_pii_adjacent_to_chinese_text(self) -> None:
+        attacks = [
+            ("candidate@example.com候选人", "candidate@example.com"),
+            ("访问https://example.com候选项目", "https://example.com"),
+            ("电话13812345678，负责项目", "13812345678"),
+            ("联系candidate@example.com；负责 RAG", "candidate@example.com"),
+        ]
+
+        for attack, secret_value in attacks:
+            with self.subTest(attack=attack):
+                intent = build_question_retrieval_intent(
+                    action=make_action(),
+                    plan=make_plan(),
+                    evidence_summaries=[attack],
+                )
+                self.assertNotIn(secret_value, intent.query_text)
+
+                embedding = FakeEmbedding()
+                QuestionRetriever(
+                    embedding,
+                    FakeStore(QuestionStoreSearchResult(status="no_match")),
+                    today=TODAY,
+                ).retrieve(intent)
+                self.assertNotIn(secret_value, embedding.inputs[0])
+
     def test_builder_preserves_ordinary_token_and_authorization_technical_terms(self) -> None:
         technical_terms = [
             "tokenization strategy",
@@ -360,6 +405,10 @@ class IntentBuilderTests(unittest.TestCase):
             "authorization policy",
             "password rotation policy",
             "credential store",
+            "JWT validation",
+            "Bearer authentication",
+            "Basic auth flow",
+            "Bearer token flow",
         ]
 
         for term in technical_terms:
@@ -413,30 +462,30 @@ class IntentBuilderTests(unittest.TestCase):
             with self.subTest(section=section):
                 self.assertIn(section, intent.query_text)
 
-    def test_builder_retains_tail_markers_when_anchor_fields_are_very_long(self) -> None:
-        long_tail = "前缀 " + ("上下文 " * 80)
+    def test_builder_keeps_allowlisted_terms_and_drops_unrecognized_tail_markers(self) -> None:
+        long_tail = "前缀 " + ("未识别原文 " * 80)
         plan = make_plan(
-            objective=long_tail + " OBJECTIVE_TAIL",
-            requirement=long_tail + " REQUIREMENT_TAIL",
+            objective=long_tail + " Agent OBJECTIVE_TAIL",
+            requirement=long_tail + " RAG REQUIREMENT_TAIL",
         )
         job = JobProfile(
             role="AI Agent",
-            responsibilities=["JD_RESPONSIBILITY"],
+            responsibilities=["未识别 JD_RESPONSIBILITY"],
             requirements=[
-                JobRequirement(name="JD_NAME", description=long_tail + " JD_TAIL")
+                JobRequirement(name="JD_NAME", description=long_tail + " 检索 JD_TAIL")
             ],
         )
         resume = ResumeProfile(
-            skills=["RESUME_SKILL"],
+            skills=["RESUME_SKILL", "工具调用"],
             projects=[
                 ProjectExperience(
                     name="RESUME_PROJECT",
-                    description=long_tail + " RESUME_TAIL",
+                    description=long_tail + " 上下文 RESUME_TAIL",
                     technologies=["Python"],
                 )
             ],
         )
-        recent = [make_turn(1, answer=long_tail + " RECENT_TAIL")]
+        recent = [make_turn(1, answer=long_tail + " JWT validation RECENT_TAIL")]
 
         intent = build_question_retrieval_intent(
             action=make_action(),
@@ -444,7 +493,7 @@ class IntentBuilderTests(unittest.TestCase):
             job_profile=job,
             resume_profile=resume,
             recent_turns=recent,
-            evidence_summaries=[long_tail + " GAP_TAIL"],
+            evidence_summaries=[long_tail + " 失败恢复边界 GAP_TAIL"],
         )
 
         for marker in (
@@ -456,17 +505,82 @@ class IntentBuilderTests(unittest.TestCase):
             "RECENT_TAIL",
         ):
             with self.subTest(marker=marker):
-                self.assertIn(marker, intent.query_text)
+                self.assertNotIn(marker, intent.query_text)
 
-    def test_builder_uses_a_non_recursive_secret_redaction_marker(self) -> None:
+        for safe_term in ("Agent", "RAG", "检索", "工具调用", "上下文", "JWT validation", "失败恢复边界"):
+            with self.subTest(safe_term=safe_term):
+                self.assertIn(safe_term, intent.query_text)
+
+    def test_builder_uses_controlled_placeholder_for_untrusted_secret_only_input(self) -> None:
         intent = build_question_retrieval_intent(
             action=make_action(),
             plan=make_plan(),
             evidence_summaries=["AUTHORIZATION=Bearer marker-secret"],
         )
 
-        self.assertIn("[redacted]", intent.query_text)
-        self.assertNotIn("[redacted-[", intent.query_text)
+        self.assertIn("coverage_gap=none", intent.query_text)
+        self.assertNotIn("marker-secret", intent.query_text)
+
+    def test_builder_query_contains_only_controlled_fields_and_allowlisted_terms(self) -> None:
+        unknown_markers = (
+            "UNRECOGNIZED_OBJECTIVE_SPAN",
+            "UNRECOGNIZED_REQUIREMENT_SPAN",
+            "UNRECOGNIZED_GAP_SPAN",
+            "UNRECOGNIZED_JD_SPAN",
+            "UNRECOGNIZED_RESUME_SPAN",
+            "UNRECOGNIZED_RECENT_SPAN",
+        )
+        plan = make_plan(
+            objective="UNRECOGNIZED_OBJECTIVE_SPAN Agent",
+            requirement="UNRECOGNIZED_REQUIREMENT_SPAN RAG",
+        )
+        job = JobProfile(
+            role="UNRECOGNIZED_JD_ROLE",
+            responsibilities=["UNRECOGNIZED_JD_RESPONSIBILITY"],
+            requirements=[
+                JobRequirement(
+                    name="UNRECOGNIZED_JD_SPAN",
+                    description="JWT validation UNRECOGNIZED_JD_DESCRIPTION",
+                )
+            ],
+        )
+        resume = ResumeProfile(
+            summary="UNRECOGNIZED_RESUME_SUMMARY",
+            skills=["UNRECOGNIZED_RESUME_SPAN", "工具调用"],
+            projects=[
+                ProjectExperience(
+                    name="UNRECOGNIZED_PROJECT_NAME",
+                    description="上下文 UNRECOGNIZED_PROJECT_DESCRIPTION",
+                    technologies=["UNRECOGNIZED_TECHNOLOGY"],
+                )
+            ],
+        )
+        recent = [make_turn(1, answer="Bearer authentication UNRECOGNIZED_RECENT_SPAN")]
+
+        intent = build_question_retrieval_intent(
+            action=make_action(),
+            plan=plan,
+            resume_profile=resume,
+            job_profile=job,
+            recent_turns=recent,
+            evidence_summaries=["UNRECOGNIZED_GAP_SPAN 检索"],
+        )
+
+        for marker in unknown_markers:
+            with self.subTest(marker=marker):
+                self.assertNotIn(marker, intent.query_text)
+        for safe_term in ("Agent", "RAG", "检索", "JWT validation", "工具调用", "上下文", "Bearer authentication"):
+            with self.subTest(safe_term=safe_term):
+                self.assertIn(safe_term, intent.query_text)
+
+        embedding = FakeEmbedding()
+        QuestionRetriever(
+            embedding,
+            FakeStore(QuestionStoreSearchResult(status="no_match")),
+            today=TODAY,
+        ).retrieve(intent)
+        for marker in unknown_markers:
+            self.assertNotIn(marker, embedding.inputs[0])
 
     def test_builder_is_stable_for_long_and_redacted_anchor_inputs(self) -> None:
         kwargs = {

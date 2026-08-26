@@ -63,87 +63,116 @@ _MODE_DIFFICULTY: dict[QuestionMode, str] = {
     "follow_up": "intermediate",
 }
 _TRUST_SCORE = {"high": 1.0, "medium": 0.66, "low": 0.33}
-_EMAIL_RE = re.compile(r"(?i)\b[\w.+-]+@[\w.-]+\.[a-z]{2,}\b")
-_URL_RE = re.compile(r"(?i)\b(?:https?://|www\.)\S+")
-# Treat an anchor as untrusted text.  Labels are only considered credentials
-# when a delimiter, a structured key/value shape, or an auth scheme supplies
-# the surrounding context.  Bare technical words such as ``token budget`` and
-# ``authorization policy`` therefore remain useful retrieval anchors.
-_SECRET_LABEL = (
-    r"(?:"
-    r"(?:[a-z0-9][a-z0-9_.-]*[_.-])?"
-    r"(?:api|access|private|client|auth(?:entication)?)(?:[_-]|\s+)?"
-    r"(?:key|secret|token)(?:[_-][a-z0-9]+)*"
-    r"|secret(?:[_-]token)?|token|authorization|bearer|password|credential"
-    r")"
+# Query construction is an allowlist operation.  These are the only
+# free-text terms that can be emitted from JD/resume/answer/evidence fields;
+# every emitted value is the canonical spelling below, never an input span.
+# The role-pack (ai_application_engineer_2026_h2) supplies the role/dimension
+# IDs and the competency labels represented here.  Authentication phrases are
+# deliberately explicit so ordinary words such as ``token`` or ``authorization``
+# cannot accidentally become credential-bearing query text.
+_ROLE_PACK_DIMENSION_IDS = frozenset(
+    {
+        "role_dim_01",
+        "role_dim_02",
+        "role_dim_03",
+        "role_dim_04",
+        "role_dim_05",
+        "role_dim_06",
+    }
 )
-_STRUCTURED_SECRET_LABEL = (
-    r"(?:[a-z0-9][a-z0-9_.-]*[_.-])?"
-    r"(?:api|access|private|client|auth(?:entication)?)(?:[_-]|\s+)?"
-    r"(?:key|secret|token)(?:[_-][a-z0-9]+)*"
+_CANONICAL_QUERY_TERMS: tuple[str, ...] = (
+    # Role-pack skill/signal/requirement labels.
+    "Agent",
+    "多Agent",
+    "单Agent",
+    "Workflow",
+    "任务",
+    "任务建模",
+    "任务编排",
+    "状态",
+    "路由",
+    "人工介入",
+    "失败恢复",
+    "失败恢复边界",
+    "重试",
+    "RAG",
+    "Context",
+    "上下文",
+    "上下文预算",
+    "Memory",
+    "记忆",
+    "生命周期",
+    "记忆污染",
+    "过期知识",
+    "检索",
+    "引用",
+    "工具",
+    "工具工程",
+    "工具调用",
+    "工具 token 调用和上下文",
+    "参数校验",
+    "权限",
+    "返回结果",
+    "副作用",
+    "评测",
+    "可观测性",
+    "安全",
+    "安全边界",
+    "安全治理",
+    "超时",
+    "降级",
+    "告警",
+    "恢复",
+    "幂等性",
+    "补偿",
+    "输入",
+    "输出",
+    "约束",
+    "用户",
+    "成功标准",
+    "验收",
+    "测试",
+    "日志",
+    "可复现",
+    "规格",
+    "代码审查",
+    "依赖",
+    "回滚",
+    "成本",
+    "性能",
+    "延迟",
+    "复杂度",
+    "扩展性",
+    "反馈",
+    "基线",
+    "指标",
+    "效果",
+    "追踪",
+    # Deliberately allowlisted authentication/security semantics.
+    "tokenization strategy",
+    "token 生命周期",
+    "token budget",
+    "OAuth authorization code flow",
+    "authorization policy",
+    "password rotation policy",
+    "credential store",
+    "JWT validation",
+    "Bearer authentication",
+    "Basic auth flow",
+    "Bearer token flow",
 )
-_SECRET_VALUE = r"(?:\"[^\"]*\"|'[^']*'|[^\s,;|]+)"
-_SECRET_LIKE_VALUE = (
-    r"(?:\"[^\"]*\"|'[^']*'|"
-    r"(?=[^\s,;|]*\d)[^\s,;|]+|"
-    r"(?=[^\s,;|]*[-_./+=])[^\s,;|]+|"
-    r"[A-Za-z0-9]{1,3})"
+_CANONICAL_QUERY_TERM_SET = frozenset(_CANONICAL_QUERY_TERMS)
+_EMAIL_RE = re.compile(
+    r"(?i)(?<![A-Za-z0-9._%+-])[A-Za-z0-9][A-Za-z0-9._%+-]*"
+    r"@[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?![A-Za-z0-9.-])"
 )
-_SECRET_ASSIGNMENT_RE = re.compile(
-    rf"(?ix)(?<![a-z0-9]){_SECRET_LABEL}"
-    rf"\s*(?:=|:)\s*(?:(?:bearer|basic|token|jwt)\s+)?{_SECRET_VALUE}"
+_URL_RE = re.compile(
+    r"(?i)(?<![A-Za-z0-9])(?:https?://|www\.)[^\s,，。；;|]+"
 )
-_SECRET_SPACED_ASSIGNMENT_RE = re.compile(
-    rf"(?ix)(?<![a-z0-9]){_STRUCTURED_SECRET_LABEL}\s+"
-    rf"{_SECRET_LIKE_VALUE}(?![a-z0-9])"
-)
-_TOKEN_SPACED_ASSIGNMENT_RE = re.compile(
-    rf"(?ix)(?<![a-z0-9])token\s+{_SECRET_LIKE_VALUE}(?![a-z0-9])"
-)
-_AUTH_HEADER_RE = re.compile(
-    rf"(?ix)(?<![a-z0-9_.-])(?:authorization|proxy-authorization|"
-    rf"x[-_]api[-_]key|api[-_]?key|api\s+key)\s*[:=]\s*"
-    rf"(?:(?:bearer|basic|token|jwt)\s+)?{_SECRET_VALUE}"
-)
-_AUTH_HEADER_SPACED_RE = re.compile(
-    rf"(?ix)(?<![a-z0-9_.-])(?:authorization|proxy-authorization)\s+"
-    rf"(?:bearer|basic|token|jwt)\s+{_SECRET_VALUE}"
-)
-_AUTH_SCHEME_RE = re.compile(
-    rf"(?ix)(?<![a-z0-9])(?:bearer|basic|jwt)\s+{_SECRET_VALUE}"
-)
-_SECRET_COMPOUND_RE = re.compile(
-    r"(?ix)(?<![a-z0-9])secret[-_]token(?![a-z0-9])"
-)
-_SECRET_PREFIX_RE = re.compile(
-    r"(?ix)(?<![a-z0-9])(?:(?:sk|rk|pk)[_-](?:(?:live|test|proj)[_-])?"
-    r"[a-z0-9_-]{4,}|"
-    r"(?:gh[pousr]_|github_pat_)[a-z0-9_]{8,}|"
-    r"(?:akia|asia)[a-z0-9]{12,}|AIza[a-z0-9_-]{20,}|"
-    r"xox[baprs]-[a-z0-9-]{8,})"
-)
-_JWT_RE = re.compile(
-    r"(?ix)(?<![a-z0-9])eyj[a-z0-9_-]{6,}\.[a-z0-9_-]{4,}\.[a-z0-9_-]{4,}"
-)
-_LONG_OPAQUE_RE = re.compile(
-    r"(?ix)(?<![a-z0-9])"
-    r"(?=[a-z0-9._-]{24,}(?![a-z0-9]))"
-    r"(?=[a-z0-9._-]*[a-z])(?=[a-z0-9._-]*\d)"
-    r"[a-z0-9._-]{24,}(?![a-z0-9])"
-)
-_PHONE_RE = re.compile(r"(?<!\w)(?:\+?\d[\d ().-]{6,}\d)(?!\w)")
+# Boundaries are ASCII-aware: Chinese text adjacent to a PII value must not
+# prevent the value from being recognized by the fallback cleaner.
+_PHONE_RE = re.compile(r"(?<![0-9])(?:\+?[0-9][0-9 ().-]{6,}[0-9])(?![0-9])")
 _WORD_RE = re.compile(r"[A-Za-z0-9_]+|[\u3400-\u4dbf\u4e00-\u9fff]")
-_SENSITIVE_MARKERS = (
-    "expected_signals",
-    "critical_errors",
-    "expected signal",
-    "critical error",
-    "标准答案",
-    "评分标准",
-    "rubric",
-)
-_REDACTED_SECRET = "[redacted]"
-
 _QUERY_SECTION_BUDGETS = {
     "dimension": 32,
     "mode": 32,
@@ -242,23 +271,17 @@ class RetrievalScoreBreakdown:
 
 
 def _clean_text(value: Any, *, limit: int | None = None) -> str:
-    """Normalize text and redact common secrets/PII before it enters a query."""
+    """Normalize PII for non-query fields.
+
+    Query anchors do not use this helper: they are selected by
+    :func:`_extract_canonical_terms` below.  Keeping this small cleaner for
+    exclusions and other diagnostics is useful, but it is deliberately not a
+    credential blacklist on which query safety depends.
+    """
 
     if value is None:
         return ""
     text = re.sub(r"\s+", " ", str(value)).strip()
-    # Redact headers/assignments before generic schemes and key prefixes.  The
-    # replacements are stable and intentionally carry no source text.
-    text = _AUTH_HEADER_RE.sub(_REDACTED_SECRET, text)
-    text = _AUTH_HEADER_SPACED_RE.sub(_REDACTED_SECRET, text)
-    text = _SECRET_ASSIGNMENT_RE.sub(_REDACTED_SECRET, text)
-    text = _SECRET_SPACED_ASSIGNMENT_RE.sub(_REDACTED_SECRET, text)
-    text = _TOKEN_SPACED_ASSIGNMENT_RE.sub(_REDACTED_SECRET, text)
-    text = _AUTH_SCHEME_RE.sub(_REDACTED_SECRET, text)
-    text = _SECRET_PREFIX_RE.sub(_REDACTED_SECRET, text)
-    text = _JWT_RE.sub(_REDACTED_SECRET, text)
-    text = _LONG_OPAQUE_RE.sub(_REDACTED_SECRET, text)
-    text = _SECRET_COMPOUND_RE.sub(_REDACTED_SECRET, text)
     text = _EMAIL_RE.sub("[redacted-email]", text)
     text = _URL_RE.sub("[redacted-url]", text)
     text = _PHONE_RE.sub("[redacted-phone]", text)
@@ -276,53 +299,103 @@ def _clean_text(value: Any, *, limit: int | None = None) -> str:
     return text
 
 
-def _is_sensitive_text(value: str) -> bool:
-    lowered = value.lower()
-    return any(marker in lowered for marker in _SENSITIVE_MARKERS)
+def _normalise_match_text(value: Any) -> str:
+    """Return a stable matching representation without exposing the value."""
+
+    if value is None:
+        return ""
+    return re.sub(r"\s+", " ", str(value)).strip()
 
 
-def _dedupe_non_blank(values: Sequence[str], *, limit: int | None = None) -> list[str]:
-    seen: set[str] = set()
-    cleaned: list[str] = []
-    for raw in values:
-        value = _clean_text(raw)
-        if not value or value in seen:
-            continue
-        if _is_sensitive_text(value):
-            continue
-        seen.add(value)
-        cleaned.append(value)
-        if limit is not None and len(cleaned) >= limit:
-            break
-    return cleaned
+def _contains_canonical_term(text: str, term: str) -> bool:
+    """Match a safe phrase without treating an ASCII word as a substring."""
+
+    # ASCII-aware boundaries intentionally regard adjacent Chinese characters
+    # as boundaries.  The matched source span is discarded; only ``term`` from
+    # the centralized allowlist is ever returned to the query builder.
+    return re.search(
+        rf"(?<![A-Za-z0-9]){re.escape(term)}(?![A-Za-z0-9])",
+        text,
+        flags=re.IGNORECASE,
+    ) is not None
+
+
+def _extract_canonical_terms(values: Sequence[Any]) -> list[str]:
+    """Extract only canonical allowlist terms from untrusted source fields.
+
+    This is intentionally a one-way projection.  No source substring,
+    punctuation, identifier, credential, or PII can be returned unless it is
+    already an exact, audited entry in ``_CANONICAL_QUERY_TERMS``.
+    """
+
+    texts = [_normalise_match_text(value) for value in values]
+    texts = [text for text in texts if text]
+    if not texts:
+        return []
+    return [
+        term
+        for term in _CANONICAL_QUERY_TERMS
+        if any(_contains_canonical_term(text, term) for text in texts)
+    ]
+
+
+def _controlled_terms_value(terms: Sequence[str]) -> str:
+    """Join already-validated canonical terms, or use a fixed empty marker."""
+
+    return ",".join(term for term in terms if term in _CANONICAL_QUERY_TERM_SET) or "none"
 
 
 def _bounded_section(label: str, value: str, budget: int) -> str:
-    """Keep a labelled anchor within its own budget.
+    """Keep a labelled, already-controlled value within its own budget.
 
     Section budgets are applied before joining the query.  This prevents a
     long objective or answer from starving later JD/resume/recent anchors.
     """
 
     prefix = f"{label}="
-    cleaned = _clean_text(value)
-    if not cleaned:
+    controlled = _normalise_match_text(value)
+    if not controlled:
         return ""
     value_budget = max(0, budget - len(prefix))
-    if len(cleaned) <= value_budget:
-        return prefix + cleaned
+    if len(controlled) <= value_budget:
+        return prefix + controlled
     if value_budget <= 1:
-        return prefix + cleaned[:value_budget]
+        return prefix + controlled[:value_budget]
 
-    # Preserve both the beginning (usually the structured field name) and the
-    # tail (often the discriminating project/answer detail) within the field's
-    # own budget.  The ellipsis is deterministic and does not trigger another
-    # global truncation pass.
-    tail_budget = max(1, value_budget // 3)
-    head_budget = value_budget - tail_budget - 1
-    head = cleaned[:head_budget].rstrip()
-    tail = cleaned[-tail_budget:].lstrip()
-    return prefix + head + "…" + tail
+    # Canonical term sections are comma separated.  Trim at term boundaries so
+    # a length budget can never turn a safe phrase into an arbitrary partial
+    # source span.  Keep the first terms (the role-pack ordering is stable) and
+    # the final term as a deterministic low-cost tail preference.
+    terms = [part.strip() for part in controlled.split(",") if part.strip()]
+    if len(terms) <= 1:
+        # Static fields (dimension/mode/depth) are already bounded by their
+        # enums/IDs.  This fallback also keeps the helper total for callers
+        # supplying a single controlled value.
+        return prefix + controlled[:value_budget]
+
+    selected: list[str] = []
+    used = 0
+    for term in terms:
+        extra = len(term) if not selected else len(term) + 1
+        if used + extra > value_budget:
+            break
+        selected.append(term)
+        used += extra
+
+    if len(selected) < len(terms) and terms[-1] not in selected:
+        tail = terms[-1]
+        while selected:
+            extra = len(tail) if not selected else len(tail) + 1
+            removed_cost = len(selected[-1]) + (1 if len(selected) > 1 else 0)
+            if used - removed_cost + extra <= value_budget:
+                break
+            removed = selected.pop()
+            used -= len(removed) + (1 if selected else 0)
+        extra = len(tail) if not selected else len(tail) + 1
+        if used + extra <= value_budget:
+            selected.append(tail)
+
+    return prefix + ",".join(selected)
 
 
 def _clip_query(parts: Sequence[str]) -> str:
@@ -339,55 +412,43 @@ def _resume_anchors(profile: ResumeProfile | None) -> list[str]:
     if profile is None:
         return []
 
-    anchors: list[str] = []
-    skills = _dedupe_non_blank(profile.skills, limit=6)
-    if skills:
-        anchors.append("skills=" + ",".join(skills))
+    values: list[Any] = [profile.summary, *profile.skills]
 
     # One compact project anchor is enough to personalize retrieval.  Taking
     # the first project is intentional: the query must not become a copy of a
     # complete resume, and the source model already provides stable ordering.
     if profile.projects:
         project = profile.projects[0]
-        name = _clean_text(project.name, limit=48)
-        description = _clean_text(project.description, limit=72)
-        technologies = ",".join(_dedupe_non_blank(project.technologies, limit=4))
-        project_parts = [part for part in (name, description) if part]
-        if technologies:
-            project_parts.append(technologies)
-        if project_parts:
-            anchors.append("project=" + "/".join(project_parts))
+        values.extend(
+            [
+                project.name,
+                project.description,
+                *project.responsibilities,
+                *project.achievements,
+                *project.technologies,
+            ]
+        )
 
-    return anchors
+    return _extract_canonical_terms(values)
 
 
 def _job_anchors(profile: JobProfile | None) -> list[str]:
     if profile is None:
         return []
 
-    anchors: list[str] = []
+    values: list[Any] = [profile.role, *profile.responsibilities]
     for requirement in profile.requirements[:4]:
-        name = _clean_text(requirement.name, limit=32)
-        description = _clean_text(requirement.description, limit=72)
-        value = ":".join(part for part in (name, description) if part)
-        if value and not _is_sensitive_text(value):
-            anchors.append(value)
-    if not anchors:
-        anchors.extend(_dedupe_non_blank(profile.responsibilities, limit=3))
-    return anchors
+        values.extend([requirement.name, requirement.description])
+    return _extract_canonical_terms(values)
 
 
 def _recent_answer_anchors(turns: Sequence[InterviewTurn]) -> list[str]:
     answered = [turn for turn in turns if (turn.answer or "").strip()]
     answered.sort(key=lambda turn: (turn.sequence_number, turn.id))
-    anchors: list[str] = []
+    values: list[Any] = []
     for turn in answered[-2:]:
-        question = _clean_text(turn.question, limit=72)
-        answer = _clean_text(turn.answer, limit=112)
-        value = ":".join(part for part in (question, answer) if part)
-        if value and not _is_sensitive_text(value):
-            anchors.append(value)
-    return anchors
+        values.extend([turn.question, turn.answer])
+    return _extract_canonical_terms(values)
 
 
 def build_question_retrieval_intent(
@@ -442,6 +503,8 @@ def build_question_retrieval_intent(
         raise ValueError(
             f"requirement {requirement.id} is missing planned dimension_id"
         )
+    if dimension_id not in _ROLE_PACK_DIMENSION_IDS:
+        raise ValueError(f"unsupported role dimension_id: {dimension_id}")
 
     difficulty = _MODE_DIFFICULTY[action.question_mode]
     exclusions = sorted(
@@ -454,8 +517,18 @@ def build_question_retrieval_intent(
 
     # Keep sections explicit so future audits can explain exactly which
     # bounded fact contributed to a query.  Do not include action.reason: it
-    # is free-form and may contain candidate or provider data.
-    evidence = _dedupe_non_blank(evidence_summaries, limit=3)
+    # is free-form and may contain candidate or provider data.  Source fields
+    # are projected through the centralized allowlist; raw spans never reach
+    # _bounded_section or the embedding client.
+    objective = _controlled_terms_value(
+        _extract_canonical_terms([target.objective])
+    )
+    requirement_terms = _controlled_terms_value(
+        _extract_canonical_terms([requirement.description])
+    )
+    evidence = _controlled_terms_value(
+        _extract_canonical_terms(evidence_summaries)
+    )
     parts = [
         _bounded_section(
             "dimension",
@@ -470,49 +543,47 @@ def build_question_retrieval_intent(
         _bounded_section("depth", difficulty, _QUERY_SECTION_BUDGETS["depth"]),
         _bounded_section(
             "objective",
-            target.objective,
+            objective,
             _QUERY_SECTION_BUDGETS["objective"],
         ),
         _bounded_section(
             "requirement",
-            requirement.description,
+            requirement_terms,
             _QUERY_SECTION_BUDGETS["requirement"],
         ),
+        _bounded_section(
+            "coverage_gap",
+            evidence,
+            _QUERY_SECTION_BUDGETS["coverage_gap"],
+        ),
     ]
-    if evidence:
-        parts.append(
-            _bounded_section(
-                "coverage_gap",
-                ";".join(evidence),
-                _QUERY_SECTION_BUDGETS["coverage_gap"],
-            )
-        )
 
     job = _job_anchors(job_profile)
-    if job:
-        parts.append(
-            _bounded_section("jd", ";".join(job), _QUERY_SECTION_BUDGETS["jd"])
+    parts.append(
+        _bounded_section(
+            "jd",
+            _controlled_terms_value(job),
+            _QUERY_SECTION_BUDGETS["jd"],
         )
+    )
 
     resume = _resume_anchors(resume_profile)
-    if resume:
-        parts.append(
-            _bounded_section(
-                "resume",
-                ";".join(resume),
-                _QUERY_SECTION_BUDGETS["resume"],
-            )
+    parts.append(
+        _bounded_section(
+            "resume",
+            _controlled_terms_value(resume),
+            _QUERY_SECTION_BUDGETS["resume"],
         )
+    )
 
     recent = _recent_answer_anchors(recent_turns)
-    if recent:
-        parts.append(
-            _bounded_section(
-                "recent",
-                ";".join(recent),
-                _QUERY_SECTION_BUDGETS["recent"],
-            )
+    parts.append(
+        _bounded_section(
+            "recent",
+            _controlled_terms_value(recent),
+            _QUERY_SECTION_BUDGETS["recent"],
         )
+    )
 
     query_text = _clip_query(parts)
     # The static fields above should always leave a non-empty query.  Keep an
