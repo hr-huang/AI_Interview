@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 from datetime import date
+import logging
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 from uuid import uuid4
+
+from qdrant_client import QdrantClient
+from qdrant_client.models import Distance, PointStruct, VectorParams
 
 from profile_agent.knowledge.qdrant_question_store import (
     COLLECTION_NAME,
@@ -327,6 +331,72 @@ class QdrantQuestionStoreTests(unittest.TestCase):
                     self.fingerprint,
                 )
 
+        self.assertEqual(self.search(store).hits[0].record.question_id, "q-old")
+        self.assertEqual(store.get_manifest(), self.fingerprint)
+
+    def test_legacy_collection_alias_failure_preserves_old_index(self) -> None:
+        client = QdrantClient(path=":memory:")
+        client.create_collection(
+            collection_name=COLLECTION_NAME,
+            vectors_config=VectorParams(size=3, distance=Distance.COSINE),
+        )
+        store = QdrantQuestionStore(client=client, fingerprint=self.fingerprint)
+        old = self.record("q-old")
+        old_payload = store._record_to_payload(old)
+        old_payload["record_type"] = "question"
+        old_payload["valid_until_epoch"] = old.valid_until.toordinal()
+        client.upsert(
+            collection_name=COLLECTION_NAME,
+            points=[
+                store._manifest_point(self.fingerprint),
+                PointStruct(
+                    id=store._question_point_id(old.question_id),
+                    vector=[1.0, 0.0, 0.0],
+                    payload=old_payload,
+                ),
+            ],
+        )
+
+        with patch.object(
+            client,
+            "update_collection_aliases",
+            side_effect=RuntimeError("injected legacy alias failure"),
+        ):
+            with self.assertRaises(RuntimeError):
+                store.rebuild(
+                    [self.record("q-new")],
+                    [[0.0, 1.0, 0.0]],
+                    self.fingerprint,
+                )
+
+        result = self.search(store)
+        self.assertEqual(result.status, "hit")
+        self.assertEqual(result.hits[0].record.question_id, "q-old")
+        self.assertEqual(store.get_manifest(), self.fingerprint)
+        self.assertEqual(client.get_aliases().aliases, [])
+
+    def test_temporary_cleanup_failure_is_logged_and_old_index_remains(self) -> None:
+        store = self.make_store(fingerprint=self.fingerprint)
+        store.rebuild([self.record("q-old")], [[1.0, 0.0, 0.0]], self.fingerprint)
+
+        with patch.object(store.client, "upsert", side_effect=RuntimeError("injected write")):
+            with patch.object(
+                store.client,
+                "delete_collection",
+                side_effect=RuntimeError("injected cleanup"),
+            ):
+                with self.assertLogs(
+                    "profile_agent.knowledge.qdrant_question_store",
+                    level=logging.WARNING,
+                ) as captured:
+                    with self.assertRaises(RuntimeError):
+                        store.rebuild(
+                            [self.record("q-new")],
+                            [[0.0, 1.0, 0.0]],
+                            self.fingerprint,
+                        )
+
+        self.assertTrue(any("cleanup failed" in line for line in captured.output))
         self.assertEqual(self.search(store).hits[0].record.question_id, "q-old")
         self.assertEqual(store.get_manifest(), self.fingerprint)
 

@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
+import logging
 import math
 from pathlib import Path
 from typing import Any, Literal
@@ -47,6 +48,7 @@ _QUESTION_RECORD_TYPE = "question"
 _MANIFEST_KEY = "__interview_question_index_manifest__"
 _NAMESPACE = uuid5(NAMESPACE_URL, "keda-profile-agent/interview-questions")
 _SEARCH_STATUSES = Literal["hit", "no_match", "unavailable", "index_mismatch"]
+logger = logging.getLogger(__name__)
 
 
 class IndexFingerprint(BaseModel):
@@ -552,20 +554,7 @@ class QdrantQuestionStore:
                 ]
             )
         elif self._client.collection_exists(COLLECTION_NAME):
-            # Compatibility path for an index written by the pre-alias
-            # implementation.  All validation and staging are complete before
-            # this legacy collection is touched.
-            self._client.delete_collection(collection_name=COLLECTION_NAME)
-            self._client.update_collection_aliases(
-                [
-                    CreateAliasOperation(
-                        create_alias=CreateAlias(
-                            collection_name=new_collection,
-                            alias_name=COLLECTION_NAME,
-                        )
-                    )
-                ]
-            )
+            self._migrate_legacy_collection(new_collection)
         else:
             self._client.update_collection_aliases(
                 [
@@ -580,6 +569,97 @@ class QdrantQuestionStore:
 
         if old_collection and old_collection not in {COLLECTION_NAME, new_collection}:
             self._delete_collection_safely(old_collection)
+
+    def _migrate_legacy_collection(self, new_collection: str) -> None:
+        """Switch a pre-alias collection without losing its active snapshot."""
+
+        backup_collection = self._temporary_collection_name()
+        restore_failed = False
+        self._clone_collection(COLLECTION_NAME, backup_collection)
+        try:
+            # The complete copy is now a rollback point.  Only after it is
+            # ready do we touch the legacy fixed-name collection.
+            self._client.delete_collection(collection_name=COLLECTION_NAME)
+            try:
+                self._client.update_collection_aliases(
+                    [
+                        CreateAliasOperation(
+                            create_alias=CreateAlias(
+                                collection_name=new_collection,
+                                alias_name=COLLECTION_NAME,
+                            )
+                        )
+                    ]
+                )
+            except Exception:
+                try:
+                    self._restore_collection(
+                        backup_collection,
+                        COLLECTION_NAME,
+                    )
+                except Exception as restore_error:
+                    restore_failed = True
+                    logger.warning(
+                        "qdrant legacy collection restore failed",
+                        extra={
+                            "collection_name": COLLECTION_NAME,
+                            "error_type": type(restore_error).__name__,
+                        },
+                    )
+                raise
+        finally:
+            if not restore_failed:
+                self._delete_collection_safely(backup_collection)
+
+    def _clone_collection(self, source: str, target: str) -> None:
+        """Copy a local dense collection, including vectors and payloads."""
+
+        collection = self._client.get_collection(source)
+        vectors_config = collection.config.params.vectors
+        if not isinstance(vectors_config, VectorParams):
+            raise RuntimeError("legacy collection uses unsupported vector config")
+        try:
+            self._client.create_collection(
+                collection_name=target,
+                vectors_config=vectors_config,
+            )
+            offset: str | UUID | int | None = None
+            while True:
+                points, next_offset = self._client.scroll(
+                    collection_name=source,
+                    limit=10000,
+                    offset=offset,
+                    with_payload=True,
+                    with_vectors=True,
+                )
+                if points:
+                    cloned_points = []
+                    for point in points:
+                        if point.vector is None or isinstance(point.vector, Mapping):
+                            raise RuntimeError("legacy collection has unsupported vectors")
+                        cloned_points.append(
+                            PointStruct(
+                                id=point.id,
+                                vector=point.vector,
+                                payload=point.payload or {},
+                            )
+                        )
+                    self._client.upsert(
+                        collection_name=target,
+                        points=cloned_points,
+                        wait=True,
+                    )
+                if next_offset is None:
+                    break
+                offset = next_offset
+        except Exception:
+            self._delete_collection_safely(target)
+            raise
+
+    def _restore_collection(self, backup: str, target: str) -> None:
+        if self._client.collection_exists(target):
+            self._client.delete_collection(collection_name=target)
+        self._clone_collection(backup, target)
 
     @staticmethod
     def _temporary_collection_name() -> str:
@@ -604,9 +684,17 @@ class QdrantQuestionStore:
         try:
             if self._client.collection_exists(collection_name):
                 self._client.delete_collection(collection_name=collection_name)
-        except Exception:
+        except Exception as exc:
             # Cleanup failure must not mask the write failure or compromise the
-            # old active alias.
+            # old active alias, but it must remain diagnosable so operators can
+            # identify and reclaim an orphaned temporary collection.
+            logger.warning(
+                "qdrant collection cleanup failed",
+                extra={
+                    "collection_name": collection_name,
+                    "error_type": type(exc).__name__,
+                },
+            )
             return
 
     @staticmethod
