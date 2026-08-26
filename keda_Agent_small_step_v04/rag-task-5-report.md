@@ -86,3 +86,22 @@ malformed hit、限额传递等），逐项实现后定向测试 **20/20 passed*
 剩余风险仍为首版权重未经真实题库校准，以及上游 store 仍需遵守
 `QuestionStoreSearchResult` envelope；本模块对不可信返回已拒绝裸 list/裸 record，并保留
 明确的 unavailable 降级。
+
+## 第二轮复审修复追加
+
+针对剩余 2 项 Important 与 1 项 Minor：
+
+- 脱敏规则现在区分结构化凭证上下文与普通技术词。`API key`、`private key`、
+  `access key`、`client secret` 及大小写/下划线/连字符/camelCase 变体，在 `:`、`=`、
+  空格和引号赋值形态下会连同凭证值替换；Bearer/basic/JWT scheme、`sk-/sk_` 及常见
+  provider token 前缀仍会替换。普通 `tokenization`、`token 生命周期`、`token budget`、
+  `authorization policy`、`password rotation policy`、`credential store` 等语义不再被
+  关键词规则误删。
+- 增加正反例矩阵：split-label/API key 赋值值同时断言 query 与 FakeEmbedding 输入不含
+  secret；普通技术锚点必须原样保留；补充混合 malformed hit 和 `empty`/
+  `provider_error` 安全降级状态。
+
+本轮先以新增反例观察到 split-label 泄露与普通术语被替换的 RED，再以上下文+值模式
+实现 GREEN。最终定向测试 **22/22 passed**，全后端 `unittest discover -s tests`
+**517/517 passed**；`compileall -q profile_agent tests` 与 `git diff --check` 均通过。
+未执行真实网络请求。

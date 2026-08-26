@@ -65,38 +65,55 @@ _MODE_DIFFICULTY: dict[QuestionMode, str] = {
 _TRUST_SCORE = {"high": 1.0, "medium": 0.66, "low": 0.33}
 _EMAIL_RE = re.compile(r"(?i)\b[\w.+-]+@[\w.-]+\.[a-z]{2,}\b")
 _URL_RE = re.compile(r"(?i)\b(?:https?://|www\.)\S+")
-# Treat an anchor as untrusted text.  The assignment/header pattern is
-# deliberately not anchored with ``\b``: environment variables such as
-# ``SILICONFLOW_API_KEY`` have an underscore immediately before ``API_KEY``.
+# Treat an anchor as untrusted text.  Labels are only considered credentials
+# when a delimiter, a structured key/value shape, or an auth scheme supplies
+# the surrounding context.  Bare technical words such as ``token budget`` and
+# ``authorization policy`` therefore remain useful retrieval anchors.
+_SECRET_LABEL = (
+    r"(?:"
+    r"(?:[a-z0-9][a-z0-9_.-]*[_.-])?"
+    r"(?:api|access|private|client|auth(?:entication)?)(?:[_-]|\s+)?"
+    r"(?:key|secret|token)(?:[_-][a-z0-9]+)*"
+    r"|secret(?:[_-]token)?|token|authorization|bearer|password|credential"
+    r")"
+)
+_STRUCTURED_SECRET_LABEL = (
+    r"(?:[a-z0-9][a-z0-9_.-]*[_.-])?"
+    r"(?:api|access|private|client|auth(?:entication)?)(?:[_-]|\s+)?"
+    r"(?:key|secret|token)(?:[_-][a-z0-9]+)*"
+)
+_SECRET_VALUE = r"(?:\"[^\"]*\"|'[^']*'|[^\s,;|]+)"
+_SECRET_LIKE_VALUE = (
+    r"(?:\"[^\"]*\"|'[^']*'|"
+    r"(?=[^\s,;|]*\d)[^\s,;|]+|"
+    r"(?=[^\s,;|]*[-_./+=])[^\s,;|]+|"
+    r"[A-Za-z0-9]{1,3})"
+)
 _SECRET_ASSIGNMENT_RE = re.compile(
-    r"(?ix)(?<![a-z0-9])(?:[a-z0-9][a-z0-9_.-]*[_.-])?"
-    r"(?:api[_-]?(?:key|secret|token)|access[_-]?(?:key|secret|token)|"
-    r"private[_-]?(?:key|secret|token)|client[_-]?(?:secret|token|key)|"
-    r"auth(?:entication)?[_-]?(?:token|key)|secret|token|authorization|"
-    r"bearer|password|credential)"
-    r"(?:[a-z0-9_.-]*)\s*(?:=|:|\s+)\s*"
-    r"(?:(?:bearer|basic|token|jwt)\s+)?(?:\"[^\"]*\"|'[^']*'|[^\s,;|]+)"
+    rf"(?ix)(?<![a-z0-9]){_SECRET_LABEL}"
+    rf"\s*(?:=|:)\s*(?:(?:bearer|basic|token|jwt)\s+)?{_SECRET_VALUE}"
+)
+_SECRET_SPACED_ASSIGNMENT_RE = re.compile(
+    rf"(?ix)(?<![a-z0-9]){_STRUCTURED_SECRET_LABEL}\s+"
+    rf"{_SECRET_LIKE_VALUE}(?![a-z0-9])"
+)
+_TOKEN_SPACED_ASSIGNMENT_RE = re.compile(
+    rf"(?ix)(?<![a-z0-9])token\s+{_SECRET_LIKE_VALUE}(?![a-z0-9])"
 )
 _AUTH_HEADER_RE = re.compile(
-    r"(?ix)(?<![a-z0-9])(?:authorization|proxy-authorization|x-api-key|api-key)"
-    r"\s*[:=]\s*(?:(?:bearer|basic|token|jwt)\s+)?"
-    r"(?:\"[^\"]*\"|'[^']*'|[^\s,;|]+)"
+    rf"(?ix)(?<![a-z0-9_.-])(?:authorization|proxy-authorization|"
+    rf"x[-_]api[-_]key|api[-_]?key|api\s+key)\s*[:=]\s*"
+    rf"(?:(?:bearer|basic|token|jwt)\s+)?{_SECRET_VALUE}"
 )
 _AUTH_HEADER_SPACED_RE = re.compile(
-    r"(?ix)(?<![a-z0-9])(?:authorization|proxy-authorization|x-api-key|api-key)"
-    r"\s+(?:(?:bearer|basic|token|jwt)\s+)?"
-    r"(?:\"[^\"]*\"|'[^']*'|[^\s,;|]+)"
+    rf"(?ix)(?<![a-z0-9_.-])(?:authorization|proxy-authorization)\s+"
+    rf"(?:bearer|basic|token|jwt)\s+{_SECRET_VALUE}"
 )
 _AUTH_SCHEME_RE = re.compile(
-    r"(?ix)(?<![a-z0-9])(?:bearer|basic|token|jwt)\s+"
-    r"(?:\"[^\"]*\"|'[^']*'|[a-z0-9._~+/=-]+)"
+    rf"(?ix)(?<![a-z0-9])(?:bearer|basic|jwt)\s+{_SECRET_VALUE}"
 )
-_SECRET_LABEL_RE = re.compile(
-    r"(?ix)(?<![a-z0-9])(?:api[_-]?(?:key|secret|token)|"
-    r"access[_-]?(?:key|secret|token)|private[_-]?(?:key|secret|token)|"
-    r"client[_-]?(?:secret|token|key)|auth(?:entication)?[_-]?(?:token|key)|"
-    r"secret(?:[_-]?token)?|token|authorization|bearer|password|credential)"
-    r"(?![a-z0-9])"
+_SECRET_COMPOUND_RE = re.compile(
+    r"(?ix)(?<![a-z0-9])secret[-_]token(?![a-z0-9])"
 )
 _SECRET_PREFIX_RE = re.compile(
     r"(?ix)(?<![a-z0-9])(?:(?:sk|rk|pk)[_-](?:(?:live|test|proj)[_-])?"
@@ -235,11 +252,13 @@ def _clean_text(value: Any, *, limit: int | None = None) -> str:
     text = _AUTH_HEADER_RE.sub(_REDACTED_SECRET, text)
     text = _AUTH_HEADER_SPACED_RE.sub(_REDACTED_SECRET, text)
     text = _SECRET_ASSIGNMENT_RE.sub(_REDACTED_SECRET, text)
+    text = _SECRET_SPACED_ASSIGNMENT_RE.sub(_REDACTED_SECRET, text)
+    text = _TOKEN_SPACED_ASSIGNMENT_RE.sub(_REDACTED_SECRET, text)
     text = _AUTH_SCHEME_RE.sub(_REDACTED_SECRET, text)
     text = _SECRET_PREFIX_RE.sub(_REDACTED_SECRET, text)
     text = _JWT_RE.sub(_REDACTED_SECRET, text)
     text = _LONG_OPAQUE_RE.sub(_REDACTED_SECRET, text)
-    text = _SECRET_LABEL_RE.sub(_REDACTED_SECRET, text)
+    text = _SECRET_COMPOUND_RE.sub(_REDACTED_SECRET, text)
     text = _EMAIL_RE.sub("[redacted-email]", text)
     text = _URL_RE.sub("[redacted-url]", text)
     text = _PHONE_RE.sub("[redacted-phone]", text)

@@ -294,6 +294,11 @@ class IntentBuilderTests(unittest.TestCase):
             ("SILICONFLOW_API_KEY=sf-secret-123", "sf-secret-123"),
             ("OPENAI_API_KEY openai-secret", "openai-secret"),
             ("OPENAI_API_KEY='quoted openai secret'", "quoted openai secret"),
+            ("API key: split-api-secret", "split-api-secret"),
+            ("private key = 'split-private-secret'", "split-private-secret"),
+            ("access key split-access-secret", "split-access-secret"),
+            ("client secret: split-client-secret", "split-client-secret"),
+            ("API KEY=split-uppercase-secret", "split-uppercase-secret"),
             ("AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE", "AKIAIOSFODNN7EXAMPLE"),
             ("AWS_SECRET_ACCESS_KEY=aws-secret", "aws-secret"),
             (
@@ -315,6 +320,7 @@ class IntentBuilderTests(unittest.TestCase):
             ("sk_live_short", "sk_live_short"),
             ("ghp_1234567890abcdef1234567890abcdef", "ghp_1234567890abcdef1234567890abcdef"),
             ("token: plain-secret-value", "plain-secret-value"),
+            ("token token123", "token123"),
         ]
         for attack, secret_value in attacks:
             with self.subTest(attack=attack):
@@ -335,12 +341,35 @@ class IntentBuilderTests(unittest.TestCase):
                     self.assertNotIn("openai", intent.query_text.lower())
                 if "quoted" in attack:
                     self.assertNotIn("quoted", intent.query_text)
+                if "split-" in attack:
+                    self.assertNotIn("split-", intent.query_text)
 
                 embedding = FakeEmbedding()
                 store = FakeStore(QuestionStoreSearchResult(status="no_match"))
                 QuestionRetriever(embedding, store, today=TODAY).retrieve(intent)
                 self.assertEqual(embedding.inputs, [intent.query_text])
                 self.assertNotIn(secret_value, embedding.inputs[0])
+
+    def test_builder_preserves_ordinary_token_and_authorization_technical_terms(self) -> None:
+        technical_terms = [
+            "tokenization strategy",
+            "token 生命周期",
+            "工具 token 调用和上下文",
+            "token budget",
+            "OAuth authorization code flow",
+            "authorization policy",
+            "password rotation policy",
+            "credential store",
+        ]
+
+        for term in technical_terms:
+            with self.subTest(term=term):
+                intent = build_question_retrieval_intent(
+                    action=make_action(),
+                    plan=make_plan(),
+                    evidence_summaries=[term],
+                )
+                self.assertIn(term, intent.query_text)
 
     def test_builder_preserves_all_sections_under_independent_budgets(self) -> None:
         long_value = "锚点-" * 400
@@ -611,6 +640,29 @@ class RetrieverTests(unittest.TestCase):
         self.assertEqual(result.status, "unavailable")
         self.assertIsNone(result.selected_question)
 
+    def test_retriever_skips_a_malformed_hit_when_a_valid_hit_exists(self) -> None:
+        malformed = RetrievedQuestion(
+            record=make_record("q_malformed"),
+            score=0.9,
+            index_version="idx",
+        ).model_copy(update={"score": None})
+        valid = RetrievedQuestion(record=make_record("q_valid"), score=0.8, index_version="idx")
+        store = FakeStore(
+            QuestionStoreSearchResult(
+                status="hit",
+                hits=[malformed, valid],
+                index_version="idx",
+            )
+        )
+        retriever = QuestionRetriever(FakeEmbedding(), store, today=TODAY)
+
+        result = retriever.retrieve(
+            build_question_retrieval_intent(action=make_action(), plan=make_plan())
+        )
+
+        self.assertEqual(result.status, "hit")
+        self.assertEqual(result.selected_question.question_id, "q_valid")
+
     def test_retriever_requires_real_store_hit_and_keeps_trace_score_provenance_equal(self) -> None:
         selected = RetrievedQuestion(record=make_record("q_valid"), score=0.91, index_version="idx")
         embedding = FakeEmbedding()
@@ -661,6 +713,17 @@ class RetrieverTests(unittest.TestCase):
                 )
                 result = retriever.retrieve(intent)
                 self.assertEqual(result.status, status)
+                self.assertIsNone(result.selected_question)
+
+        for status in ("empty", "provider_error"):
+            with self.subTest(status=status):
+                retriever = QuestionRetriever(
+                    FakeEmbedding(),
+                    FakeStore(QuestionStoreSearchResult(status=status)),  # type: ignore[arg-type]
+                    today=TODAY,
+                )
+                result = retriever.retrieve(intent)
+                self.assertEqual(result.status, "unavailable")
                 self.assertIsNone(result.selected_question)
 
         for dependency in (FakeEmbedding(error=RuntimeError("private secret")), FakeEmbedding()):
