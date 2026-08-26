@@ -187,10 +187,15 @@ class RunQuestionBankTests(unittest.TestCase):
     def test_apply_uses_canonical_embedding_aliases_and_identity(self) -> None:
         bank = self._write_bank()
         store = FakeStore()
+        factory_kwargs: dict[str, object] = {}
 
         class PlainEmbedding:
             def embed(self, texts: list[str]) -> list[list[float]]:
                 return [[1.0, 2.0, 3.0] for _ in texts]
+
+        def embedding_factory(**kwargs):
+            factory_kwargs.update(kwargs)
+            return PlainEmbedding()
 
         code, stdout, stderr = self._run(
             ["rebuild", "--bank", str(bank), "--apply", "--format", "json"],
@@ -201,7 +206,7 @@ class RunQuestionBankTests(unittest.TestCase):
                 "QUESTION_RAG_EMBEDDING_DIMENSION": "3",
                 "QUESTION_RAG_INDEX_VERSION": "canonical-index-v2",
             },
-            embedding_factory=lambda **_: PlainEmbedding(),
+            embedding_factory=embedding_factory,
             store_factory=lambda **_: store,
         )
 
@@ -212,6 +217,7 @@ class RunQuestionBankTests(unittest.TestCase):
         self.assertEqual(fingerprint.model, "canonical-model")
         self.assertEqual(fingerprint.dimension, 3)
         self.assertEqual(fingerprint.index_version, "canonical-index-v2")
+        self.assertEqual(factory_kwargs["model"], fingerprint.model)
         self.assertIn("canonical-model", stdout)
         self.assertEqual(stderr, "")
 
@@ -768,6 +774,54 @@ class RunQuestionBankTests(unittest.TestCase):
                 index_path=Path(self.temp_dir.name),
                 dimension=3.5,
             )
+
+    def test_runtime_expected_fingerprint_uses_shared_resolver(self) -> None:
+        from profile_agent.knowledge import qdrant_question_store
+        from profile_agent.services import question_retrieval_service
+        from profile_agent.services import siliconflow_embedding_service
+        from profile_agent.web import container
+
+        index_path = Path(self.temp_dir.name) / "runtime-index"
+        index_path.mkdir()
+        with patch.dict(
+            os.environ,
+            {
+                "QUESTION_RAG_INDEX_PATH": str(index_path),
+                "QUESTION_RAG_EMBEDDING_MODEL": "question-runtime-model",
+                "SILICONFLOW_EMBEDDING_MODEL": "legacy-runtime-model",
+                "QUESTION_RAG_EMBEDDING_PROVIDER": "question-runtime-provider",
+                "QUESTION_RAG_EMBEDDING_DIMENSION": "3",
+                "QUESTION_RAG_INDEX_VERSION": "question-runtime-v2",
+                "SILICONFLOW_EMBEDDING_BASE_URL": "https://runtime.example/v1",
+                "SILICONFLOW_API_KEY": "runtime-fake-key",
+            },
+            clear=False,
+        ):
+            with patch.object(
+                siliconflow_embedding_service,
+                "SiliconFlowEmbeddingClient",
+            ) as embedding_cls, patch.object(
+                qdrant_question_store,
+                "QdrantQuestionStore",
+            ) as store_cls, patch.object(
+                question_retrieval_service,
+                "QuestionRetriever",
+            ) as retriever_cls:
+                embedding_cls.return_value = object()
+                store_cls.return_value = object()
+                retriever_cls.return_value = object()
+
+                factory = container._question_retriever_factory_from_env()
+                self.assertIsNotNone(factory)
+                factory()
+
+        embedding_cls.from_env.assert_called_once_with()
+        store_kwargs = store_cls.call_args.kwargs
+        fingerprint = store_kwargs["expected_fingerprint"]
+        self.assertEqual(fingerprint.model, "question-runtime-model")
+        self.assertEqual(fingerprint.provider, "question-runtime-provider")
+        self.assertEqual(fingerprint.dimension, 3)
+        self.assertEqual(fingerprint.index_version, "question-runtime-v2")
 
     def test_argument_errors_do_not_echo_untrusted_input(self) -> None:
         secret = "api-key=argument-secret-must-not-print"

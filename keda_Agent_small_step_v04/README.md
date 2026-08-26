@@ -264,6 +264,7 @@ python -m compileall profile_agent tests run_interview_demo.py
 # 必须仅在本机 apply 前设置，禁止提交或复制到仓库
 # SILICONFLOW_API_KEY
 # 未设置时使用程序默认值；需要覆盖时再在本机设置
+# QUESTION_RAG_EMBEDDING_MODEL（优先）
 # SILICONFLOW_EMBEDDING_MODEL
 # SILICONFLOW_EMBEDDING_BASE_URL
 # QUESTION_RAG_INDEX_VERSION
@@ -280,7 +281,8 @@ python -m compileall profile_agent tests run_interview_demo.py
 
 默认索引身份与运行时一致：provider=`siliconflow`、model=`BAAI/bge-m3`、dimension=`1024`、
 index version=`questions-v1`；`QUESTION_RAG_EMBEDDING_*` 覆盖项会在 CLI 与运行时使用相同的
-优先级解析。
+优先级解析。模型优先读取 `QUESTION_RAG_EMBEDDING_MODEL`，未设置时兼容旧变量
+`SILICONFLOW_EMBEDDING_MODEL`，两者都未设置才使用 `BAAI/bge-m3`。
 
 命令退出码固定为：`0` 成功，`1` embedding/Qdrant 等操作失败，`2` 参数、配置或题库校验
 失败。`tests/fixtures/question_rag/minimal_question_bank.json` 是明确标记的

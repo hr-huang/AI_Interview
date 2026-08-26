@@ -5,9 +5,12 @@ from __future__ import annotations
 import logging
 import math
 import os
+import re
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
+from urllib.parse import urlparse
 
 import httpx
 
@@ -16,8 +19,170 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "BAAI/bge-m3"
 DEFAULT_BASE_URL = "https://api.siliconflow.cn/v1"
+DEFAULT_PROVIDER = "siliconflow"
+DEFAULT_DIMENSION = 1024
+DEFAULT_INDEX_VERSION = "questions-v1"
 _RETRYABLE_STATUS_CODES = frozenset({429}) | frozenset(range(500, 600))
 _INVALID_RESPONSE = object()
+
+
+class EmbeddingConfigurationError(ValueError):
+    """Raised when the shared embedding/index identity is not usable."""
+
+
+@dataclass(frozen=True)
+class EmbeddingConfig:
+    """Canonical provider identity shared by writers, readers, and clients."""
+
+    provider: str
+    model: str
+    dimension: int
+    index_version: str
+    base_url: str
+
+
+def _env_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        return str(value).strip()
+    return value.strip()
+
+
+def _first_non_blank(
+    env: Mapping[str, Any],
+    names: Sequence[str],
+    default: str,
+) -> str:
+    for name in names:
+        value = env.get(name)
+        text = _env_text(value)
+        if text:
+            return text
+    return default.strip()
+
+
+def _require_config_text(value: Any, label: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise EmbeddingConfigurationError(f"{label} must not be blank")
+    return value.strip()
+
+
+def parse_embedding_dimension(value: Any) -> int:
+    """Parse a positive integer dimension without silently truncating values."""
+
+    if isinstance(value, bool):
+        raise EmbeddingConfigurationError(
+            "embedding dimension must be a positive integer"
+        )
+    if isinstance(value, int):
+        dimension = value
+    elif isinstance(value, str) and re.fullmatch(r"[+]?[0-9]+", value.strip()):
+        try:
+            dimension = int(value.strip())
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise EmbeddingConfigurationError(
+                "embedding dimension must be a positive integer"
+            ) from exc
+    else:
+        raise EmbeddingConfigurationError(
+            "embedding dimension must be a positive integer"
+        )
+    if dimension <= 0:
+        raise EmbeddingConfigurationError(
+            "embedding dimension must be a positive integer"
+        )
+    return dimension
+
+
+def _validate_base_url(value: Any) -> str:
+    base_url = _require_config_text(value, "embedding base URL")
+    try:
+        parsed = urlparse(base_url)
+        # Accessing .port forces urlparse to validate malformed port syntax.
+        _ = parsed.port
+    except (UnicodeError, ValueError) as exc:
+        raise EmbeddingConfigurationError("embedding base URL is invalid") from exc
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise EmbeddingConfigurationError("embedding base URL is invalid")
+    return base_url
+
+
+def resolve_embedding_config(
+    env: Mapping[str, Any] | None = None,
+    *,
+    model: str | None = None,
+    provider: str | None = None,
+    dimension: int | str | None = None,
+    index_version: str | None = None,
+    base_url: str | None = None,
+) -> EmbeddingConfig:
+    """Resolve the canonical provider/index identity from one environment.
+
+    ``QUESTION_RAG_EMBEDDING_MODEL`` is the preferred model setting, while
+    ``SILICONFLOW_EMBEDDING_MODEL`` remains a compatibility fallback.  Blank
+    environment values are treated as unset; explicit function overrides are
+    validated as values and therefore cannot be blank.
+    """
+
+    environment = os.environ if env is None else env
+    if not isinstance(environment, Mapping):
+        raise EmbeddingConfigurationError("environment configuration is invalid")
+    resolved_model = _require_config_text(
+        model
+        if model is not None
+        else _first_non_blank(
+            environment,
+            ("QUESTION_RAG_EMBEDDING_MODEL", "SILICONFLOW_EMBEDDING_MODEL"),
+            DEFAULT_MODEL,
+        ),
+        "embedding model",
+    )
+    resolved_provider = _require_config_text(
+        provider
+        if provider is not None
+        else _first_non_blank(
+            environment,
+            ("QUESTION_RAG_EMBEDDING_PROVIDER",),
+            DEFAULT_PROVIDER,
+        ),
+        "embedding provider",
+    )
+    resolved_dimension = parse_embedding_dimension(
+        dimension
+        if dimension is not None
+        else _first_non_blank(
+            environment,
+            ("QUESTION_RAG_EMBEDDING_DIMENSION",),
+            str(DEFAULT_DIMENSION),
+        )
+    )
+    resolved_index_version = _require_config_text(
+        index_version
+        if index_version is not None
+        else _first_non_blank(
+            environment,
+            ("QUESTION_RAG_INDEX_VERSION",),
+            DEFAULT_INDEX_VERSION,
+        ),
+        "index version",
+    )
+    resolved_base_url = _validate_base_url(
+        base_url
+        if base_url is not None
+        else _first_non_blank(
+            environment,
+            ("SILICONFLOW_EMBEDDING_BASE_URL",),
+            DEFAULT_BASE_URL,
+        )
+    )
+    return EmbeddingConfig(
+        provider=resolved_provider,
+        model=resolved_model,
+        dimension=resolved_dimension,
+        index_version=resolved_index_version,
+        base_url=resolved_base_url,
+    )
 
 
 @runtime_checkable
@@ -47,6 +212,8 @@ class SiliconFlowEmbeddingClient:
         api_key: str,
         model: str = DEFAULT_MODEL,
         base_url: str = DEFAULT_BASE_URL,
+        provider: str = DEFAULT_PROVIDER,
+        dimension: int | None = None,
         timeout_seconds: float = 30.0,
         max_attempts: int = 2,
         http_client: httpx.Client | None = None,
@@ -57,6 +224,13 @@ class SiliconFlowEmbeddingClient:
             raise ValueError("embedding model 不能为空")
         if not isinstance(base_url, str) or not base_url.strip():
             raise ValueError("embedding base URL 不能为空")
+        if not isinstance(provider, str) or not provider.strip():
+            raise ValueError("embedding provider 不能为空")
+        if dimension is not None:
+            try:
+                dimension = parse_embedding_dimension(dimension)
+            except EmbeddingConfigurationError as exc:
+                raise ValueError(str(exc)) from exc
         if isinstance(timeout_seconds, bool) or timeout_seconds <= 0:
             raise ValueError("timeout_seconds 必须为正数")
         if isinstance(max_attempts, bool) or not isinstance(max_attempts, int) or max_attempts < 1:
@@ -65,6 +239,9 @@ class SiliconFlowEmbeddingClient:
         self.api_key = api_key.strip()
         self.model = model.strip()
         self.base_url = base_url.strip().rstrip("/")
+        self.provider = provider.strip()
+        if dimension is not None:
+            self.dimension = dimension
         self.timeout_seconds = float(timeout_seconds)
         self.max_attempts = max_attempts
         self._http_client = (
@@ -79,22 +256,22 @@ class SiliconFlowEmbeddingClient:
         cls,
         *,
         http_client: httpx.Client | None = None,
+        env: Mapping[str, Any] | None = None,
     ) -> "SiliconFlowEmbeddingClient":
         """Build a client from environment variables without reading secrets aloud."""
 
-        api_key = os.getenv("SILICONFLOW_API_KEY", "").strip()
+        environment = os.environ if env is None else env
+        config = resolve_embedding_config(environment)
+        api_key = _env_text(environment.get("SILICONFLOW_API_KEY"))
         if not api_key:
             raise ValueError("没有配置 SILICONFLOW_API_KEY, 请先设置该环境变量")
 
-        model = os.getenv("SILICONFLOW_EMBEDDING_MODEL", "").strip() or DEFAULT_MODEL
-        base_url = (
-            os.getenv("SILICONFLOW_EMBEDDING_BASE_URL", "").strip()
-            or DEFAULT_BASE_URL
-        )
         return cls(
             api_key=api_key,
-            model=model,
-            base_url=base_url,
+            model=config.model,
+            base_url=config.base_url,
+            provider=config.provider,
+            dimension=config.dimension,
             http_client=http_client,
         )
 
@@ -160,7 +337,11 @@ class SiliconFlowEmbeddingClient:
                     f"SiliconFlow embedding request failed (HTTP {response.status_code})."
                 )
 
-            return self._parse_response(response, expected_count=len(batch))
+            return self._parse_response(
+                response,
+                expected_count=len(batch),
+                expected_dimension=getattr(self, "dimension", None),
+            )
 
         # The finite range above always returns or raises.  Keep a defensive
         # branch in case the loop is changed later.
@@ -195,7 +376,12 @@ class SiliconFlowEmbeddingClient:
         return batch
 
     @staticmethod
-    def _parse_response(response: httpx.Response, *, expected_count: int) -> list[list[float]]:
+    def _parse_response(
+        response: httpx.Response,
+        *,
+        expected_count: int,
+        expected_dimension: int | None = None,
+    ) -> list[list[float]]:
         try:
             payload: Any = response.json()
         except Exception:
@@ -211,7 +397,7 @@ class SiliconFlowEmbeddingClient:
             raise EmbeddingProviderError("SiliconFlow embedding response was invalid.")
 
         vectors_by_index: dict[int, list[float]] = {}
-        expected_dimension: int | None = None
+        response_dimension: int | None = None
         for item in data:
             if not isinstance(item, dict):
                 raise EmbeddingProviderError("SiliconFlow embedding response was invalid.")
@@ -254,9 +440,13 @@ class SiliconFlowEmbeddingClient:
                 raise EmbeddingProviderError(
                     "SiliconFlow embedding response was invalid."
                 )
-            if expected_dimension is None:
-                expected_dimension = len(vector)
-            elif len(vector) != expected_dimension:
+            if expected_dimension is not None and len(vector) != expected_dimension:
+                raise EmbeddingProviderError(
+                    "SiliconFlow embedding response was invalid."
+                )
+            if response_dimension is None:
+                response_dimension = len(vector)
+            elif len(vector) != response_dimension:
                 raise EmbeddingProviderError(
                     "SiliconFlow embedding response was invalid."
                 )
@@ -281,7 +471,16 @@ class SiliconFlowEmbeddingClient:
 
 
 __all__ = [
+    "DEFAULT_BASE_URL",
+    "DEFAULT_DIMENSION",
+    "DEFAULT_INDEX_VERSION",
+    "DEFAULT_MODEL",
+    "DEFAULT_PROVIDER",
+    "EmbeddingConfig",
     "EmbeddingClient",
+    "EmbeddingConfigurationError",
     "EmbeddingProviderError",
+    "parse_embedding_dimension",
+    "resolve_embedding_config",
     "SiliconFlowEmbeddingClient",
 ]

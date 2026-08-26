@@ -92,3 +92,29 @@
 - `git diff --check -- README.md run_question_bank.py tests/test_run_question_bank.py
   rag-task-7-report.md` — **通过**；tracked secret scan（`sk-*`）— **无匹配**；未读取或打印
   任何真实 key。
+
+## 运行时 canonical embedding 修复追加
+
+- 将 provider、model、dimension、index version 与 base URL 的默认值和环境优先级收敛到
+  `profile_agent.services.siliconflow_embedding_service.resolve_embedding_config()`；
+  `QUESTION_RAG_EMBEDDING_MODEL` 优先，`SILICONFLOW_EMBEDDING_MODEL` 仅作 legacy 回退，
+  最终默认 `BAAI/bge-m3`。CLI builder、`SiliconFlowEmbeddingClient.from_env()` 与 runtime
+  container 都调用同一解析器，避免 reader/writer/client 身份漂移。
+- apply 的默认 embedding factory 将 canonical provider/dimension 传给 client；client 的实际
+  model/provider/dimension、返回向量和 manifest fingerprint 逐项校验。provider 返回维度不符
+  时在 store 构造前失败；新增测试覆盖 precedence、legacy/default、client identity、runtime
+  fingerprint 和真实响应维度校验。README 补充新模型变量及 legacy 兼容说明。
+
+## 本轮验证
+
+- Task7 + embedding service：`\.venv\Scripts\python.exe -m unittest tests.test_run_question_bank tests.test_siliconflow_embedding_service -v` — **51 passed**。
+- 全后端：`\.venv\Scripts\python.exe -m unittest discover -s tests` — **576 passed**。
+- 编译：`\.venv\Scripts\python.exe -m compileall -q profile_agent tests run_question_bank.py` —
+  **通过**。
+- `git diff --check`（Task7 相关文件）— **通过**；tracked secret scan（`sk-*`）— **无匹配**。
+
+## 本轮风险
+
+- 运行时仍需由部署环境一致设置 canonical 环境变量；legacy 模型变量只在新变量未设置时
+  生效。`--apply` 仍可能产生 embedding 费用并依赖外部服务，验证和 dry-run 不会构造付费
+  client。

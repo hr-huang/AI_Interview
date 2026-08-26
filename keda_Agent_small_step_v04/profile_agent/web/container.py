@@ -99,47 +99,23 @@ def _question_retriever_factory_from_env() -> QuestionRetrieverFactory | None:
             IndexFingerprint,
             QdrantQuestionStore,
         )
+        from profile_agent.services.siliconflow_embedding_service import (
+            SiliconFlowEmbeddingClient,
+            resolve_embedding_config,
+        )
         from profile_agent.services.question_retrieval_service import (
             QuestionRetriever,
         )
-        from profile_agent.services.siliconflow_embedding_service import (
-            DEFAULT_MODEL,
-            SiliconFlowEmbeddingClient,
-        )
-
-        model = (
-            os.getenv("QUESTION_RAG_EMBEDDING_MODEL", "").strip()
-            or os.getenv("SILICONFLOW_EMBEDDING_MODEL", "").strip()
-            or DEFAULT_MODEL
-        )
-        provider = (
-            os.getenv("QUESTION_RAG_EMBEDDING_PROVIDER", "").strip()
-            or "siliconflow"
-        )
-        index_version = (
-            os.getenv("QUESTION_RAG_INDEX_VERSION", "").strip()
-            or "questions-v1"
-        )
-        raw_dimension = (
-            os.getenv("QUESTION_RAG_EMBEDDING_DIMENSION", "").strip()
-            or "1024"
-        )
-        try:
-            dimension = int(raw_dimension)
-        except (TypeError, ValueError) as exc:
-            raise ValueError("QUESTION_RAG_EMBEDDING_DIMENSION must be positive") from exc
-        if dimension <= 0:
-            raise ValueError("QUESTION_RAG_EMBEDDING_DIMENSION must be positive")
-
+        config = resolve_embedding_config()
         embedding = SiliconFlowEmbeddingClient.from_env()
         try:
             store = QdrantQuestionStore(
                 path=index_path,
                 expected_fingerprint=IndexFingerprint(
-                    provider=provider,
-                    model=model,
-                    dimension=dimension,
-                    index_version=index_version,
+                    provider=config.provider,
+                    model=config.model,
+                    dimension=config.dimension,
+                    index_version=config.index_version,
                 ),
             )
             return QuestionRetriever(

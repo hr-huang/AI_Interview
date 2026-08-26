@@ -38,17 +38,18 @@ from profile_agent.services.question_bank_service import (
     load_question_bank,
 )
 from profile_agent.services.siliconflow_embedding_service import (
-    DEFAULT_BASE_URL as EMBEDDING_DEFAULT_BASE_URL,
-    DEFAULT_MODEL as EMBEDDING_DEFAULT_MODEL,
+    DEFAULT_BASE_URL,
+    DEFAULT_DIMENSION,
+    DEFAULT_INDEX_VERSION,
+    DEFAULT_MODEL,
+    DEFAULT_PROVIDER,
+    EmbeddingConfigurationError,
     SiliconFlowEmbeddingClient,
+    parse_embedding_dimension,
+    resolve_embedding_config,
 )
 
 
-DEFAULT_MODEL = EMBEDDING_DEFAULT_MODEL
-DEFAULT_BASE_URL = EMBEDDING_DEFAULT_BASE_URL
-DEFAULT_PROVIDER = "siliconflow"
-DEFAULT_DIMENSION = 1024
-DEFAULT_INDEX_VERSION = "questions-v1"
 DEFAULT_INDEX_PATH = Path("data/qdrant-question-index")
 DEFAULT_EXPIRING_WITHIN_DAYS = 30
 
@@ -313,26 +314,10 @@ def _env_value(env: Mapping[str, str], name: str, default: str = "") -> str:
     return value.strip()
 
 
-_MISSING_ENV_VALUE = object()
-
-
 def _require_non_blank(value: Any, label: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise QuestionBankConfigurationError(f"{label} must not be blank")
     return value.strip()
-
-
-def _validate_base_url(value: Any) -> str:
-    base_url = _require_non_blank(value, "embedding base URL")
-    try:
-        parsed = urlparse(base_url)
-        # Accessing .port forces urlparse to validate malformed port syntax.
-        _ = parsed.port
-    except (UnicodeError, ValueError) as exc:
-        raise QuestionBankConfigurationError("embedding base URL is invalid") from exc
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        raise QuestionBankConfigurationError("embedding base URL is invalid")
-    return base_url
 
 
 def _validate_index_path(value: Any) -> Path:
@@ -371,52 +356,22 @@ def _validate_index_path(value: Any) -> Path:
     return path
 
 
-def _env_text(value: Any) -> str:
-    if value is None:
-        return ""
-    if not isinstance(value, str):
-        return str(value).strip()
-    return value.strip()
-
-
-def _first_env_setting(
-    env: Mapping[str, str],
-    names: Sequence[str],
-    default: str,
-) -> str:
-    for name in names:
-        value = env.get(name, _MISSING_ENV_VALUE)
-        if value is _MISSING_ENV_VALUE:
-            continue
-        text = _env_text(value)
-        if text:
-            return text
-    return default.strip()
-
-
 def _parse_dimension_setting(value: Any) -> int:
-    if isinstance(value, bool):
-        raise QuestionBankConfigurationError(
-            "embedding dimension must be a positive integer"
-        )
-    if isinstance(value, int):
-        dimension = value
-    elif isinstance(value, str) and re.fullmatch(r"[+]?[0-9]+", value.strip()):
-        try:
-            dimension = int(value.strip())
-        except (TypeError, ValueError, OverflowError) as exc:
-            raise QuestionBankConfigurationError(
-                "embedding dimension must be a positive integer"
-            ) from exc
-    else:
-        raise QuestionBankConfigurationError(
-            "embedding dimension must be a positive integer"
-        )
-    if dimension <= 0:
-        raise QuestionBankConfigurationError(
-            "embedding dimension must be a positive integer"
-        )
-    return dimension
+    try:
+        return parse_embedding_dimension(value)
+    except EmbeddingConfigurationError as exc:
+        raise QuestionBankConfigurationError(str(exc)) from exc
+
+
+def _resolve_index_path_from_env(env: Mapping[str, Any]) -> str | Path:
+    for name in ("QUESTION_RAG_INDEX_PATH", "QDRANT_QUESTION_INDEX_PATH"):
+        value = env.get(name)
+        if value is None:
+            continue
+        text = value if isinstance(value, str) else str(value)
+        if text.strip():
+            return text.strip()
+    return DEFAULT_INDEX_PATH
 
 
 def build_question_index_config(
@@ -435,68 +390,25 @@ def build_question_index_config(
     validated by the caller before this builder is reached.
     """
 
-    if not isinstance(env, Mapping):
-        raise QuestionBankConfigurationError("environment configuration is invalid")
-    resolved_model = _require_non_blank(
-        model
-        if model is not None
-        else _first_env_setting(
+    try:
+        embedding_config = resolve_embedding_config(
             env,
-            ("QUESTION_RAG_EMBEDDING_MODEL", "SILICONFLOW_EMBEDDING_MODEL"),
-            DEFAULT_MODEL,
-        ),
-        "embedding model",
-    )
-    resolved_provider = _require_non_blank(
-        _first_env_setting(
-            env,
-            ("QUESTION_RAG_EMBEDDING_PROVIDER",),
-            DEFAULT_PROVIDER,
-        ),
-        "embedding provider",
-    )
-    if dimension is None:
-        raw_dimension = _first_env_setting(
-            env,
-            ("QUESTION_RAG_EMBEDDING_DIMENSION",),
-            str(DEFAULT_DIMENSION),
+            model=model,
+            index_version=index_version,
+            dimension=dimension,
         )
-        resolved_dimension = _parse_dimension_setting(raw_dimension)
-    else:
-        resolved_dimension = _parse_dimension_setting(dimension)
-    resolved_version = _require_non_blank(
-        index_version
-        if index_version is not None
-        else _first_env_setting(
-            env,
-            ("QUESTION_RAG_INDEX_VERSION",),
-            DEFAULT_INDEX_VERSION,
-        ),
-        "index version",
-    )
+    except EmbeddingConfigurationError as exc:
+        raise QuestionBankConfigurationError(str(exc)) from exc
     resolved_path = _validate_index_path(
-        index_path
-        if index_path is not None
-        else _first_env_setting(
-            env,
-            ("QUESTION_RAG_INDEX_PATH", "QDRANT_QUESTION_INDEX_PATH"),
-            str(DEFAULT_INDEX_PATH),
-        )
-    )
-    resolved_base_url = _validate_base_url(
-        _first_env_setting(
-            env,
-            ("SILICONFLOW_EMBEDDING_BASE_URL",),
-            DEFAULT_BASE_URL,
-        )
+        index_path if index_path is not None else _resolve_index_path_from_env(env)
     )
     return QuestionIndexConfig(
-        provider=resolved_provider,
-        model=resolved_model,
-        dimension=resolved_dimension,
-        index_version=resolved_version,
+        provider=embedding_config.provider,
+        model=embedding_config.model,
+        dimension=embedding_config.dimension,
+        index_version=embedding_config.index_version,
         index_path=resolved_path,
-        base_url=resolved_base_url,
+        base_url=embedding_config.base_url,
     )
 
 
@@ -1171,11 +1083,15 @@ def _default_embedding_factory(
     api_key: str,
     model: str,
     base_url: str,
+    provider: str = DEFAULT_PROVIDER,
+    dimension: int = DEFAULT_DIMENSION,
 ) -> SiliconFlowEmbeddingClient:
     return SiliconFlowEmbeddingClient(
         api_key=api_key,
         model=model,
         base_url=base_url,
+        provider=provider,
+        dimension=dimension,
     )
 
 
@@ -1828,7 +1744,14 @@ def main(
 
         embedding_kwargs: dict[str, Any] = {"model": model}
         if using_default_embedding:
-            embedding_kwargs.update({"api_key": api_key, "base_url": base_url})
+            embedding_kwargs.update(
+                {
+                    "api_key": api_key,
+                    "base_url": base_url,
+                    "provider": config.provider,
+                    "dimension": config.dimension,
+                }
+            )
         # Never pass the API key to a caller-provided fake/factory.  The
         # default factory is the only seam that needs it, and this keeps test
         # call arguments and exception paths secret-free by construction.

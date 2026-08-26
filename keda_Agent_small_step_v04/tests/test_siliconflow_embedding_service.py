@@ -9,8 +9,13 @@ from unittest.mock import patch
 import httpx
 
 from profile_agent.services.siliconflow_embedding_service import (
+    DEFAULT_DIMENSION,
+    DEFAULT_INDEX_VERSION,
+    DEFAULT_MODEL,
+    DEFAULT_PROVIDER,
     EmbeddingProviderError,
     SiliconFlowEmbeddingClient,
+    resolve_embedding_config,
 )
 
 
@@ -99,6 +104,20 @@ class SiliconFlowEmbeddingClientTests(unittest.TestCase):
             client.close()
 
         self.assertNotIn("0.1", str(raised.exception))
+
+    def test_rejects_vectors_that_do_not_match_configured_dimension(self) -> None:
+        def handler(_: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json={"data": [{"index": 0, "embedding": [0.1]}]},
+            )
+
+        client, _ = self._client(handler, dimension=2)
+        try:
+            with self.assertRaises(EmbeddingProviderError):
+                client.embed(["first"])
+        finally:
+            client.close()
 
     def test_rejects_empty_embedding_vector(self) -> None:
         def handler(_: httpx.Request) -> httpx.Response:
@@ -201,6 +220,62 @@ class SiliconFlowEmbeddingClientTests(unittest.TestCase):
         self.assertEqual(client.api_key, "env-key")
         self.assertEqual(client.model, "custom-model")
         self.assertEqual(client.base_url, "https://embedding.example/v1")
+
+    def test_resolver_prefers_question_alias_over_legacy_model(self) -> None:
+        config = resolve_embedding_config(
+            {
+                "QUESTION_RAG_EMBEDDING_MODEL": "question-model",
+                "SILICONFLOW_EMBEDDING_MODEL": "legacy-model",
+                "QUESTION_RAG_EMBEDDING_PROVIDER": "question-provider",
+                "QUESTION_RAG_EMBEDDING_DIMENSION": "3",
+                "QUESTION_RAG_INDEX_VERSION": "question-index-v2",
+                "SILICONFLOW_EMBEDDING_BASE_URL": "https://embedding.example/v2",
+            }
+        )
+
+        self.assertEqual(config.model, "question-model")
+        self.assertEqual(config.provider, "question-provider")
+        self.assertEqual(config.dimension, 3)
+        self.assertEqual(config.index_version, "question-index-v2")
+        self.assertEqual(config.base_url, "https://embedding.example/v2")
+
+    def test_resolver_uses_legacy_model_and_canonical_defaults(self) -> None:
+        config = resolve_embedding_config(
+            {"SILICONFLOW_EMBEDDING_MODEL": "legacy-model"}
+        )
+
+        self.assertEqual(config.model, "legacy-model")
+        self.assertEqual(config.provider, DEFAULT_PROVIDER)
+        self.assertEqual(config.dimension, DEFAULT_DIMENSION)
+        self.assertEqual(config.index_version, DEFAULT_INDEX_VERSION)
+        self.assertEqual(config.base_url, "https://api.siliconflow.cn/v1")
+
+        defaults = resolve_embedding_config({})
+        self.assertEqual(defaults.model, DEFAULT_MODEL)
+        self.assertEqual(defaults.provider, DEFAULT_PROVIDER)
+        self.assertEqual(defaults.dimension, DEFAULT_DIMENSION)
+        self.assertEqual(defaults.index_version, DEFAULT_INDEX_VERSION)
+
+    def test_from_env_client_identity_uses_resolved_model_and_dimension(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "SILICONFLOW_API_KEY": "env-key",
+                "QUESTION_RAG_EMBEDDING_MODEL": "question-model",
+                "SILICONFLOW_EMBEDDING_MODEL": "legacy-model",
+                "QUESTION_RAG_EMBEDDING_PROVIDER": "question-provider",
+                "QUESTION_RAG_EMBEDDING_DIMENSION": "3",
+                "QUESTION_RAG_INDEX_VERSION": "question-index-v2",
+                "SILICONFLOW_EMBEDDING_BASE_URL": "https://embedding.example/v2",
+            },
+            clear=True,
+        ):
+            config = resolve_embedding_config()
+            client = SiliconFlowEmbeddingClient.from_env(http_client=object())
+
+        self.assertEqual(client.model, config.model)
+        self.assertEqual(client.provider, config.provider)
+        self.assertEqual(client.dimension, config.dimension)
 
     def test_retries_429_once_with_bounded_attempts(self) -> None:
         statuses = iter([429, 200])
