@@ -57,6 +57,13 @@ class ReportCalibrationCasesTest(unittest.TestCase):
                         for evidence in case.evidences
                     )
                 )
+                self.assertTrue(
+                    all(
+                        evidence.source_excerpt
+                        != turn_by_id[evidence.turn_id].answer
+                        for evidence in case.evidences
+                    )
+                )
 
     def test_candidate_answers_are_frozen_nonempty_text(self) -> None:
         for case in load_report_calibration_cases():

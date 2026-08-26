@@ -85,8 +85,16 @@ class ReportViewTest(unittest.TestCase):
             if reason.sources and reason.sources[0].turn_id == case.turns[1].id
         ]
         self.assertTrue(limiting)
-        self.assertIn("受监管", getattr(limiting[0].sources[0], "quote", ""))
-        self.assertIn("依据", getattr(limiting[0].sources[0], "interpretation", ""))
+        source = limiting[0].sources[0]
+        expected = next(
+            excerpt
+            for excerpt in run.report.enterprise_assessment.evidence_excerpts
+            if excerpt.turn_id == case.turns[1].id
+        )
+        self.assertEqual(source.quote, expected.quote)
+        self.assertEqual(source.interpretation, expected.interpretation)
+        self.assertEqual(source.limitation, expected.limitation)
+        self.assertEqual(source.conclusion, expected.conclusion)
 
     def test_public_projection_contains_safe_enterprise_report(self) -> None:
         case = build_public_student_showcase_case()

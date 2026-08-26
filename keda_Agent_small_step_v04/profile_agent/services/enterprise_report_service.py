@@ -367,50 +367,76 @@ def derive_hiring_decision(snapshot: ScoreSnapshot) -> HiringDecisionDraft:
 
 _ALL_VERIFIED_PATTERNS = (
     re.compile(
-        r"(?:全部|六项|六个)(?:的)?(?:能力|维度)?"
-        r"(?:均|都|全部)?(?:已|已经)?"
-        r"(?:形成证据|得到验证|已验证|验证|覆盖)"
+        r"(?:全部|所有|全量|各|每个|每一)"
+        r"(?:的|这|该|六项|六个|六种|六大|六维|6项|6个|6种|6大|6维)?"
+        r"(?:岗位|核心|相关|这些)?(?:能力|维度|能力维度)?"
+        r"(?:均|都|全部|已经|已)?"
+        r"(?:有(?:充分|完整|足够)?证据|证据(?:充分|完整|足够)?|形成证据|得到验证|已验证|完成验证|被验证|验证完成|验证|覆盖)"
     ),
     re.compile(
-        r"所有(?:的)?(?:能力|维度)(?:均|都|全部)?(?:已|已经)?"
-        r"(?:形成证据|得到验证|已验证|验证|覆盖)"
+        r"(?:六项|六个|六种|六大|六维|6项|6个|6种|6大|6维)"
+        r"(?:岗位|核心|相关|这些)?(?:能力|维度|能力维度)?"
+        r"(?:均|都|全部|已经|已)?"
+        r"(?:有(?:充分|完整|足够)?证据|证据(?:充分|完整|足够)?|形成证据|得到验证|已验证|完成验证|被验证|验证完成|验证|覆盖)"
     ),
     re.compile(
-        r"全维度(?:均|都|全部)?(?:已|已经)?"
-        r"(?:形成证据|得到验证|已验证|验证|覆盖)"
+        r"\b(?:all|every|each)\s+(?:(?:six|6)\s+)?(?:dimensions?|competenc(?:y|ies)|abilit(?:y|ies))"
+        r"(?:\s+(?:all|are|have|has|show|were|is|have\s+been))?\s+(?:fully\s+)?"
+        r"(?:supported\s+by\s+evidence|evidence-backed|verified|validated|assessed|covered|have\s+evidence|has\s+evidence)\b",
+        re.IGNORECASE,
     ),
     re.compile(
-        r"\ball\s+(?:six\s+)?(?:dimensions|competencies|abilities)"
-        r"(?:\s+are)?\s+(?:fully\s+)?"
-        r"(?:verified|validated|assessed|covered)\b",
+        r"\b(?:all|every|each)\s+(?:(?:six|6)\s+)?(?:dimensions?|competenc(?:y|ies)|abilit(?:y|ies))"
+        r"\s+(?:have|has|show)\s+(?:evidence|proof)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:six|6)\s+(?:dimensions?|competenc(?:y|ies)|abilit(?:y|ies))"
+        r"\s+(?:are|have|show)\s+(?:fully\s+)?"
+        r"(?:supported\s+by\s+evidence|evidence-backed|verified|validated|assessed|covered|evidence)\b",
         re.IGNORECASE,
     ),
 )
 
+_COUNT_ONLY_ALL_VERIFIED_PATTERNS = (
+    re.compile(
+        r"(?:六项|六个|六种|六大|六维|6项|6个|6种|6大|6维)"
+        r"(?:均|都|全部|已经|已)"
+        r"(?:有(?:充分|完整|足够)?证据|证据(?:充分|完整|足够)?|形成证据|得到验证|已验证|完成验证|被验证|验证完成|验证|覆盖)"
+    ),
+    re.compile(
+        r"(?:全部|所有|全量|各)(?:均|都|全部|已经|已)"
+        r"(?:有(?:充分|完整|足够)?证据|证据(?:充分|完整|足够)?|形成证据|得到验证|已验证|完成验证|被验证|验证完成|验证|覆盖)"
+    ),
+)
+
+_NEGATED_ALL_VERIFIED_PREFIX = re.compile(
+    r"(?:并非|不是|并不|并未|不代表|不意味着|尚未|未能|无法|不能|没有|未|not|no)"
+    r"(?:做到|说明|代表|意味着|声称|表示|证明|完成|形成|达到|具备|满足|说|确认)?$",
+    re.IGNORECASE,
+)
+
 
 def _contains_all_verified_claim(text: str) -> bool:
-    negative_prefixes = (
-        "并非",
-        "不是",
-        "并不",
-        "并未",
-        "未",
-        "尚未",
-        "没有",
-        "不代表",
-        "not",
-        "no",
-    )
-    for pattern in _ALL_VERIFIED_PATTERNS:
-        for match in pattern.finditer(text):
-            prefix = text[: match.start()].casefold().rstrip(" ，,、:：；;。.!！")
-            if any(prefix.endswith(item) for item in negative_prefixes):
-                continue
-            return True
+    # Evaluate each short clause independently. This preserves an explicit
+    # negative such as “并非全部能力已验证” while still rejecting a positive
+    # clause later in the same report text.
+    clauses = re.split(r"[，,:：；;。.!！?？\n]", text)
+    for clause in clauses:
+        normalized = clause.strip()
+        if not normalized:
+            continue
+        for pattern in (*_ALL_VERIFIED_PATTERNS, *_COUNT_ONLY_ALL_VERIFIED_PATTERNS):
+            for match in pattern.finditer(normalized):
+                prefix = normalized[: match.start()].strip()
+                if _NEGATED_ALL_VERIFIED_PREFIX.search(prefix):
+                    continue
+                return True
     return False
 
 
 def _enterprise_texts(enterprise: EnterpriseAssessment) -> Iterable[str]:
+    yield enterprise.decision_label
     yield enterprise.overall_assessment
     yield from enterprise.conditions
     yield from enterprise.decision_reasons
@@ -421,6 +447,14 @@ def _enterprise_texts(enterprise: EnterpriseAssessment) -> Iterable[str]:
         yield excerpt.conclusion
         yield excerpt.interpretation
         yield excerpt.limitation
+    for focus in enterprise.reinterview_plan:
+        yield focus.dimension_name
+        yield focus.reason
+        yield focus.question
+        yield from focus.follow_ups
+        yield from focus.positive_signals
+        yield from focus.risk_signals
+        yield from focus.pass_criteria
 
 
 def _has_report_risk(snapshot: ScoreSnapshot) -> bool:
@@ -497,6 +531,8 @@ def validate_enterprise_assessment(
         errors.append("reinterview_plan 的 priority 必须唯一")
     if len(dimension_ids) != len(set(dimension_ids)):
         errors.append("reinterview_plan 的 dimension_id 不能重复")
+    if enterprise.decision != "PROCEED" and not enterprise.reinterview_plan:
+        errors.append("非 PROCEED 结论必须包含一到三个复试重点")
 
     turns_by_id: dict[str, InterviewTurn] = {}
     for turn in turns:
@@ -1328,7 +1364,27 @@ def select_reinterview_dimensions(
         candidates.append((priority, dimension_id, display_order))
 
     candidates.sort(key=lambda item: (item[0], -item[2]), reverse=True)
-    return [dimension_id for _, dimension_id, _ in candidates[:3]]
+    selected = [dimension_id for _, dimension_id, _ in candidates[:3]]
+    if selected or derive_hiring_decision(snapshot).code == "PROCEED":
+        return selected
+
+    # A low-confidence/non-published decision still needs a concrete next
+    # verification target even when every scored dimension is otherwise strong.
+    fallback = sorted(
+        (
+            (
+                -int(dimension_id in limiting_dimension_ids),
+                -int(radar_by_id.get(dimension_id) is None),
+                float(getattr(radar_by_id.get(dimension_id), "score", 0) or 0),
+                dimension.weight,
+                -display_order,
+            ),
+            dimension_id,
+        )
+        for display_order, dimension in enumerate(profile.dimensions)
+        for dimension_id in [dimension.id]
+    )
+    return [fallback[0][1]] if fallback else []
 
 
 __all__ = [

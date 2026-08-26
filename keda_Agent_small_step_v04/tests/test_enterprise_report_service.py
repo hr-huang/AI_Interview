@@ -218,6 +218,21 @@ def _signal(
     )
 
 
+def _default_reinterview_focus(dimension_id: str = "role_dim_06") -> ReinterviewFocus:
+    return ReinterviewFocus(
+        priority=1,
+        dimension_id=dimension_id,
+        dimension_name=f"维度 {dimension_id}",
+        reason="需要补充独立场景证据。",
+        question="请给出一个独立场景并说明验证方式。",
+        follow_ups=["如何判断结果？"],
+        positive_signals=["能说明边界"],
+        risk_signals=["无法给出验证"],
+        pass_criteria=["能够说明输入、边界、验证方式与结果"],
+        suggested_minutes=8,
+    )
+
+
 def _enterprise(
     *,
     snapshot: ScoreSnapshot,
@@ -242,7 +257,11 @@ def _enterprise(
         strengths=[_signal(title="已验证优势", evidence_ids=["E001"])],
         risks=risks or [],
         unknowns=unknowns or [],
-        reinterview_plan=reinterview_plan or [],
+        reinterview_plan=(
+            reinterview_plan
+            if reinterview_plan is not None
+            else ([] if decision == "PROCEED" else [_default_reinterview_focus()])
+        ),
         evidence_excerpts=evidence_excerpts or [],
     )
 
@@ -255,6 +274,23 @@ class EnterpriseReportServiceTest(unittest.TestCase):
 
         self.assertLessEqual(len(selected), 3)
         self.assertEqual(selected[0], "role_dim_05")
+
+    def test_non_proceed_low_confidence_still_selects_a_reinterview_dimension(self) -> None:
+        snapshot = _snapshot(confidence="low")
+        snapshot = snapshot.model_copy(
+            update={
+                "radar_dimensions": [
+                    radar.model_copy(update={"score": 90.0, "confidence": "high"})
+                    for radar in snapshot.radar_dimensions
+                ]
+            }
+        )
+
+        self.assertEqual(derive_hiring_decision(snapshot).code, "CONDITIONAL_PROCEED")
+        selected = select_reinterview_dimensions(snapshot, _profile())
+
+        self.assertGreaterEqual(len(selected), 1)
+        self.assertLessEqual(len(selected), 3)
 
     def test_non_gating_critical_gap_does_not_beat_gating_low_confidence_gap(
         self,
@@ -616,6 +652,110 @@ class EnterpriseReportServiceTest(unittest.TestCase):
 
         with self.assertRaises(ReportConsistencyError):
             validate_enterprise_assessment(enterprise, snapshot, _turns())
+
+    def test_guard_requires_reinterview_plan_for_non_proceed_decision(self) -> None:
+        snapshot = _snapshot(unverified_dimensions=["role_dim_06"])
+        enterprise = _enterprise(
+            snapshot=snapshot,
+            decision="CONDITIONAL_PROCEED",
+            unknowns=[_signal(dimension_ids=["role_dim_06"])],
+            reinterview_plan=[],
+        )
+
+        with self.assertRaisesRegex(ReportConsistencyError, "复试重点"):
+            validate_enterprise_assessment(enterprise, snapshot, _turns())
+
+    def test_guard_scans_reinterview_copy_for_all_verified_claims(self) -> None:
+        snapshot = _snapshot(unverified_dimensions=["role_dim_06"])
+        focus = ReinterviewFocus(
+            priority=1,
+            dimension_id="role_dim_06",
+            dimension_name="成本与性能",
+            reason="六项能力都有证据，可以直接结束复试。",
+            question="请说明成本边界。",
+            follow_ups=["如何验证？"],
+            positive_signals=["给出指标"],
+            risk_signals=["没有回滚"],
+            pass_criteria=["说明验证方式"],
+            suggested_minutes=8,
+        )
+        enterprise = _enterprise(
+            snapshot=snapshot,
+            unknowns=[_signal(dimension_ids=["role_dim_06"])],
+            reinterview_plan=[focus],
+        )
+
+        with self.assertRaises(ReportConsistencyError):
+            validate_enterprise_assessment(enterprise, snapshot, _turns())
+
+    def test_guard_rejects_all_verified_variants_in_every_public_text_field(self) -> None:
+        snapshot = _snapshot(unverified_dimensions=["role_dim_06"])
+        base = _enterprise(
+            snapshot=snapshot,
+            unknowns=[_signal(dimension_ids=["role_dim_06"])],
+            evidence_excerpts=[
+                EvidenceExcerpt(
+                    evidence_id="E001",
+                    turn_id="turn_01",
+                    conclusion="已验证失败边界。",
+                    quote="我会先定义失败边界",
+                    interpretation="回答提供了具体边界。",
+                    limitation="尚未验证高并发。",
+                )
+            ],
+        )
+        claims = [
+            "六项均已验证。",
+            "所有能力有证据。",
+            "六维均有证据。",
+            "所有六个维度均已验证。",
+            "all six dimensions have been validated.",
+        ]
+        for claim in claims:
+            with self.subTest(claim=claim):
+                fields = [
+                    ("decision_label", claim),
+                    ("overall_assessment", claim),
+                    ("conditions", [claim]),
+                    ("decision_reasons", [claim]),
+                    (
+                        "strengths",
+                        [base.strengths[0].model_copy(update={"title": claim})],
+                    ),
+                    (
+                        "risks",
+                        [base.risks[0].model_copy(update={"text": claim})]
+                        if base.risks
+                        else [_signal(title=claim)],
+                    ),
+                    (
+                        "unknowns",
+                        [base.unknowns[0].model_copy(update={"text": claim})],
+                    ),
+                    (
+                        "evidence_excerpts",
+                        [
+                            base.evidence_excerpts[0].model_copy(
+                                update={"limitation": claim}
+                            )
+                        ],
+                    ),
+                    (
+                        "reinterview_plan",
+                        [
+                            base.reinterview_plan[0].model_copy(
+                                update={"pass_criteria": [claim]}
+                            )
+                        ],
+                    ),
+                ]
+                for field, value in fields:
+                    with self.subTest(field=field):
+                        enterprise = base.model_copy(update={field: value})
+                        with self.assertRaises(ReportConsistencyError):
+                            validate_enterprise_assessment(
+                                enterprise, snapshot, _turns()
+                            )
 
     def test_guard_allows_partial_unknown_coverage_with_bounded_signal(self) -> None:
         snapshot = _snapshot(

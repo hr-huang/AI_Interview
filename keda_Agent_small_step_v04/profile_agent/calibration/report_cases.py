@@ -7,6 +7,7 @@ pipeline remains responsible for matching and scoring those inputs.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta, timezone
 
 from profile_agent.calibration.schemas import (
@@ -197,6 +198,28 @@ def _evidence(
     strength: str = "strong",
 ) -> Evidence:
     answer = turn.answer or ""
+    if len(answer) < 2:
+        raise ValueError(
+            "冻结演示 Evidence.source_excerpt 需要至少两个字符的回答"
+        )
+    # The browser transcript remains the only place for a complete answer.
+    # Freeze a short, exact answer substring for the evidence drawer so the
+    # demo exercises the same public evidence contract as a real assessment.
+    parts = re.split(r"(?<=[。！？；;.!?])", answer)
+    quote = next(
+        (
+            part
+            for part in parts
+            if part and part != answer and len(part) < len(answer)
+        ),
+        "",
+    )
+    if not quote:
+        quote = answer[: min(len(answer) - 1, 32)]
+    if not quote or quote == answer or quote not in answer:
+        raise ValueError(
+            "冻结演示 Evidence.source_excerpt 必须是回答中的严格短子串"
+        )
     return Evidence(
         id=f"ev_{case_id}_{sequence_number:03d}",
         turn_id=turn.id,
@@ -205,7 +228,7 @@ def _evidence(
         polarity=polarity,
         strength=strength,
         observation=observation,
-        source_excerpt=answer,
+        source_excerpt=quote,
     )
 
 
@@ -223,7 +246,12 @@ def _case(
     turn_by_id = {turn.id: turn for turn in turns}
     for evidence in evidences:
         turn = turn_by_id.get(evidence.turn_id)
-        if turn is None or evidence.source_excerpt not in (turn.answer or ""):
+        if (
+            turn is None
+            or not evidence.source_excerpt
+            or evidence.source_excerpt not in (turn.answer or "")
+            or evidence.source_excerpt == (turn.answer or "")
+        ):
             raise ValueError(
                 f"{case_id} 的 Evidence.source_excerpt 未引用对应固定回答: "
                 f"{evidence.id}"
