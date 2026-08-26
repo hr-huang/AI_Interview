@@ -34,10 +34,13 @@ class LazyQuestionRetriever:
             raise TypeError("question_retriever_factory must be callable")
         self._factory = factory
         self._retriever: object = _UNINITIALIZED
+        self._closed = False
         self._lock = RLock()
 
     def _get_retriever(self) -> object | None:
         with self._lock:
+            if self._closed:
+                return None
             if self._retriever is _UNINITIALIZED:
                 try:
                     self._retriever = self._factory()
@@ -64,6 +67,9 @@ class LazyQuestionRetriever:
 
     def close(self) -> None:
         with self._lock:
+            if self._closed:
+                return
+            self._closed = True
             retriever = self._retriever
             self._retriever = None
         if retriever is _UNINITIALIZED or retriever is None:
@@ -135,7 +141,12 @@ def _question_retriever_factory_from_env() -> QuestionRetrieverFactory | None:
                 index_version=index_version,
             ),
         )
-        return QuestionRetriever(embedding_client=embedding, store=store)
+        return QuestionRetriever(
+            embedding_client=embedding,
+            store=store,
+            owns_embedding_client=True,
+            owns_store=True,
+        )
 
     return factory
 

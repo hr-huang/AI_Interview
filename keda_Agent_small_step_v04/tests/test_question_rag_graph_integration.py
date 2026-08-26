@@ -7,6 +7,8 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
+from fastapi.testclient import TestClient
+
 from langgraph.types import Command
 
 from profile_agent.graphs.interview import build_interview_graph
@@ -20,13 +22,16 @@ from profile_agent.schemas.interview_schema import (
 )
 from profile_agent.schemas.question_rag_schema import (
     InterviewQuestionRecord,
+    QuestionRetrievalIntent,
     QuestionRetrievalResult,
     QuestionRetrievalTrace,
     RetrievedQuestion,
 )
 from profile_agent.schemas.runtime_schema import AnswerProcessingResult, InterviewTurn
+from profile_agent.services.question_retrieval_service import QuestionRetriever
 from profile_agent.services.runtime_state_service import initialize_runtime_state
-from profile_agent.web.container import WebContainer
+from profile_agent.web.app import create_app
+from profile_agent.web.container import LazyQuestionRetriever, WebContainer
 from profile_agent.web.interview_service import InterviewService
 from tests.report_test_helpers import make_test_report
 
@@ -137,6 +142,14 @@ class FakeQuestionGenerator:
             }
         )
         return GeneratedQuestion(text=f"生成问题 {len(self.calls)}")
+
+
+class CloseSpy:
+    def __init__(self) -> None:
+        self.close_calls = 0
+
+    def close(self) -> None:
+        self.close_calls += 1
 
 
 def no_op_answer_processor(
@@ -288,6 +301,115 @@ class QuestionRagGraphIntegrationTests(unittest.TestCase):
         )
 
         self.assertIs(container.question_retriever, retriever)
+
+    def test_question_retriever_closes_owned_dependencies_once(self) -> None:
+        embedding = CloseSpy()
+        store = CloseSpy()
+        retriever = QuestionRetriever(
+            embedding_client=embedding,
+            store=store,
+            owns_embedding_client=True,
+            owns_store=True,
+        )
+
+        retriever.close()
+        retriever.close()
+
+        self.assertEqual(embedding.close_calls, 1)
+        self.assertEqual(store.close_calls, 1)
+
+    def test_question_retriever_does_not_close_external_dependencies(self) -> None:
+        embedding = CloseSpy()
+        store = CloseSpy()
+        retriever = QuestionRetriever(embedding_client=embedding, store=store)
+
+        retriever.close()
+        retriever.close()
+
+        self.assertEqual(embedding.close_calls, 0)
+        self.assertEqual(store.close_calls, 0)
+
+    def test_lazy_retriever_close_before_lookup_is_idempotent_and_does_not_construct(self) -> None:
+        factory_calls: list[str] = []
+
+        def factory() -> FakeRetriever:
+            factory_calls.append("constructed")
+            return FakeRetriever(QuestionRetrievalResult(status="unavailable"))
+
+        retriever = LazyQuestionRetriever(factory)
+        retriever.close()
+        retriever.close()
+
+        self.assertEqual(factory_calls, [])
+
+    def test_lazy_retriever_closes_initialized_retriever_once(self) -> None:
+        underlying = CloseSpy()
+        lazy = LazyQuestionRetriever(lambda: underlying)
+        intent = QuestionRetrievalIntent(
+            query_text="test retrieval",
+            role="ai_agent_engineer",
+            dimension_id="role_dim_01",
+            question_mode="scenario",
+            difficulty="intermediate",
+        )
+
+        result = lazy.retrieve(intent)
+        lazy.close()
+        lazy.close()
+
+        self.assertEqual(result.status, "unavailable")
+        self.assertEqual(underlying.close_calls, 1)
+
+    def test_owned_app_shutdown_closes_question_retriever(self) -> None:
+        question_retriever = CloseSpy()
+        container = WebContainer.for_test(
+            repository=CloseSpy(),
+            pre_interview_graph=object(),
+            dispatcher=CloseSpy(),
+            interview_graph=object(),
+            question_retriever=question_retriever,
+        )
+        with patch("profile_agent.web.app.WebContainer.default", return_value=container):
+            app = create_app()
+
+        with TestClient(app):
+            pass
+
+        self.assertEqual(question_retriever.close_calls, 1)
+
+    def test_owned_app_shutdown_cascades_through_initialized_lazy_retriever(self) -> None:
+        embedding = CloseSpy()
+        store = CloseSpy()
+        inner = QuestionRetriever(
+            embedding_client=embedding,
+            store=store,
+            owns_embedding_client=True,
+            owns_store=True,
+        )
+        lazy = LazyQuestionRetriever(lambda: inner)
+        intent = QuestionRetrievalIntent(
+            query_text="test retrieval",
+            role="ai_agent_engineer",
+            dimension_id="role_dim_01",
+            question_mode="scenario",
+            difficulty="intermediate",
+        )
+        lazy.retrieve(intent)
+        container = WebContainer.for_test(
+            repository=CloseSpy(),
+            pre_interview_graph=object(),
+            dispatcher=CloseSpy(),
+            interview_graph=object(),
+            question_retriever=lazy,
+        )
+        with patch("profile_agent.web.app.WebContainer.default", return_value=container):
+            app = create_app()
+
+        with TestClient(app):
+            pass
+
+        self.assertEqual(embedding.close_calls, 1)
+        self.assertEqual(store.close_calls, 1)
 
     @staticmethod
     def _default_env(root: str, *, index_path: str = "") -> dict[str, str]:

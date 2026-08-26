@@ -693,6 +693,8 @@ class QuestionRetriever:
         today: date | None = None,
         as_of: date | None = None,
         max_candidates: int = MAX_CANDIDATES,
+        owns_embedding_client: bool = False,
+        owns_store: bool = False,
     ) -> None:
         if embedding_client is not None and embedding is not None:
             raise ValueError("pass only one of embedding_client and embedding")
@@ -700,6 +702,10 @@ class QuestionRetriever:
             raise ValueError("pass only one of store and question_store")
         if today is not None and as_of is not None:
             raise ValueError("pass only one of today and as_of")
+        if not isinstance(owns_embedding_client, bool):
+            raise TypeError("owns_embedding_client must be a bool")
+        if not isinstance(owns_store, bool):
+            raise TypeError("owns_store must be a bool")
         configured_date = today if today is not None else as_of
         if configured_date is not None and (
             isinstance(configured_date, datetime)
@@ -712,6 +718,9 @@ class QuestionRetriever:
             embedding_client if embedding_client is not None else embedding
         )
         self.store = store if store is not None else question_store
+        self._owns_embedding_client = owns_embedding_client
+        self._owns_store = owns_store
+        self._closed = False
         self.today = today if today is not None else as_of
         self.max_candidates = min(MAX_CANDIDATES, max_candidates)
         self.last_rank_trace: list[dict[str, Any]] = []
@@ -719,6 +728,35 @@ class QuestionRetriever:
         # same internal audit data differently.
         self.last_ranking_trace = self.last_rank_trace
         self.last_trace = self.last_rank_trace
+
+    def close(self) -> None:
+        """Close owned provider/index resources exactly once."""
+
+        if self._closed:
+            return
+        self._closed = True
+
+        resources: list[Any] = []
+        if self._owns_embedding_client and self.embedding_client is not None:
+            resources.append(self.embedding_client)
+        if self._owns_store and self.store is not None:
+            resources.append(self.store)
+
+        closed_ids: set[int] = set()
+        for resource in resources:
+            resource_id = id(resource)
+            if resource_id in closed_ids:
+                continue
+            closed_ids.add(resource_id)
+            close = getattr(resource, "close", None)
+            if not callable(close):
+                continue
+            try:
+                close()
+            except Exception:
+                # Closing one optional resource must not prevent the other
+                # owned handle from being released.
+                continue
 
     def retrieve(
         self,
@@ -732,6 +770,8 @@ class QuestionRetriever:
         as_of = today if today is not None else (self.today or date.today())
         if isinstance(as_of, datetime) or not isinstance(as_of, date):
             raise TypeError("today must be a date")
+        if self._closed:
+            return self._result("unavailable", as_of=as_of)
         self.last_rank_trace.clear()
 
         if self.embedding_client is None or self.store is None:
