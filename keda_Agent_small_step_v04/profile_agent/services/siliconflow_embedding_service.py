@@ -107,6 +107,8 @@ class SiliconFlowEmbeddingClient:
 
         for attempt in range(1, self.max_attempts + 1):
             response: httpx.Response | None = None
+            transport_failed = False
+            unexpected_failure = False
             try:
                 response = self._http_client.post(
                     endpoint,
@@ -114,12 +116,26 @@ class SiliconFlowEmbeddingClient:
                     headers={"Authorization": f"Bearer {self.api_key}"},
                     timeout=self.timeout_seconds,
                 )
+            except httpx.TransportError:
+                transport_failed = True
             except Exception:
                 # The exception may contain request details supplied by an
                 # adapter, so never include it in a log record or exception.
-                pass
+                unexpected_failure = True
 
-            if response is None:
+            if response is None and not transport_failed:
+                unexpected_failure = True
+
+            if unexpected_failure:
+                logger.warning(
+                    "embedding provider client failure on attempt %d",
+                    attempt,
+                )
+                raise EmbeddingProviderError(
+                    "SiliconFlow embedding request failed."
+                )
+
+            if transport_failed:
                 if attempt < self.max_attempts:
                     self._log_retry(attempt, reason="transport")
                     self._sleep_before_retry(attempt)
@@ -195,6 +211,7 @@ class SiliconFlowEmbeddingClient:
             raise EmbeddingProviderError("SiliconFlow embedding response was invalid.")
 
         vectors_by_index: dict[int, list[float]] = {}
+        expected_dimension: int | None = None
         for item in data:
             if not isinstance(item, dict):
                 raise EmbeddingProviderError("SiliconFlow embedding response was invalid.")
@@ -223,6 +240,17 @@ class SiliconFlowEmbeddingClient:
                         "SiliconFlow embedding response was invalid."
                     )
                 vector.append(numeric_value)
+
+            if not vector:
+                raise EmbeddingProviderError(
+                    "SiliconFlow embedding response was invalid."
+                )
+            if expected_dimension is None:
+                expected_dimension = len(vector)
+            elif len(vector) != expected_dimension:
+                raise EmbeddingProviderError(
+                    "SiliconFlow embedding response was invalid."
+                )
             vectors_by_index[index] = vector
 
         if set(vectors_by_index) != set(range(expected_count)):

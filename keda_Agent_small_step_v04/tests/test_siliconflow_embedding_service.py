@@ -79,6 +79,64 @@ class SiliconFlowEmbeddingClientTests(unittest.TestCase):
         finally:
             client.close()
 
+    def test_rejects_embeddings_with_inconsistent_dimensions(self) -> None:
+        def handler(_: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {"index": 0, "embedding": [0.1, 0.2]},
+                        {"index": 1, "embedding": [0.3]},
+                    ]
+                },
+            )
+
+        client, _ = self._client(handler)
+        try:
+            with self.assertRaises(EmbeddingProviderError) as raised:
+                client.embed(["first", "second"])
+        finally:
+            client.close()
+
+        self.assertNotIn("0.1", str(raised.exception))
+
+    def test_rejects_empty_embedding_vector(self) -> None:
+        def handler(_: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json={"data": [{"index": 0, "embedding": []}]},
+            )
+
+        client, _ = self._client(handler)
+        try:
+            with self.assertRaises(EmbeddingProviderError) as raised:
+                client.embed(["text"])
+        finally:
+            client.close()
+
+        self.assertEqual(
+            str(raised.exception),
+            "SiliconFlow embedding response was invalid.",
+        )
+
+    def test_rejects_non_numeric_embedding_values_without_echoing_value(self) -> None:
+        secret_value = "candidate-secret-value"
+
+        def handler(_: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json={"data": [{"index": 0, "embedding": [0.1, secret_value]}]},
+            )
+
+        client, _ = self._client(handler)
+        try:
+            with self.assertRaises(EmbeddingProviderError) as raised:
+                client.embed(["text"])
+        finally:
+            client.close()
+
+        self.assertNotIn(secret_value, str(raised.exception))
+
     def test_rejects_empty_batch_before_http_call(self) -> None:
         def forbidden_handler(_: httpx.Request) -> httpx.Response:
             self.fail("empty input must not make an HTTP request")
@@ -203,6 +261,37 @@ class SiliconFlowEmbeddingClientTests(unittest.TestCase):
         self.assertNotIn(candidate_text, str(raised.exception))
         self.assertNotIn(secret, log_stream.getvalue())
         self.assertNotIn(candidate_text, log_stream.getvalue())
+
+    def test_non_transport_exception_is_wrapped_without_retrying(self) -> None:
+        secret = "programming-secret-value"
+        requests: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            requests.append(request)
+            raise ValueError(f"adapter bug: {secret}")
+
+        raw_client = httpx.Client(transport=httpx.MockTransport(handler))
+        client = SiliconFlowEmbeddingClient(
+            api_key="test-siliconflow-key",
+            http_client=raw_client,
+            max_attempts=3,
+        )
+        try:
+            with (
+                patch("profile_agent.services.siliconflow_embedding_service.time.sleep") as sleep,
+                self.assertLogs(
+                    "profile_agent.services.siliconflow_embedding_service",
+                    level="WARNING",
+                ),
+            ):
+                with self.assertRaises(EmbeddingProviderError) as raised:
+                    client.embed(["text"])
+        finally:
+            client.close()
+
+        self.assertEqual(len(requests), 1)
+        sleep.assert_not_called()
+        self.assertNotIn(secret, str(raised.exception))
 
     def test_rejects_malformed_response_without_echoing_response_body(self) -> None:
         secret_body = "response contains test-siliconflow-key"
