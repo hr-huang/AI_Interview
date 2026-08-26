@@ -132,21 +132,32 @@ def _question_retriever_factory_from_env() -> QuestionRetrieverFactory | None:
             raise ValueError("QUESTION_RAG_EMBEDDING_DIMENSION must be positive")
 
         embedding = SiliconFlowEmbeddingClient.from_env()
-        store = QdrantQuestionStore(
-            path=index_path,
-            expected_fingerprint=IndexFingerprint(
-                provider=provider,
-                model=model,
-                dimension=dimension,
-                index_version=index_version,
-            ),
-        )
-        return QuestionRetriever(
-            embedding_client=embedding,
-            store=store,
-            owns_embedding_client=True,
-            owns_store=True,
-        )
+        try:
+            store = QdrantQuestionStore(
+                path=index_path,
+                expected_fingerprint=IndexFingerprint(
+                    provider=provider,
+                    model=model,
+                    dimension=dimension,
+                    index_version=index_version,
+                ),
+            )
+            return QuestionRetriever(
+                embedding_client=embedding,
+                store=store,
+                owns_embedding_client=True,
+                owns_store=True,
+            )
+        except Exception:
+            # The embedding client is owned by the retriever we intended to
+            # return; release it if later construction cannot complete.
+            close = getattr(embedding, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception:
+                    pass
+            raise
 
     return factory
 

@@ -31,7 +31,11 @@ from profile_agent.schemas.runtime_schema import AnswerProcessingResult, Intervi
 from profile_agent.services.question_retrieval_service import QuestionRetriever
 from profile_agent.services.runtime_state_service import initialize_runtime_state
 from profile_agent.web.app import create_app
-from profile_agent.web.container import LazyQuestionRetriever, WebContainer
+from profile_agent.web.container import (
+    LazyQuestionRetriever,
+    WebContainer,
+    _question_retriever_factory_from_env,
+)
 from profile_agent.web.interview_service import InterviewService
 from tests.report_test_helpers import make_test_report
 
@@ -550,6 +554,33 @@ class QuestionRagGraphIntegrationTests(unittest.TestCase):
                     )
                 finally:
                     self._close_default_container(container)
+
+    def test_env_factory_closes_embedding_when_store_construction_fails(self) -> None:
+        embedding = CloseSpy()
+        store_error = RuntimeError("private store construction failure")
+
+        with TemporaryDirectory() as root:
+            env = self._default_env(
+                root,
+                index_path=str(Path(root) / "questions"),
+            )
+            with (
+                patch.dict(os.environ, env, clear=False),
+                patch(
+                    "profile_agent.services.siliconflow_embedding_service.SiliconFlowEmbeddingClient.from_env",
+                    return_value=embedding,
+                ),
+                patch(
+                    "profile_agent.knowledge.qdrant_question_store.QdrantQuestionStore",
+                    side_effect=store_error,
+                ),
+            ):
+                factory = _question_retriever_factory_from_env()
+                self.assertIsNotNone(factory)
+                with self.assertRaisesRegex(RuntimeError, "private store construction failure"):
+                    factory()
+
+        self.assertEqual(embedding.close_calls, 1)
 
     def test_default_container_factory_and_retrieval_errors_degrade_safely(self) -> None:
         class RaisingRetriever:
