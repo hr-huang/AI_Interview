@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
+import math
 import unittest
 
 from profile_agent.knowledge.qdrant_question_store import QuestionStoreSearchResult
@@ -258,6 +259,199 @@ class IntentBuilderTests(unittest.TestCase):
                 plan=make_plan(dimension_id=None),
             )
 
+    def test_builder_rejects_duplicate_requirement_ids_in_selected_target(self) -> None:
+        plan = make_plan()
+        plan.targets[0].evidence_requirements.append(
+            EvidenceRequirement(
+                id="target_01_req_01",
+                description="ambiguous duplicate requirement",
+                planned_role_dimension_id="role_dim_03",
+            )
+        )
+
+        with self.assertRaisesRegex(ValueError, "duplicate requirement_id"):
+            build_question_retrieval_intent(action=make_action(), plan=plan)
+
+    def test_builder_maps_every_question_mode_to_a_bounded_difficulty(self) -> None:
+        expected = {
+            "foundation": "foundation",
+            "project_deep_dive": "intermediate",
+            "scenario": "intermediate",
+            "system_design": "advanced",
+            "coding": "intermediate",
+            "follow_up": "intermediate",
+        }
+        for mode, difficulty in expected.items():
+            with self.subTest(mode=mode):
+                intent = build_question_retrieval_intent(
+                    action=make_action(mode=mode),
+                    plan=make_plan(mode=mode),
+                )
+                self.assertEqual(intent.difficulty, difficulty)
+
+    def test_builder_redacts_common_secret_and_authorization_variants(self) -> None:
+        attacks = [
+            ("SILICONFLOW_API_KEY=sf-secret-123", "sf-secret-123"),
+            ("OPENAI_API_KEY openai-secret", "openai-secret"),
+            ("AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE", "AKIAIOSFODNN7EXAMPLE"),
+            ("AWS_SECRET_ACCESS_KEY=aws-secret", "aws-secret"),
+            (
+                "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.abc.signature",
+                "eyJhbGciOiJIUzI1NiJ9.abc.signature",
+            ),
+            ("Authorization Bearer header-secret", "header-secret"),
+            ("bearer bearer-secret", "bearer-secret"),
+            ("Bearer x", "Bearer x"),
+            ("api-key api-secret", "api-secret"),
+            ("accessToken camel-access-secret", "camel-access-secret"),
+            ("authToken camel-auth-secret", "camel-auth-secret"),
+            ("apiSecret camel-api-secret", "camel-api-secret"),
+            ("client_secret client-secret", "client-secret"),
+            ("secret-token", "secret-token"),
+            ("sk-proj-1234567890abcdef", "sk-proj-1234567890abcdef"),
+            ("sk_live_1234567890abcdef", "sk_live_1234567890abcdef"),
+            ("sk_live_short", "sk_live_short"),
+            ("ghp_1234567890abcdef1234567890abcdef", "ghp_1234567890abcdef1234567890abcdef"),
+            ("token: plain-secret-value", "plain-secret-value"),
+        ]
+        for attack, secret_value in attacks:
+            with self.subTest(attack=attack):
+                intent = build_question_retrieval_intent(
+                    action=make_action(),
+                    plan=make_plan(),
+                    evidence_summaries=[attack],
+                )
+                self.assertNotIn(attack, intent.query_text)
+                self.assertNotIn(secret_value, intent.query_text)
+                if attack.startswith("accessToken"):
+                    self.assertNotIn("accessToken", intent.query_text)
+                if attack.startswith("authToken"):
+                    self.assertNotIn("authToken", intent.query_text)
+                if attack.startswith("apiSecret"):
+                    self.assertNotIn("apiSecret", intent.query_text)
+
+                embedding = FakeEmbedding()
+                store = FakeStore(QuestionStoreSearchResult(status="no_match"))
+                QuestionRetriever(embedding, store, today=TODAY).retrieve(intent)
+                self.assertEqual(embedding.inputs, [intent.query_text])
+                self.assertNotIn(secret_value, embedding.inputs[0])
+
+    def test_builder_preserves_all_sections_under_independent_budgets(self) -> None:
+        long_value = "锚点-" * 400
+        plan = make_plan(objective=long_value, requirement=long_value)
+        resume = ResumeProfile(
+            skills=[long_value],
+            projects=[
+                ProjectExperience(
+                    name=long_value,
+                    description=long_value,
+                    technologies=[long_value],
+                )
+            ],
+        )
+        job = JobProfile(
+            role="AI Agent",
+            responsibilities=[long_value],
+            requirements=[JobRequirement(name=long_value, description=long_value)],
+        )
+        intent = build_question_retrieval_intent(
+            action=make_action(),
+            plan=plan,
+            resume_profile=resume,
+            job_profile=job,
+            recent_turns=[make_turn(1, answer=long_value), make_turn(2, answer=long_value)],
+            evidence_summaries=[long_value],
+        )
+
+        self.assertLessEqual(len(intent.query_text), 512)
+        for section in (
+            "dimension=",
+            "mode=",
+            "depth=",
+            "objective=",
+            "requirement=",
+            "coverage_gap=",
+            "jd=",
+            "resume=",
+            "recent=",
+        ):
+            with self.subTest(section=section):
+                self.assertIn(section, intent.query_text)
+
+    def test_builder_retains_tail_markers_when_anchor_fields_are_very_long(self) -> None:
+        long_tail = "前缀 " + ("上下文 " * 80)
+        plan = make_plan(
+            objective=long_tail + " OBJECTIVE_TAIL",
+            requirement=long_tail + " REQUIREMENT_TAIL",
+        )
+        job = JobProfile(
+            role="AI Agent",
+            responsibilities=["JD_RESPONSIBILITY"],
+            requirements=[
+                JobRequirement(name="JD_NAME", description=long_tail + " JD_TAIL")
+            ],
+        )
+        resume = ResumeProfile(
+            skills=["RESUME_SKILL"],
+            projects=[
+                ProjectExperience(
+                    name="RESUME_PROJECT",
+                    description=long_tail + " RESUME_TAIL",
+                    technologies=["Python"],
+                )
+            ],
+        )
+        recent = [make_turn(1, answer=long_tail + " RECENT_TAIL")]
+
+        intent = build_question_retrieval_intent(
+            action=make_action(),
+            plan=plan,
+            job_profile=job,
+            resume_profile=resume,
+            recent_turns=recent,
+            evidence_summaries=[long_tail + " GAP_TAIL"],
+        )
+
+        for marker in (
+            "OBJECTIVE_TAIL",
+            "REQUIREMENT_TAIL",
+            "GAP_TAIL",
+            "JD_NAME",
+            "RESUME_SKILL",
+            "RECENT_TAIL",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, intent.query_text)
+
+    def test_builder_uses_a_non_recursive_secret_redaction_marker(self) -> None:
+        intent = build_question_retrieval_intent(
+            action=make_action(),
+            plan=make_plan(),
+            evidence_summaries=["AUTHORIZATION=Bearer marker-secret"],
+        )
+
+        self.assertIn("[redacted]", intent.query_text)
+        self.assertNotIn("[redacted-[", intent.query_text)
+
+    def test_builder_is_stable_for_long_and_redacted_anchor_inputs(self) -> None:
+        kwargs = {
+            "action": make_action(),
+            "plan": make_plan(
+                objective=("objective " * 100) + " OBJECTIVE_TAIL",
+                requirement=("requirement " * 100) + " REQUIREMENT_TAIL",
+            ),
+            "evidence_summaries": ["OPENAI_API_KEY=stable-secret " + ("gap " * 100)],
+            "recent_turns": [make_turn(1, answer=("answer " * 100) + " RECENT_TAIL")],
+        }
+
+        outputs = [
+            build_question_retrieval_intent(**kwargs).model_dump()
+            for _ in range(5)
+        ]
+
+        self.assertTrue(all(output == outputs[0] for output in outputs))
+        self.assertLessEqual(len(outputs[0]["query_text"]), 512)
+
 
 class RetrieverTests(unittest.TestCase):
     def test_retriever_selects_explainable_deterministic_best_hit(self) -> None:
@@ -298,6 +492,15 @@ class RetrieverTests(unittest.TestCase):
         self.assertIn("mode", retriever.last_rank_trace[0]["components"])
         self.assertIn("duplicate_penalty", retriever.last_rank_trace[0]["components"])
         self.assertIn("asked_penalty", retriever.last_rank_trace[0]["components"])
+        expected_sources = {
+            first.question_id: (first.source_id, first.index_version),
+            second.question_id: (second.source_id, second.index_version),
+        }
+        for trace in retriever.last_rank_trace:
+            source_id, index_version = expected_sources[trace["question_id"]]
+            self.assertEqual(trace["source_id"], source_id)
+            self.assertEqual(trace["index_version"], index_version)
+            self.assertTrue(math.isfinite(trace["score"]))
 
     def test_retriever_uses_stable_question_id_tiebreak_and_at_most_three_hits(self) -> None:
         hits = [
@@ -312,6 +515,134 @@ class RetrieverTests(unittest.TestCase):
 
         self.assertEqual(store.calls[0]["limit"], 3)
         self.assertEqual(result.selected_question.question_id, "q_01")
+        self.assertLessEqual(len(retriever.last_rank_trace), 3)
+
+    def test_retriever_honors_a_smaller_candidate_limit_after_filtering(self) -> None:
+        hits = [
+            RetrievedQuestion(record=make_record("q_01"), score=0.8, index_version="idx"),
+            RetrievedQuestion(record=make_record("q_02"), score=0.7, index_version="idx"),
+        ]
+        store = FakeStore(QuestionStoreSearchResult(status="hit", hits=hits, index_version="idx"))
+        retriever = QuestionRetriever(FakeEmbedding(), store, today=TODAY, max_candidates=1)
+
+        result = retriever.retrieve(
+            build_question_retrieval_intent(action=make_action(), plan=make_plan())
+        )
+
+        self.assertEqual(result.status, "hit")
+        self.assertEqual(len(retriever.last_rank_trace), 1)
+
+    def test_retriever_filters_all_raw_hits_before_selecting_top_three(self) -> None:
+        wrong_dimension = make_record("q_wrong_dimension").model_copy(
+            update={"dimension_id": "role_dim_99"}
+        )
+        wrong_role = make_record("q_wrong_role").model_copy(
+            update={"role": "ai_agent_engineer_other"}
+        )
+        wrong_mode = make_record("q_wrong_mode").model_copy(
+            update={"question_mode": "coding"}
+        )
+        retired = make_record("q_retired").model_copy(update={"status": "retired"})
+        expired = make_record("q_expired", valid_until=date(2026, 8, 25))
+        valid = make_record("q_valid")
+        hits = [
+            RetrievedQuestion(record=wrong_dimension, score=0.99, index_version="idx"),
+            RetrievedQuestion(record=wrong_role, score=0.98, index_version="idx"),
+            RetrievedQuestion(record=wrong_mode, score=0.97, index_version="idx"),
+            RetrievedQuestion(record=retired, score=0.96, index_version="idx"),
+            RetrievedQuestion(record=expired, score=0.95, index_version="idx"),
+            RetrievedQuestion(record=valid, score=0.80, index_version="idx"),
+        ]
+        store = FakeStore(QuestionStoreSearchResult(status="hit", hits=hits, index_version="idx"))
+        retriever = QuestionRetriever(FakeEmbedding(), store, today=TODAY)
+
+        result = retriever.retrieve(
+            build_question_retrieval_intent(action=make_action(), plan=make_plan())
+        )
+
+        self.assertEqual(result.status, "hit")
+        self.assertEqual(result.selected_question.question_id, "q_valid")
+
+    def test_retriever_rejects_missing_nonfinite_score_bare_record_and_provenance(self) -> None:
+        record = make_record("q_malformed")
+        malformed_hits = [
+            RetrievedQuestion(record=record, score=None, index_version="idx"),
+            RetrievedQuestion(
+                record=record,
+                score=0.9,
+                index_version="idx",
+            ).model_copy(update={"score": math.nan}),
+            RetrievedQuestion(
+                record=record,
+                score=0.9,
+                index_version="idx",
+            ).model_copy(update={"score": math.inf}),
+            RetrievedQuestion(
+                record=record,
+                score=0.9,
+                index_version="idx",
+            ).model_copy(update={"score": "0.9"}),
+            record,
+            RetrievedQuestion(record=record, score=0.9, index_version=None),
+            RetrievedQuestion(record=record, score=0.9, index_version="idx").model_copy(
+                update={"index_version": 123}
+            ),
+            RetrievedQuestion(
+                record=record.model_copy(update={"source_id": 123}),
+                score=0.9,
+                index_version="idx",
+            ),
+        ]
+        store = FakeStore(
+            QuestionStoreSearchResult(status="hit", hits=malformed_hits, index_version="idx")
+        )
+        retriever = QuestionRetriever(FakeEmbedding(), store, today=TODAY)
+
+        result = retriever.retrieve(
+            build_question_retrieval_intent(action=make_action(), plan=make_plan())
+        )
+
+        self.assertEqual(result.status, "unavailable")
+        self.assertIsNone(result.selected_question)
+
+    def test_retriever_requires_real_store_hit_and_keeps_trace_score_provenance_equal(self) -> None:
+        selected = RetrievedQuestion(record=make_record("q_valid"), score=0.91, index_version="idx")
+        embedding = FakeEmbedding()
+        store = FakeStore(
+            QuestionStoreSearchResult(status="hit", hits=[selected], index_version="idx")
+        )
+        retriever = QuestionRetriever(embedding, store, today=TODAY)
+
+        result = retriever.retrieve(
+            build_question_retrieval_intent(action=make_action(), plan=make_plan())
+        )
+
+        self.assertEqual(result.status, "hit")
+        self.assertEqual(result.trace.question_id, result.selected_question.question_id)
+        self.assertEqual(result.trace.source_id, result.selected_question.source_id)
+        self.assertEqual(result.trace.score, result.selected_question.score)
+        self.assertEqual(result.trace.index_version, result.selected_question.index_version)
+
+    def test_retriever_does_not_treat_a_bare_hit_list_as_a_store_result(self) -> None:
+        selected = RetrievedQuestion(record=make_record("q_valid"), score=0.91, index_version="idx")
+        # A search adapter must return the Task 4/5 store envelope.  A raw list
+        # has no status or index provenance and must not be promoted to a hit.
+        store = FakeStore(result=[selected])  # type: ignore[arg-type]
+        retriever = QuestionRetriever(FakeEmbedding(), store, today=TODAY)
+
+        result = retriever.retrieve(
+            build_question_retrieval_intent(action=make_action(), plan=make_plan())
+        )
+
+        self.assertEqual(result.status, "unavailable")
+        self.assertIsNone(result.selected_question)
+
+    def test_retriever_rejects_datetime_as_of_instead_of_leaking_type_error(self) -> None:
+        retriever = QuestionRetriever(FakeEmbedding(), FakeStore(), today=TODAY)
+        intent = build_question_retrieval_intent(action=make_action(), plan=make_plan())
+
+        with self.assertRaises(TypeError):
+            retriever.retrieve(intent, today=datetime(2026, 8, 26, 12, 0, tzinfo=timezone.utc))
 
     def test_retrieval_failure_statuses_are_honest_safe_fallbacks(self) -> None:
         intent = build_question_retrieval_intent(action=make_action(), plan=make_plan())

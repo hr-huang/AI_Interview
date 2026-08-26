@@ -14,8 +14,8 @@ can audit ranking without widening the strict Task 1 wire contract.
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Mapping, Sequence
-from datetime import date
+from collections.abc import Sequence
+from datetime import date, datetime
 import math
 import re
 from typing import Any, Protocol
@@ -65,8 +65,51 @@ _MODE_DIFFICULTY: dict[QuestionMode, str] = {
 _TRUST_SCORE = {"high": 1.0, "medium": 0.66, "low": 0.33}
 _EMAIL_RE = re.compile(r"(?i)\b[\w.+-]+@[\w.-]+\.[a-z]{2,}\b")
 _URL_RE = re.compile(r"(?i)\b(?:https?://|www\.)\S+")
-_SECRET_RE = re.compile(
-    r"(?i)\b(?:sk-[a-z0-9_-]{8,}|(?:api[_ -]?key|token|secret|password)(?:[-_][a-z0-9]+)+(?:\s*[:=]\s*\S+)?|(?:api[_ -]?key|token|secret|password)\s*[:=]\s*\S+)"
+# Treat an anchor as untrusted text.  The assignment/header pattern is
+# deliberately not anchored with ``\b``: environment variables such as
+# ``SILICONFLOW_API_KEY`` have an underscore immediately before ``API_KEY``.
+_SECRET_ASSIGNMENT_RE = re.compile(
+    r"(?ix)(?<![a-z0-9])(?:[a-z0-9][a-z0-9_.-]*[_.-])?"
+    r"(?:api[_-]?(?:key|secret|token)|access[_-]?(?:key|secret|token)|"
+    r"private[_-]?(?:key|secret|token)|client[_-]?(?:secret|token|key)|"
+    r"auth(?:entication)?[_-]?(?:token|key)|secret|token|authorization|"
+    r"bearer|password|credential)"
+    r"(?:[a-z0-9_.-]*)\s*(?:=|:|\s+)\s*[^\s,;|]+"
+)
+_AUTH_HEADER_RE = re.compile(
+    r"(?ix)(?<![a-z0-9])(?:authorization|proxy-authorization|x-api-key|api-key)"
+    r"\s*[:=]\s*(?:(?:bearer|basic|token|jwt)\s+)?[^\s,;|]+"
+)
+_AUTH_HEADER_SPACED_RE = re.compile(
+    r"(?ix)(?<![a-z0-9])(?:authorization|proxy-authorization|x-api-key|api-key)"
+    r"\s+(?:(?:bearer|basic|token|jwt)\s+)?[^\s,;|]+"
+)
+_AUTH_SCHEME_RE = re.compile(
+    r"(?ix)(?<![a-z0-9])(?:bearer|basic|token|jwt)\s+"
+    r"[a-z0-9._~+/=-]+"
+)
+_SECRET_LABEL_RE = re.compile(
+    r"(?ix)(?<![a-z0-9])(?:api[_-]?(?:key|secret|token)|"
+    r"access[_-]?(?:key|secret|token)|private[_-]?(?:key|secret|token)|"
+    r"client[_-]?(?:secret|token|key)|auth(?:entication)?[_-]?(?:token|key)|"
+    r"secret(?:[_-]?token)?|token|authorization|bearer|password|credential)"
+    r"(?![a-z0-9])"
+)
+_SECRET_PREFIX_RE = re.compile(
+    r"(?ix)(?<![a-z0-9])(?:(?:sk|rk|pk)[_-](?:(?:live|test|proj)[_-])?"
+    r"[a-z0-9_-]{4,}|"
+    r"(?:gh[pousr]_|github_pat_)[a-z0-9_]{8,}|"
+    r"(?:akia|asia)[a-z0-9]{12,}|AIza[a-z0-9_-]{20,}|"
+    r"xox[baprs]-[a-z0-9-]{8,})"
+)
+_JWT_RE = re.compile(
+    r"(?ix)(?<![a-z0-9])eyj[a-z0-9_-]{6,}\.[a-z0-9_-]{4,}\.[a-z0-9_-]{4,}"
+)
+_LONG_OPAQUE_RE = re.compile(
+    r"(?ix)(?<![a-z0-9])"
+    r"(?=[a-z0-9._-]{24,}(?![a-z0-9]))"
+    r"(?=[a-z0-9._-]*[a-z])(?=[a-z0-9._-]*\d)"
+    r"[a-z0-9._-]{24,}(?![a-z0-9])"
 )
 _PHONE_RE = re.compile(r"(?<!\w)(?:\+?\d[\d ().-]{6,}\d)(?!\w)")
 _WORD_RE = re.compile(r"[A-Za-z0-9_]+|[\u3400-\u4dbf\u4e00-\u9fff]")
@@ -79,6 +122,19 @@ _SENSITIVE_MARKERS = (
     "评分标准",
     "rubric",
 )
+_REDACTED_SECRET = "[redacted]"
+
+_QUERY_SECTION_BUDGETS = {
+    "dimension": 32,
+    "mode": 32,
+    "depth": 32,
+    "objective": 68,
+    "requirement": 80,
+    "coverage_gap": 60,
+    "jd": 60,
+    "resume": 60,
+    "recent": 60,
+}
 
 
 class EmbeddingClient(Protocol):
@@ -92,6 +148,7 @@ class RetrievalScoreBreakdown:
     __slots__ = (
         "question_id",
         "source_id",
+        "index_version",
         "rank",
         "selected",
         "vector_similarity",
@@ -109,6 +166,7 @@ class RetrievalScoreBreakdown:
         *,
         question_id: str,
         source_id: str,
+        index_version: str,
         rank: int,
         selected: bool,
         vector_similarity: float,
@@ -122,6 +180,7 @@ class RetrievalScoreBreakdown:
     ) -> None:
         self.question_id = question_id
         self.source_id = source_id
+        self.index_version = index_version
         self.rank = rank
         self.selected = selected
         self.vector_similarity = vector_similarity
@@ -154,17 +213,12 @@ class RetrievalScoreBreakdown:
         return {
             "question_id": self.question_id,
             "source_id": self.source_id,
+            "index_version": self.index_version,
             "rank": self.rank,
             "selected": self.selected,
             "score": self.total_score,
             "components": dict(self.components),
         }
-
-
-class _StoreResultLike(Protocol):
-    status: str
-    hits: Sequence[Any]
-    index_version: str | None
 
 
 def _clean_text(value: Any, *, limit: int | None = None) -> str:
@@ -173,14 +227,30 @@ def _clean_text(value: Any, *, limit: int | None = None) -> str:
     if value is None:
         return ""
     text = re.sub(r"\s+", " ", str(value)).strip()
-    # Redact the most specific forms first.  The replacements are stable and
-    # intentionally carry no source text.
-    text = _SECRET_RE.sub("[redacted-secret]", text)
+    # Redact headers/assignments before generic schemes and key prefixes.  The
+    # replacements are stable and intentionally carry no source text.
+    text = _AUTH_HEADER_RE.sub(_REDACTED_SECRET, text)
+    text = _AUTH_HEADER_SPACED_RE.sub(_REDACTED_SECRET, text)
+    text = _SECRET_ASSIGNMENT_RE.sub(_REDACTED_SECRET, text)
+    text = _AUTH_SCHEME_RE.sub(_REDACTED_SECRET, text)
+    text = _SECRET_PREFIX_RE.sub(_REDACTED_SECRET, text)
+    text = _JWT_RE.sub(_REDACTED_SECRET, text)
+    text = _LONG_OPAQUE_RE.sub(_REDACTED_SECRET, text)
+    text = _SECRET_LABEL_RE.sub(_REDACTED_SECRET, text)
     text = _EMAIL_RE.sub("[redacted-email]", text)
     text = _URL_RE.sub("[redacted-url]", text)
     text = _PHONE_RE.sub("[redacted-phone]", text)
     if limit is not None:
-        text = text[:limit].rstrip()
+        if len(text) > limit and limit > 1:
+            tail_budget = max(1, limit // 3)
+            head_budget = limit - tail_budget - 1
+            text = (
+                text[:head_budget].rstrip()
+                + "…"
+                + text[-tail_budget:].lstrip()
+            )
+        else:
+            text = text[:limit].rstrip()
     return text
 
 
@@ -205,9 +275,42 @@ def _dedupe_non_blank(values: Sequence[str], *, limit: int | None = None) -> lis
     return cleaned
 
 
+def _bounded_section(label: str, value: str, budget: int) -> str:
+    """Keep a labelled anchor within its own budget.
+
+    Section budgets are applied before joining the query.  This prevents a
+    long objective or answer from starving later JD/resume/recent anchors.
+    """
+
+    prefix = f"{label}="
+    cleaned = _clean_text(value)
+    if not cleaned:
+        return ""
+    value_budget = max(0, budget - len(prefix))
+    if len(cleaned) <= value_budget:
+        return prefix + cleaned
+    if value_budget <= 1:
+        return prefix + cleaned[:value_budget]
+
+    # Preserve both the beginning (usually the structured field name) and the
+    # tail (often the discriminating project/answer detail) within the field's
+    # own budget.  The ellipsis is deterministic and does not trigger another
+    # global truncation pass.
+    tail_budget = max(1, value_budget // 3)
+    head_budget = value_budget - tail_budget - 1
+    head = cleaned[:head_budget].rstrip()
+    tail = cleaned[-tail_budget:].lstrip()
+    return prefix + head + "…" + tail
+
+
 def _clip_query(parts: Sequence[str]) -> str:
     query = " | ".join(part for part in parts if part)
-    return query[:MAX_QUERY_CHARS].rstrip()
+    if len(query) > MAX_QUERY_CHARS:
+        # All normal inputs are bounded by _QUERY_SECTION_BUDGETS.  Raising
+        # here protects the invariant from future additions instead of
+        # silently dropping an entire trailing section.
+        raise ValueError("retrieval intent query exceeds its length budget")
+    return query.rstrip()
 
 
 def _resume_anchors(profile: ResumeProfile | None) -> list[str]:
@@ -296,14 +399,16 @@ def build_question_retrieval_intent(
     if target is None:
         raise ValueError(f"unknown target_id: {action.target_id}")
 
-    requirement = next(
-        (
-            candidate
-            for candidate in target.evidence_requirements
-            if candidate.id == action.primary_requirement_id
-        ),
-        None,
-    )
+    matching_requirements = [
+        candidate
+        for candidate in target.evidence_requirements
+        if candidate.id == action.primary_requirement_id
+    ]
+    if len(matching_requirements) > 1:
+        raise ValueError(
+            f"duplicate requirement_id: {action.primary_requirement_id}"
+        )
+    requirement = matching_requirements[0] if matching_requirements else None
     if requirement is None:
         raise ValueError(
             "primary_requirement_id does not belong to target_id: "
@@ -330,26 +435,62 @@ def build_question_retrieval_intent(
     # is free-form and may contain candidate or provider data.
     evidence = _dedupe_non_blank(evidence_summaries, limit=3)
     parts = [
-        f"dimension={dimension_id}",
-        f"mode={action.question_mode}",
-        f"depth={difficulty}",
-        f"objective={_clean_text(target.objective, limit=120)}",
-        f"requirement={_clean_text(requirement.description, limit=140)}",
+        _bounded_section(
+            "dimension",
+            dimension_id,
+            _QUERY_SECTION_BUDGETS["dimension"],
+        ),
+        _bounded_section(
+            "mode",
+            action.question_mode,
+            _QUERY_SECTION_BUDGETS["mode"],
+        ),
+        _bounded_section("depth", difficulty, _QUERY_SECTION_BUDGETS["depth"]),
+        _bounded_section(
+            "objective",
+            target.objective,
+            _QUERY_SECTION_BUDGETS["objective"],
+        ),
+        _bounded_section(
+            "requirement",
+            requirement.description,
+            _QUERY_SECTION_BUDGETS["requirement"],
+        ),
     ]
     if evidence:
-        parts.append("coverage_gap=" + ";".join(evidence))
+        parts.append(
+            _bounded_section(
+                "coverage_gap",
+                ";".join(evidence),
+                _QUERY_SECTION_BUDGETS["coverage_gap"],
+            )
+        )
 
     job = _job_anchors(job_profile)
     if job:
-        parts.append("jd=" + ";".join(job))
+        parts.append(
+            _bounded_section("jd", ";".join(job), _QUERY_SECTION_BUDGETS["jd"])
+        )
 
     resume = _resume_anchors(resume_profile)
     if resume:
-        parts.append("resume=" + ";".join(resume))
+        parts.append(
+            _bounded_section(
+                "resume",
+                ";".join(resume),
+                _QUERY_SECTION_BUDGETS["resume"],
+            )
+        )
 
     recent = _recent_answer_anchors(recent_turns)
     if recent:
-        parts.append("recent=" + ";".join(recent))
+        parts.append(
+            _bounded_section(
+                "recent",
+                ";".join(recent),
+                _QUERY_SECTION_BUDGETS["recent"],
+            )
+        )
 
     query_text = _clip_query(parts)
     # The static fields above should always leave a non-empty query.  Keep an
@@ -391,33 +532,40 @@ def _freshness_score(record: InterviewQuestionRecord, today: date) -> float:
     return round(max(0.0, min(1.0, 1.0 - age_days / 365.0)), 6)
 
 
-def _vector_score(value: Any) -> float:
+def _finite_score(value: Any) -> float | None:
+    if value is None or isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
     try:
         score = float(value)
     except (TypeError, ValueError, OverflowError):
-        return 0.0
+        return None
     if not math.isfinite(score):
-        return 0.0
+        return None
+    return score
+
+
+def _vector_score(value: Any) -> float:
+    score = _finite_score(value)
+    if score is None:
+        raise ValueError("retrieved question score must be finite")
     return round(max(-1.0, min(1.0, score)), 6)
 
 
 def _coerce_hit(value: Any, *, index_version: str | None) -> RetrievedQuestion | None:
-    if isinstance(value, RetrievedQuestion):
-        return value
-    if isinstance(value, InterviewQuestionRecord):
-        return RetrievedQuestion(record=value, score=0.0, index_version=index_version)
-    if isinstance(value, Mapping):
-        try:
-            if "record" in value or "question" in value:
-                return RetrievedQuestion.model_validate(value)
-            return RetrievedQuestion(
-                record=InterviewQuestionRecord.model_validate(value),
-                score=0.0,
-                index_version=index_version,
-            )
-        except Exception:
-            return None
-    return None
+    # The store boundary must return the Task 1 hit model.  Accepting a bare
+    # record (or reconstructing one from arbitrary mappings) would make a
+    # non-vector source look like a retrieval hit.
+    if not isinstance(value, RetrievedQuestion):
+        return None
+    if not isinstance(value.record, InterviewQuestionRecord):
+        return None
+    if _finite_score(value.score) is None:
+        return None
+    if not isinstance(value.index_version, str) or not value.index_version.strip():
+        return None
+    if not isinstance(value.record.source_id, str) or not value.record.source_id.strip():
+        return None
+    return value
 
 
 def _store_status_and_hits(value: Any) -> tuple[str, list[Any], str | None]:
@@ -428,9 +576,6 @@ def _store_status_and_hits(value: Any) -> tuple[str, list[Any], str | None]:
     if hits is None:
         hits = getattr(value, "results", None)
     index_version = getattr(value, "index_version", None)
-    if status is None and isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
-        status = "hit"
-        hits = value
     if not isinstance(status, str):
         return "unavailable", [], None
     if hits is None:
@@ -462,6 +607,12 @@ class QuestionRetriever:
             raise ValueError("pass only one of store and question_store")
         if today is not None and as_of is not None:
             raise ValueError("pass only one of today and as_of")
+        configured_date = today if today is not None else as_of
+        if configured_date is not None and (
+            isinstance(configured_date, datetime)
+            or not isinstance(configured_date, date)
+        ):
+            raise TypeError("today must be a date")
         if isinstance(max_candidates, bool) or not isinstance(max_candidates, int) or max_candidates < 1:
             raise ValueError("max_candidates must be a positive integer")
         self.embedding_client = (
@@ -486,7 +637,7 @@ class QuestionRetriever:
         if not isinstance(intent, QuestionRetrievalIntent):
             raise TypeError("intent must be QuestionRetrievalIntent")
         as_of = today if today is not None else (self.today or date.today())
-        if not isinstance(as_of, date):
+        if isinstance(as_of, datetime) or not isinstance(as_of, date):
             raise TypeError("today must be a date")
         self.last_rank_trace.clear()
 
@@ -520,9 +671,18 @@ class QuestionRetriever:
             return self._result("unavailable", as_of=as_of)
 
         candidates: list[RetrievedQuestion] = []
-        for raw_hit in raw_hits[:MAX_CANDIDATES]:
+        malformed_hit = False
+        excluded_ids = set(intent.excluded_question_ids)
+        for raw_hit in raw_hits:
             hit = _coerce_hit(raw_hit, index_version=store_index_version)
             if hit is None:
+                malformed_hit = True
+                continue
+            if (
+                store_index_version is not None
+                and hit.index_version != store_index_version
+            ):
+                malformed_hit = True
                 continue
             record = hit.record
             # Store filters are authoritative for efficiency, but this second
@@ -536,14 +696,21 @@ class QuestionRetriever:
                 continue
             if record.status != "active" or record.valid_until < as_of:
                 continue
-            if record.question_id in set(intent.excluded_question_ids):
+            if record.question_id in excluded_ids:
                 continue
             candidates.append(hit)
 
         if not candidates:
+            if malformed_hit:
+                return self._result("unavailable", as_of=as_of)
             return self._result("no_match", as_of=as_of)
 
-        ranked = self._rank(candidates, intent=intent, today=as_of)
+        ranked = self._rank(
+            candidates,
+            intent=intent,
+            today=as_of,
+            limit=requested_limit,
+        )
         selected, selected_breakdown = ranked[0]
         selected_question = selected.model_copy(update={"score": selected_breakdown.total_score})
         index_version = selected_question.index_version or store_index_version
@@ -605,6 +772,7 @@ class QuestionRetriever:
         *,
         intent: QuestionRetrievalIntent,
         today: date,
+        limit: int = MAX_CANDIDATES,
     ) -> list[tuple[RetrievedQuestion, RetrievalScoreBreakdown]]:
         by_text: dict[str, list[RetrievedQuestion]] = defaultdict(list)
         for candidate in candidates:
@@ -639,6 +807,7 @@ class QuestionRetriever:
             breakdown = RetrievalScoreBreakdown(
                 question_id=record.question_id,
                 source_id=record.source_id,
+                index_version=candidate.index_version,
                 rank=0,
                 selected=False,
                 vector_similarity=vector_similarity,
@@ -665,7 +834,7 @@ class QuestionRetriever:
 
         traces: list[dict[str, Any]] = []
         final: list[tuple[RetrievedQuestion, RetrievalScoreBreakdown]] = []
-        for index, (candidate, breakdown) in enumerate(scored, start=1):
+        for index, (candidate, breakdown) in enumerate(scored[:limit], start=1):
             breakdown.rank = index
             breakdown.selected = index == 1
             final.append((candidate, breakdown))
