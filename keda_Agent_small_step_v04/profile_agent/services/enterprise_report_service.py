@@ -443,7 +443,9 @@ _UNCERTAINTY_SCOPE_PATTERNS = (
     ),
     re.compile(
         r"\b(?:need(?:s|ed)?\s+to|may|might|possibly|whether|"
-        r"if|should|could)\b",
+        r"if|should|could|maybe|uncertain(?:ty)?|unclear|"
+        r"probabl(?:e|y)|possib(?:le|ility)|potential|likely|"
+        r"likelihood)\b",
         re.IGNORECASE,
     ),
 )
@@ -455,7 +457,7 @@ _PARTIAL_SCOPE_PATTERNS = (
     ),
     re.compile(
         r"\b(?:some|only|partial|partially|most|mostly|nearly|almost|"
-        r"largely|except|but)\b",
+        r"largely|except|but\s+(?:one|some|only|a|an|not|part))\b",
         re.IGNORECASE,
     ),
 )
@@ -463,6 +465,27 @@ _PARTIAL_SCOPE_PATTERNS = (
 
 def _matches_any(patterns: tuple[re.Pattern[str], ...], text: str) -> bool:
     return any(pattern.search(text) for pattern in patterns)
+
+
+def _has_non_assertive_suffix(suffix: str) -> bool:
+    """Return whether text after a completion turns it into a non-fact."""
+
+    if re.search(r"[?？]", suffix) or re.search(
+        r"(?:吗|么|呢)\s*[。.!！?？]*$", suffix
+    ):
+        return True
+
+    normalized = suffix.strip(" \t\r\n,，:：;；。.!！")
+    if not normalized:
+        return False
+    return _matches_any(
+        (
+            *_NEGATION_SCOPE_PATTERNS,
+            *_UNCERTAINTY_SCOPE_PATTERNS,
+            *_PARTIAL_SCOPE_PATTERNS,
+        ),
+        normalized,
+    )
 
 
 def _contains_all_verified_claim(text: str) -> bool:
@@ -477,43 +500,52 @@ def _contains_all_verified_claim(text: str) -> bool:
     each clause is evaluated independently.
     """
 
-    # Keep terminal question marks with their clause so an affirmative-looking
-    # question such as “所有能力均已验证吗？” is not treated as a fact.
-    clauses = re.split(r"(?<=[，,:：；;。.!！?？\n])", text)
-    for clause in clauses:
-        normalized = re.sub(r"\s+", " ", clause.strip())
-        if not normalized:
+    # Evaluate soft clauses independently for local scope, but keep the whole
+    # sentence available so a qualifier after the completion cannot be missed.
+    # A later explicit affirmative clause still gets its own local scope and
+    # can therefore trigger the guard.
+    sentences = re.split(r"(?<=[。.!！?？\n])", text)
+    for sentence in sentences:
+        normalized_sentence = re.sub(r"\s+", " ", sentence.strip())
+        if not normalized_sentence:
             continue
 
-        ranges = [
-            match
-            for pattern in _ALL_RANGE_PATTERNS
-            for match in pattern.finditer(normalized)
-        ]
-        completions = [
-            match
-            for pattern in _COMPLETION_PATTERNS
-            for match in pattern.finditer(normalized)
-        ]
-        for range_match in ranges:
-            for completion_match in completions:
-                if completion_match.start() < range_match.end():
-                    continue
+        soft_clauses = re.split(r"(?<=[，,:：；;])", normalized_sentence)
+        clause_offset = 0
+        for clause in soft_clauses:
+            ranges = [
+                match
+                for pattern in _ALL_RANGE_PATTERNS
+                for match in pattern.finditer(clause)
+            ]
+            completions = [
+                match
+                for pattern in _COMPLETION_PATTERNS
+                for match in pattern.finditer(clause)
+            ]
+            for range_match in ranges:
+                for completion_match in completions:
+                    if completion_match.start() < range_match.end():
+                        continue
 
-                prefix = normalized[: range_match.start()]
-                between = normalized[range_match.end() : completion_match.start()]
-                scope = prefix + between
-                if _matches_any(_NEGATION_SCOPE_PATTERNS, scope):
-                    continue
-                if _matches_any(_UNCERTAINTY_SCOPE_PATTERNS, scope):
-                    continue
-                if _matches_any(_PARTIAL_SCOPE_PATTERNS, scope):
-                    continue
+                    prefix = clause[: range_match.start()]
+                    between = clause[
+                        range_match.end() : completion_match.start()
+                    ]
+                    scope = prefix + between
+                    if _matches_any(_NEGATION_SCOPE_PATTERNS, scope):
+                        continue
+                    if _matches_any(_UNCERTAINTY_SCOPE_PATTERNS, scope):
+                        continue
+                    if _matches_any(_PARTIAL_SCOPE_PATTERNS, scope):
+                        continue
 
-                suffix = normalized[completion_match.end() :].strip()
-                if re.search(r"(?:吗|么|呢|[?？])\s*$", suffix):
-                    continue
-                return True
+                    completion_end = clause_offset + completion_match.end()
+                    suffix = normalized_sentence[completion_end:]
+                    if _has_non_assertive_suffix(suffix):
+                        continue
+                    return True
+            clause_offset += len(clause)
     return False
 
 

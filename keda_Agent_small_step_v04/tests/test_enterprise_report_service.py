@@ -677,6 +677,36 @@ class EnterpriseReportServiceTest(unittest.TestCase):
             with self.subTest(claim=claim):
                 self.assertFalse(_contains_all_verified_claim(claim))
 
+    def test_all_verified_claim_detector_ignores_uncertain_completion_suffixes(
+        self,
+    ) -> None:
+        uncertain_suffixes = [
+            "所有能力都有证据，但不确定。",
+            "所有能力都有证据的可能性较高。",
+            "所有能力均已验证，是否如此？",
+            "所有能力都有证据，尚待确认。",
+            "all dimensions have evidence of a possibility.",
+        ]
+
+        for claim in uncertain_suffixes:
+            with self.subTest(claim=claim):
+                self.assertFalse(_contains_all_verified_claim(claim))
+
+    def test_all_verified_claim_detector_still_catches_later_explicit_affirmation(
+        self,
+    ) -> None:
+        self.assertTrue(
+            _contains_all_verified_claim(
+                "需要确认是否全部有证据，但所有能力均已验证。"
+            )
+        )
+        self.assertTrue(
+            _contains_all_verified_claim(
+                "need to confirm all dimensions have evidence, "
+                "but all dimensions are validated."
+            )
+        )
+
     def test_guard_rejects_empty_unknowns_for_unverified_dimensions(self) -> None:
         snapshot = _snapshot(unverified_dimensions=["role_dim_06"])
         enterprise = _enterprise(snapshot=snapshot)
