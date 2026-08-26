@@ -36,7 +36,10 @@ class InterviewTurn(BaseModel):
     # Retrieval provenance is checkpoint-private.  Candidate-facing adapters
     # project the turn down to id/question/answer and never serialize this
     # field.
-    retrieval_trace: QuestionRetrievalTrace | None = None
+    retrieval_trace: QuestionRetrievalTrace | None = Field(
+        default=None,
+        exclude=True,
+    )
 
 
 class Evidence(BaseModel):

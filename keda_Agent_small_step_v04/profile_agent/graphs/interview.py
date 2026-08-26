@@ -47,6 +47,10 @@ from profile_agent.services.supervisor_service import (
     build_supervisor_context,
     decide_next_action,
 )
+from profile_agent.state.checkpoint_serialization import (
+    InterviewCheckpointSerializer,
+    install_interview_checkpoint_serializer,
+)
 from profile_agent.state.main_state import MainState
 
 
@@ -125,11 +129,12 @@ def _turn_by_id(turns: list[InterviewTurn], turn_id: str) -> tuple[int, Intervie
 
 def build_interview_graph(
     question_generator: QuestionGenerator | None = None,
-    question_retriever: QuestionRetrieverCallable | Any | None = None,
     answer_processor: AnswerProcessor | None = None,
     checkpointer: Any | None = None,
     now_provider: NowProvider | None = None,
     report_generator: ReportGenerator | None = None,
+    *,
+    question_retriever: QuestionRetrieverCallable | Any | None = None,
 ):
     """Build the interruptible interview graph.
 
@@ -152,7 +157,10 @@ def build_interview_graph(
         else report_generator
     )
     now_provider = _utc_now if now_provider is None else now_provider
-    checkpointer = InMemorySaver() if checkpointer is None else checkpointer
+    if checkpointer is None:
+        checkpointer = InMemorySaver(serde=InterviewCheckpointSerializer())
+    else:
+        checkpointer = install_interview_checkpoint_serializer(checkpointer)
 
     def retrieve_question_node(state: MainState) -> dict[str, Any]:
         """Resolve and execute exactly one retrieval attempt for an AskAction."""

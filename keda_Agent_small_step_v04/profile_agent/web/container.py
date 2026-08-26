@@ -162,11 +162,13 @@ class WebContainer:
     dispatcher: object
     role_profile: RoleCompetencyProfile
     interview_graph: object | None = None
-    # Optional runtime retriever.  ``None`` intentionally means an unavailable
-    # RAG provider; graph construction must remain free of HTTP/client setup.
-    question_retriever: object | None = None
     checkpoint_connection: sqlite3.Connection | None = None
     interview_lock: RLock = field(default_factory=RLock)
+    # Optional runtime retriever.  ``None`` intentionally means an unavailable
+    # RAG provider; graph construction must remain free of HTTP/client setup.
+    # Keep this after every pre-existing field so direct positional construction
+    # remains compatible with the original WebContainer dataclass.
+    question_retriever: object | None = None
 
     @classmethod
     def for_test(
