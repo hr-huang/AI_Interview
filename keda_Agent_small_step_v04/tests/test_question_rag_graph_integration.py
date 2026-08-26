@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
+import os
+from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 from langgraph.types import Command
 
@@ -284,6 +288,198 @@ class QuestionRagGraphIntegrationTests(unittest.TestCase):
         )
 
         self.assertIs(container.question_retriever, retriever)
+
+    @staticmethod
+    def _default_env(root: str, *, index_path: str = "") -> dict[str, str]:
+        base = Path(root)
+        return {
+            "WEB_DATABASE_PATH": str(base / "web.sqlite3"),
+            "WEB_CHECKPOINT_PATH": str(base / "checkpoints.sqlite3"),
+            "QUESTION_RAG_INDEX_PATH": index_path,
+        }
+
+    @staticmethod
+    def _close_default_container(container: WebContainer) -> None:
+        for resource in (
+            container.dispatcher,
+            container.repository,
+            container.checkpoint_connection,
+        ):
+            close = getattr(resource, "close", None)
+            if callable(close):
+                close()
+
+    def test_default_container_wires_configured_retriever_lazily(self) -> None:
+        retriever = FakeRetriever(QuestionRetrievalResult(status="unavailable"))
+        factory_calls: list[str] = []
+
+        def factory() -> FakeRetriever:
+            factory_calls.append("constructed")
+            return retriever
+
+        with TemporaryDirectory() as root:
+            env = self._default_env(root, index_path=str(Path(root) / "questions"))
+            with (
+                patch.dict(os.environ, env, clear=False),
+                patch(
+                    "profile_agent.graphs.interview.generate_question",
+                    new=FakeQuestionGenerator(),
+                ),
+                patch(
+                    "profile_agent.graphs.interview.generate_assessment_report",
+                    new=lambda **_: make_test_report(),
+                ),
+                patch(
+                    "profile_agent.graphs.interview._utc_now",
+                    new=lambda: self.NOW,
+                ),
+            ):
+                container = WebContainer.default(
+                    question_retriever_factory=factory,
+                )
+                try:
+                    self.assertIsNotNone(container.question_retriever)
+                    self.assertEqual(factory_calls, [])
+
+                    result = container.interview_graph.invoke(
+                        self.initial_state(),
+                        {"configurable": {"thread_id": "default-wired"}},
+                    )
+                    self.assertEqual(factory_calls, ["constructed"])
+                    self.assertEqual(len(retriever.calls), 1)
+                    self.assertEqual(
+                        self.interrupt_payload(result)["question"],
+                        "生成问题 1",
+                    )
+                finally:
+                    self._close_default_container(container)
+
+    def test_default_container_without_rag_config_stays_askable_without_http(self) -> None:
+        with TemporaryDirectory() as root:
+            env = self._default_env(root)
+            with (
+                patch.dict(os.environ, env, clear=False),
+                patch("httpx.Client", side_effect=AssertionError("HTTP at startup")),
+                patch(
+                    "profile_agent.graphs.interview.generate_question",
+                    new=FakeQuestionGenerator(),
+                ),
+                patch(
+                    "profile_agent.graphs.interview.generate_assessment_report",
+                    new=lambda **_: make_test_report(),
+                ),
+                patch(
+                    "profile_agent.graphs.interview._utc_now",
+                    new=lambda: self.NOW,
+                ),
+            ):
+                container = WebContainer.default()
+                try:
+                    self.assertIsNone(container.question_retriever)
+                    result = container.interview_graph.invoke(
+                        self.initial_state(),
+                        {"configurable": {"thread_id": "default-no-rag"}},
+                    )
+                    self.assertEqual(
+                        self.interrupt_payload(result)["question"],
+                        "生成问题 1",
+                    )
+                finally:
+                    self._close_default_container(container)
+
+    def test_default_container_env_wiring_missing_key_stays_lazy_and_unavailable(self) -> None:
+        with TemporaryDirectory() as root:
+            env = self._default_env(
+                root,
+                index_path=str(Path(root) / "questions"),
+            )
+            env["SILICONFLOW_API_KEY"] = ""
+            with (
+                patch.dict(os.environ, env, clear=False),
+                patch("httpx.Client", side_effect=AssertionError("HTTP before provider is ready")),
+                patch(
+                    "profile_agent.graphs.interview.generate_question",
+                    new=FakeQuestionGenerator(),
+                ),
+                patch(
+                    "profile_agent.graphs.interview.generate_assessment_report",
+                    new=lambda **_: make_test_report(),
+                ),
+                patch(
+                    "profile_agent.graphs.interview._utc_now",
+                    new=lambda: self.NOW,
+                ),
+            ):
+                container = WebContainer.default()
+                try:
+                    self.assertIsNotNone(container.question_retriever)
+                    result = container.interview_graph.invoke(
+                        self.initial_state(),
+                        {"configurable": {"thread_id": "default-missing-key"}},
+                    )
+                    payload = self.interrupt_payload(result)
+                    state = container.interview_graph.get_state(
+                        {"configurable": {"thread_id": "default-missing-key"}}
+                    ).values
+                    self.assertEqual(payload["question"], "生成问题 1")
+                    self.assertEqual(
+                        state["interview_turns"][0].retrieval_trace.status,
+                        "unavailable",
+                    )
+                finally:
+                    self._close_default_container(container)
+
+    def test_default_container_factory_and_retrieval_errors_degrade_safely(self) -> None:
+        class RaisingRetriever:
+            def retrieve(self, _intent):
+                raise RuntimeError("private retrieval failure")
+
+        factories = [
+            lambda: (_ for _ in ()).throw(RuntimeError("private construction failure")),
+            lambda: RaisingRetriever(),
+        ]
+        for index, factory in enumerate(factories):
+            with self.subTest(index=index), TemporaryDirectory() as root:
+                env = self._default_env(
+                    root,
+                    index_path=str(Path(root) / "questions"),
+                )
+                with (
+                    patch.dict(os.environ, env, clear=False),
+                    patch(
+                        "profile_agent.graphs.interview.generate_question",
+                        new=FakeQuestionGenerator(),
+                    ),
+                    patch(
+                        "profile_agent.graphs.interview.generate_assessment_report",
+                        new=lambda **_: make_test_report(),
+                    ),
+                    patch(
+                        "profile_agent.graphs.interview._utc_now",
+                        new=lambda: self.NOW,
+                    ),
+                ):
+                    container = WebContainer.default(
+                        question_retriever_factory=factory,
+                    )
+                    try:
+                        result = container.interview_graph.invoke(
+                            self.initial_state(),
+                            {"configurable": {"thread_id": f"default-error-{index}"}},
+                        )
+                        self.assertEqual(
+                            self.interrupt_payload(result)["question"],
+                            "生成问题 1",
+                        )
+                        state = container.interview_graph.get_state(
+                            {"configurable": {"thread_id": f"default-error-{index}"}}
+                        ).values
+                        self.assertEqual(
+                            state["interview_turns"][0].retrieval_trace.status,
+                            "unavailable",
+                        )
+                    finally:
+                        self._close_default_container(container)
 
 
 if __name__ == "__main__":

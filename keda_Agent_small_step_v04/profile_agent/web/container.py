@@ -13,9 +13,131 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 from profile_agent.graphs.interview import build_interview_graph
 from profile_agent.graphs.pre_interview import pre_interview_draft_graph
 from profile_agent.schemas.report_schema import RoleCompetencyProfile
+from profile_agent.schemas.question_rag_schema import (
+    QuestionRetrievalIntent,
+    QuestionRetrievalResult,
+)
 from profile_agent.services.role_profile_service import load_role_profile
 from profile_agent.web.document_ingestion import DocumentExtractor
 from profile_agent.web.repository import SqliteAssessmentRepository
+
+
+QuestionRetrieverFactory = Callable[[], object | None]
+_UNINITIALIZED = object()
+
+
+class LazyQuestionRetriever:
+    """Construct the optional question retriever only on the first lookup."""
+
+    def __init__(self, factory: QuestionRetrieverFactory) -> None:
+        if not callable(factory):
+            raise TypeError("question_retriever_factory must be callable")
+        self._factory = factory
+        self._retriever: object = _UNINITIALIZED
+        self._lock = RLock()
+
+    def _get_retriever(self) -> object | None:
+        with self._lock:
+            if self._retriever is _UNINITIALIZED:
+                try:
+                    self._retriever = self._factory()
+                except Exception:
+                    # Construction failures are an optional-provider miss;
+                    # never echo provider configuration or exception details.
+                    self._retriever = None
+            return self._retriever
+
+    def retrieve(self, intent: QuestionRetrievalIntent) -> QuestionRetrievalResult:
+        retriever = self._get_retriever()
+        if retriever is None:
+            return QuestionRetrievalResult(status="unavailable")
+
+        try:
+            retrieve = getattr(retriever, "retrieve", None)
+            if not callable(retrieve):
+                return QuestionRetrievalResult(status="unavailable")
+            return QuestionRetrievalResult.model_validate(retrieve(intent))
+        except Exception:
+            # The graph has an additional failure boundary; keeping this
+            # adapter safe also protects direct container callers.
+            return QuestionRetrievalResult(status="unavailable")
+
+    def close(self) -> None:
+        with self._lock:
+            retriever = self._retriever
+            self._retriever = None
+        if retriever is _UNINITIALIZED or retriever is None:
+            return
+        close = getattr(retriever, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                pass
+
+
+def _question_retriever_factory_from_env() -> QuestionRetrieverFactory | None:
+    """Return a lazy local-index factory when an index path is configured."""
+
+    index_path = (
+        os.getenv("QUESTION_RAG_INDEX_PATH", "").strip()
+        or os.getenv("QDRANT_QUESTION_INDEX_PATH", "").strip()
+    )
+    if not index_path:
+        return None
+
+    def factory() -> object:
+        # Keep optional dependencies and all provider/client construction out
+        # of WebContainer.default().  This factory runs only on first lookup.
+        from profile_agent.knowledge.qdrant_question_store import (
+            IndexFingerprint,
+            QdrantQuestionStore,
+        )
+        from profile_agent.services.question_retrieval_service import (
+            QuestionRetriever,
+        )
+        from profile_agent.services.siliconflow_embedding_service import (
+            DEFAULT_MODEL,
+            SiliconFlowEmbeddingClient,
+        )
+
+        model = (
+            os.getenv("QUESTION_RAG_EMBEDDING_MODEL", "").strip()
+            or os.getenv("SILICONFLOW_EMBEDDING_MODEL", "").strip()
+            or DEFAULT_MODEL
+        )
+        provider = (
+            os.getenv("QUESTION_RAG_EMBEDDING_PROVIDER", "").strip()
+            or "siliconflow"
+        )
+        index_version = (
+            os.getenv("QUESTION_RAG_INDEX_VERSION", "").strip()
+            or "questions-v1"
+        )
+        raw_dimension = (
+            os.getenv("QUESTION_RAG_EMBEDDING_DIMENSION", "").strip()
+            or "1024"
+        )
+        try:
+            dimension = int(raw_dimension)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("QUESTION_RAG_EMBEDDING_DIMENSION must be positive") from exc
+        if dimension <= 0:
+            raise ValueError("QUESTION_RAG_EMBEDDING_DIMENSION must be positive")
+
+        embedding = SiliconFlowEmbeddingClient.from_env()
+        store = QdrantQuestionStore(
+            path=index_path,
+            expected_fingerprint=IndexFingerprint(
+                provider=provider,
+                model=model,
+                dimension=dimension,
+                index_version=index_version,
+            ),
+        )
+        return QuestionRetriever(embedding_client=embedding, store=store)
+
+    return factory
 
 
 class ThreadPoolDispatcher:
@@ -76,7 +198,11 @@ class WebContainer:
         )
 
     @classmethod
-    def default(cls) -> WebContainer:
+    def default(
+        cls,
+        *,
+        question_retriever_factory: QuestionRetrieverFactory | None = None,
+    ) -> WebContainer:
         database_path = Path(
             os.getenv("WEB_DATABASE_PATH", "data/web.sqlite3")
         )
@@ -91,12 +217,20 @@ class WebContainer:
             checkpoint_path,
             check_same_thread=False,
         )
+        configured_factory = (
+            question_retriever_factory
+            if question_retriever_factory is not None
+            else _question_retriever_factory_from_env()
+        )
+        question_retriever = (
+            LazyQuestionRetriever(configured_factory)
+            if configured_factory is not None
+            else None
+        )
         try:
             interview_graph = build_interview_graph(
                 checkpointer=SqliteSaver(checkpoint_connection),
-                # Provider/index setup is explicitly injected when enabled;
-                # the default remains lazy and degrades to unavailable.
-                question_retriever=None,
+                question_retriever=question_retriever,
             )
         except Exception:
             checkpoint_connection.close()
@@ -111,6 +245,6 @@ class WebContainer:
                 "2026-H2",
             ),
             interview_graph=interview_graph,
-            question_retriever=None,
+            question_retriever=question_retriever,
             checkpoint_connection=checkpoint_connection,
         )
