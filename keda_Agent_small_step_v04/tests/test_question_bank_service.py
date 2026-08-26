@@ -78,6 +78,24 @@ class QuestionBankServiceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             load_question_bank(FIXTURE_PATH)
 
+    def test_rejects_synthetic_records_when_root_is_not_test_only(self) -> None:
+        for root_test_only in (False, None):
+            with self.subTest(root_test_only=root_test_only):
+                payload = self._load_fixture_json()
+                if root_test_only is None:
+                    payload.pop("test_only")
+                else:
+                    payload["test_only"] = root_test_only
+
+                with self.assertRaisesRegex(ValueError, "test_only_synthetic"):
+                    load_question_bank(
+                        self._write_bank(payload),
+                        allow_test_only=True,
+                    )
+
+                with self.assertRaises(ValueError):
+                    load_question_bank(self._write_bank(payload))
+
     def test_rejects_duplicate_question_ids(self) -> None:
         payload = self._load_fixture_json()
         payload["questions"][1]["question_id"] = payload["questions"][0]["question_id"]
@@ -245,6 +263,45 @@ class QuestionBankServiceTests(unittest.TestCase):
         self.assertEqual(
             report.eligible_question_ids,
             [records[5].question_id],
+        )
+
+    def test_audit_rejects_structurally_invalid_raw_mappings_from_eligibility(self) -> None:
+        payload = self._load_fixture_json()
+        base = payload["questions"][0]
+        variants = []
+
+        missing_semantic_field = deepcopy(base)
+        missing_semantic_field["question_id"] = "q_invalid_missing_field"
+        missing_semantic_field.pop("expected_signals")
+        variants.append(missing_semantic_field)
+
+        wrong_role = deepcopy(base)
+        wrong_role["question_id"] = "q_invalid_role"
+        wrong_role["role"] = "java_engineer"
+        variants.append(wrong_role)
+
+        wrong_dimension = deepcopy(base)
+        wrong_dimension["question_id"] = "q_invalid_dimension"
+        wrong_dimension["dimension_id"] = "role_dim_99"
+        variants.append(wrong_dimension)
+
+        wrong_hash = deepcopy(base)
+        wrong_hash["question_id"] = "q_invalid_hash"
+        wrong_hash["content_hash"] = "sha256:not-the-canonical-hash"
+        variants.append(wrong_hash)
+
+        wrong_date = deepcopy(base)
+        wrong_date["question_id"] = "q_invalid_date"
+        wrong_date["valid_until"] = "not-a-date"
+        variants.append(wrong_date)
+
+        report = audit_question_bank(variants, as_of=date(2026, 8, 26))
+
+        expected_ids = sorted(question["question_id"] for question in variants)
+        self.assertEqual(report.eligible_question_ids, [])
+        self.assertEqual(report.invalid_record_question_ids, expected_ids)
+        self.assertTrue(
+            all(report.invalid_record_reasons[question_id] for question_id in expected_ids)
         )
 
     def test_rejects_unsupported_dimension_id(self) -> None:

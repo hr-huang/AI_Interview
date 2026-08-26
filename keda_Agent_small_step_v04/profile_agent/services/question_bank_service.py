@@ -99,6 +99,26 @@ class _AuditRecord:
     source_url: Any = None
     source_title: Any = None
     source_type: Any = None
+    invalid_reasons: tuple[str, ...] = ()
+
+
+_SOURCE_FIELDS = frozenset(
+    {"source_id", "source_url", "source_title", "source_type"}
+)
+
+
+def _validation_error_reasons(exc: ValidationError) -> tuple[str, ...]:
+    """Keep non-source schema failures as auditable diagnostics."""
+
+    reasons: list[str] = []
+    for error in exc.errors():
+        location = error.get("loc", ())
+        field_name = str(location[0]) if location else "<root>"
+        if field_name in _SOURCE_FIELDS:
+            continue
+        path = ".".join(str(part) for part in location) or "<root>"
+        reasons.append(f"{path}: {error.get('msg', 'validation error')}")
+    return tuple(reasons)
 
 
 def _coerce_audit_record(
@@ -114,7 +134,8 @@ def _coerce_audit_record(
 
     try:
         return InterviewQuestionRecord.model_validate(record)
-    except ValidationError:
+    except ValidationError as exc:
+        validation_error = exc
         question_id = record.get("question_id")
         if not isinstance(question_id, str) or not question_id.strip():
             question_id = f"<record:{index}>"
@@ -137,7 +158,49 @@ def _coerce_audit_record(
             source_url=record.get("source_url"),
             source_title=record.get("source_title"),
             source_type=record.get("source_type"),
+            invalid_reasons=_validation_error_reasons(validation_error),
         )
+
+
+def _record_validation_issues(
+    record: InterviewQuestionRecord | _AuditRecord,
+) -> tuple[str, ...]:
+    """Validate invariants that raw mappings/model copies can bypass."""
+
+    existing = tuple(getattr(record, "invalid_reasons", ()))
+    if isinstance(record, _AuditRecord):
+        return existing
+
+    issues = list(existing)
+    if not isinstance(record.question_id, str) or not record.question_id.strip():
+        issues.append("question_id: must be a non-blank string")
+    if record.role != SUPPORTED_ROLE:
+        issues.append(f"role: unsupported value {record.role!r}")
+    if record.dimension_id not in SUPPORTED_DIMENSION_IDS:
+        issues.append(f"dimension_id: unsupported value {record.dimension_id!r}")
+    if record.status not in {"active", "needs_review", "retired"}:
+        issues.append(f"status: unsupported value {record.status!r}")
+    for field_name in ("published_at", "verified_at", "valid_until"):
+        if not isinstance(getattr(record, field_name, None), date):
+            issues.append(f"{field_name}: must be a date")
+    if all(
+        isinstance(getattr(record, field_name, None), date)
+        for field_name in ("published_at", "verified_at", "valid_until")
+    ):
+        if record.published_at > record.verified_at:
+            issues.append("published_at: must not be after verified_at")
+        if record.valid_until < record.verified_at:
+            issues.append("valid_until: must not be before verified_at")
+    try:
+        computed_hash = build_question_content_hash(record)
+    except (TypeError, ValueError, AttributeError) as exc:
+        issues.append(f"content_hash: unable to compute canonical hash ({exc})")
+    else:
+        if record.content_hash != computed_hash:
+            issues.append(
+                "content_hash: stored value does not match canonical hash"
+            )
+    return tuple(dict.fromkeys(issues))
 
 
 def build_question_content_hash(
@@ -271,6 +334,8 @@ def load_question_bank(
     seen_question_ids: set[str] = set()
     seen_content_hashes: set[str] = set()
     bank_role_version = payload["role_version"]
+    bank_is_test_only = payload.get("test_only", False)
+    test_only_allowed = allow_test_only or test_dependency is not None
 
     for index, question in enumerate(questions):
         try:
@@ -297,6 +362,15 @@ def load_question_bank(
                 f"question role_version does not match bank root at index {index}: "
                 f"{record.role_version!r}"
             )
+        if record.source_type == "test_only_synthetic":
+            if not test_only_allowed:
+                raise ValueError(
+                    "test_only_synthetic records require an explicit test dependency"
+                )
+            if bank_is_test_only is not True:
+                raise ValueError(
+                    "test_only_synthetic records require root test_only=true"
+                )
         source_issue = _source_issue(record)
         if source_issue is not None:
             raise ValueError(
@@ -341,6 +415,8 @@ class QuestionBankAudit(Mapping[str, object]):
     retired_question_ids: list[str]
     missing_source_question_ids: list[str]
     invalid_source_question_ids: list[str]
+    invalid_record_question_ids: list[str]
+    invalid_record_reasons: dict[str, list[str]]
     inactive_question_ids: list[str]
     eligible_question_ids: list[str]
 
@@ -375,6 +451,10 @@ class QuestionBankAudit(Mapping[str, object]):
         return list(self.invalid_source_question_ids)
 
     @property
+    def invalid_record_ids(self) -> list[str]:
+        return list(self.invalid_record_question_ids)
+
+    @property
     def active_question_ids(self) -> list[str]:
         return list(self.eligible_question_ids)
 
@@ -397,6 +477,11 @@ class QuestionBankAudit(Mapping[str, object]):
             "retired_question_ids": list(self.retired_question_ids),
             "missing_source_question_ids": list(self.missing_source_question_ids),
             "invalid_source_question_ids": list(self.invalid_source_question_ids),
+            "invalid_record_question_ids": list(self.invalid_record_question_ids),
+            "invalid_record_reasons": {
+                question_id: list(reasons)
+                for question_id, reasons in self.invalid_record_reasons.items()
+            },
             "inactive_question_ids": list(self.inactive_question_ids),
             "eligible_question_ids": list(self.eligible_question_ids),
             # Short aliases make the report convenient for CLI serializers.
@@ -406,6 +491,7 @@ class QuestionBankAudit(Mapping[str, object]):
             "retired": list(self.retired_question_ids),
             "missing_source": list(self.missing_source_question_ids),
             "invalid_source": list(self.invalid_source_question_ids),
+            "invalid_record": list(self.invalid_record_question_ids),
         }
 
     def __getitem__(self, key: str) -> object:
@@ -464,6 +550,10 @@ def audit_question_bank(
         _coerce_audit_record(record, index)
         for index, record in enumerate(records)
     )
+    validation_issues_by_id = {
+        record.question_id: _record_validation_issues(record)
+        for record in snapshot
+    }
     expiring_cutoff = as_of + timedelta(days=expiring_within_days)
 
     expired_question_ids = sorted(
@@ -496,6 +586,16 @@ def audit_question_bank(
         for record in snapshot
         if _source_issue(record) == "invalid"
     )
+    invalid_record_question_ids = sorted(
+        question_id
+        for question_id, issues in validation_issues_by_id.items()
+        if issues
+    )
+    invalid_record_reasons = {
+        question_id: list(issues)
+        for question_id, issues in validation_issues_by_id.items()
+        if issues
+    }
     inactive_question_ids = sorted(
         record.question_id for record in snapshot if record.status != "active"
     )
@@ -506,6 +606,7 @@ def audit_question_bank(
             record.status == "active"
             and record.valid_until >= as_of
             and _source_issue(record) is None
+            and not validation_issues_by_id[record.question_id]
         )
     )
 
@@ -518,6 +619,8 @@ def audit_question_bank(
         retired_question_ids=retired_question_ids,
         missing_source_question_ids=missing_source_question_ids,
         invalid_source_question_ids=invalid_source_question_ids,
+        invalid_record_question_ids=invalid_record_question_ids,
+        invalid_record_reasons=invalid_record_reasons,
         inactive_question_ids=inactive_question_ids,
         eligible_question_ids=eligible_question_ids,
     )
