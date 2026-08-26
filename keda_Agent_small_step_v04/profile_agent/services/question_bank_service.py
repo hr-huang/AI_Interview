@@ -164,33 +164,30 @@ def _coerce_audit_record(
 
 def _record_validation_issues(
     record: InterviewQuestionRecord | _AuditRecord,
+    *,
+    supported_dimension_ids: Collection[str] | None = None,
 ) -> tuple[str, ...]:
-    """Validate invariants that raw mappings/model copies can bypass."""
+    """Re-run the complete record schema before an audit can mark eligibility."""
 
     existing = tuple(getattr(record, "invalid_reasons", ()))
     if isinstance(record, _AuditRecord):
         return existing
 
     issues = list(existing)
-    if not isinstance(record.question_id, str) or not record.question_id.strip():
-        issues.append("question_id: must be a non-blank string")
-    if record.role != SUPPORTED_ROLE:
-        issues.append(f"role: unsupported value {record.role!r}")
-    if record.dimension_id not in SUPPORTED_DIMENSION_IDS:
+    try:
+        InterviewQuestionRecord.model_validate(record.model_dump(mode="python"))
+    except ValidationError as exc:
+        issues.extend(_validation_error_reasons(exc))
+    except (TypeError, ValueError) as exc:
+        issues.append(f"record: unable to validate schema ({exc})")
+
+    dimensions = (
+        frozenset(supported_dimension_ids)
+        if supported_dimension_ids is not None
+        else SUPPORTED_DIMENSION_IDS
+    )
+    if record.dimension_id not in dimensions:
         issues.append(f"dimension_id: unsupported value {record.dimension_id!r}")
-    if record.status not in {"active", "needs_review", "retired"}:
-        issues.append(f"status: unsupported value {record.status!r}")
-    for field_name in ("published_at", "verified_at", "valid_until"):
-        if not isinstance(getattr(record, field_name, None), date):
-            issues.append(f"{field_name}: must be a date")
-    if all(
-        isinstance(getattr(record, field_name, None), date)
-        for field_name in ("published_at", "verified_at", "valid_until")
-    ):
-        if record.published_at > record.verified_at:
-            issues.append("published_at: must not be after verified_at")
-        if record.valid_until < record.verified_at:
-            issues.append("valid_until: must not be before verified_at")
     try:
         computed_hash = build_question_content_hash(record)
     except (TypeError, ValueError, AttributeError) as exc:
@@ -198,7 +195,7 @@ def _record_validation_issues(
     else:
         if record.content_hash != computed_hash:
             issues.append(
-                "content_hash: stored value does not match canonical hash"
+                "content_hash mismatch: stored value does not match canonical hash"
             )
     return tuple(dict.fromkeys(issues))
 
@@ -347,11 +344,6 @@ def load_question_bank(
             raise ValueError(
                 f"unsupported question role at index {index}: {record.role!r}"
             )
-        if record.dimension_id not in dimensions:
-            raise ValueError(
-                f"unsupported question dimension at index {index}: "
-                f"{record.dimension_id!r}"
-            )
         if expected_role_version is not None and record.role_version != expected_role_version:
             raise ValueError(
                 f"question role_version mismatch at index {index}: "
@@ -371,6 +363,15 @@ def load_question_bank(
                 raise ValueError(
                     "test_only_synthetic records require root test_only=true"
                 )
+        record_issues = _record_validation_issues(
+            record,
+            supported_dimension_ids=dimensions,
+        )
+        if record_issues:
+            raise ValueError(
+                f"invalid question bank record at index {index}: "
+                + "; ".join(record_issues)
+            )
         source_issue = _source_issue(record)
         if source_issue is not None:
             raise ValueError(
@@ -381,11 +382,6 @@ def load_question_bank(
             raise ValueError(f"duplicate question_id: {record.question_id}")
 
         computed_hash = build_question_content_hash(record)
-        if record.content_hash != computed_hash:
-            raise ValueError(
-                f"content_hash mismatch for question_id {record.question_id}: "
-                f"stored {record.content_hash!r}, computed {computed_hash!r}"
-            )
         if computed_hash in seen_content_hashes:
             raise ValueError(
                 "duplicate content_hash: "

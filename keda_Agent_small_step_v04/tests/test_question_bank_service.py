@@ -304,6 +304,48 @@ class QuestionBankServiceTests(unittest.TestCase):
             all(report.invalid_record_reasons[question_id] for question_id in expected_ids)
         )
 
+    def test_audit_revalidates_mutated_question_model_instances(self) -> None:
+        record = load_question_bank(FIXTURE_PATH, allow_test_only=True)[0]
+        variants = [
+            record.model_copy(
+                update={"question_id": "q_invalid_trust", "trust_level": "bogus"}
+            ),
+            record.model_copy(
+                update={"question_id": "q_invalid_version", "version": 0}
+            ),
+            record.model_copy(
+                update={
+                    "question_id": "q_invalid_mode",
+                    "question_mode": "unsupported_mode",
+                }
+            ),
+            record.model_copy(
+                update={
+                    "question_id": "q_invalid_difficulty",
+                    "difficulty": "unsupported_difficulty",
+                }
+            ),
+            record.model_copy(
+                update={"question_id": "q_invalid_signals", "expected_signals": None}
+            ),
+            record.model_copy(
+                update={"question_id": "q_invalid_skill_item", "skills": ["   "]}
+            ),
+        ]
+        # Recompute the hash for enum changes so the test proves schema
+        # validation is independent from the semantic hash guard.
+        for variant in variants[2:4]:
+            variant.content_hash = build_question_content_hash(variant)
+
+        report = audit_question_bank(variants, as_of=date(2026, 8, 26))
+
+        expected_ids = sorted(variant.question_id for variant in variants)
+        self.assertEqual(report.eligible_question_ids, [])
+        self.assertEqual(report.invalid_record_question_ids, expected_ids)
+        self.assertTrue(
+            all(report.invalid_record_reasons[question_id] for question_id in expected_ids)
+        )
+
     def test_rejects_unsupported_dimension_id(self) -> None:
         payload = self._load_fixture_json()
         payload["questions"][0]["dimension_id"] = "role_dim_99"
