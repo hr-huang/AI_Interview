@@ -19,6 +19,7 @@ from profile_agent.schemas.report_schema import (
 from profile_agent.schemas.runtime_schema import Evidence, InterviewTurn
 from profile_agent.services.enterprise_report_service import (
     ReportConsistencyError,
+    _contains_all_verified_claim,
     build_decision_signals,
     build_evidence_excerpts,
     derive_hiring_decision,
@@ -641,10 +642,40 @@ class EnterpriseReportServiceTest(unittest.TestCase):
         enterprise = _enterprise(
             snapshot=snapshot,
             overall_assessment="六项能力均已形成证据。",
+            unknowns=[_signal(dimension_ids=["role_dim_06"])],
         )
 
-        with self.assertRaises(ReportConsistencyError):
+        with self.assertRaisesRegex(ReportConsistencyError, "全部能力"):
             validate_enterprise_assessment(enterprise, snapshot, _turns())
+
+    def test_all_verified_claim_detector_uses_range_and_completion_semantics(
+        self,
+    ) -> None:
+        positive_claims = [
+            "六项能力均已形成证据。",
+            "六个维度都得到证明。",
+            "所有能力均已验证。",
+            "各项能力都有证据。",
+            "各能力均已验证。",
+            "每项能力均已验证。",
+            "全部能力均已覆盖。",
+        ]
+        negative_or_uncertain_claims = [
+            "并非所有能力都有证据。",
+            "尚未全部验证。",
+            "需要确认是否全部有证据。",
+            "不是六个维度都已验证。",
+            "所有能力都没有证据。",
+            "所有能力不一定都有证据。",
+            "all dimensions may have evidence.",
+        ]
+
+        for claim in positive_claims:
+            with self.subTest(claim=claim):
+                self.assertTrue(_contains_all_verified_claim(claim))
+        for claim in negative_or_uncertain_claims:
+            with self.subTest(claim=claim):
+                self.assertFalse(_contains_all_verified_claim(claim))
 
     def test_guard_rejects_empty_unknowns_for_unverified_dimensions(self) -> None:
         snapshot = _snapshot(unverified_dimensions=["role_dim_06"])

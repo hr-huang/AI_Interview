@@ -365,71 +365,153 @@ def derive_hiring_decision(snapshot: ScoreSnapshot) -> HiringDecisionDraft:
     )
 
 
-_ALL_VERIFIED_PATTERNS = (
+_ALL_RANGE_PATTERNS = (
     re.compile(
-        r"(?:全部|所有|全量|各|每个|每一)"
-        r"(?:的|这|该|六项|六个|六种|六大|六维|6项|6个|6种|6大|6维)?"
-        r"(?:岗位|核心|相关|这些)?(?:能力|维度|能力维度)?"
-        r"(?:均|都|全部|已经|已)?"
-        r"(?:有(?:充分|完整|足够)?证据|证据(?:充分|完整|足够)?|形成证据|得到验证|已验证|完成验证|被验证|验证完成|验证|覆盖)"
+        r"(?:全部|所有|全量|各项|各个|各类|各维度|每项|每类|每个|每一)"
+        r"(?:的)?(?:岗位|核心|相关|这些)?(?:能力|维度|指标|项)?"
     ),
     re.compile(
-        r"(?:六项|六个|六种|六大|六维|6项|6个|6种|6大|6维)"
-        r"(?:岗位|核心|相关|这些)?(?:能力|维度|能力维度)?"
-        r"(?:均|都|全部|已经|已)?"
-        r"(?:有(?:充分|完整|足够)?证据|证据(?:充分|完整|足够)?|形成证据|得到验证|已验证|完成验证|被验证|验证完成|验证|覆盖)"
+        r"各(?=(?:岗位|核心|相关|这些)?(?:能力|维度|指标|项))"
     ),
     re.compile(
-        r"\b(?:all|every|each)\s+(?:(?:six|6)\s+)?(?:dimensions?|competenc(?:y|ies)|abilit(?:y|ies))"
-        r"(?:\s+(?:all|are|have|has|show|were|is|have\s+been))?\s+(?:fully\s+)?"
-        r"(?:supported\s+by\s+evidence|evidence-backed|verified|validated|assessed|covered|have\s+evidence|has\s+evidence)\b",
+        r"(?:六|6)(?:项|个|种|大|维)"
+        r"(?:岗位|核心|相关|这些)?(?:能力|维度|指标|项)?"
+    ),
+    re.compile(
+        r"\b(?:all|every|each)(?:\s+(?:six|6))?\s+"
+        r"(?:dimensions?|competenc(?:y|ies)|abilit(?:y|ies)|"
+        r"capabilit(?:y|ies))\b",
         re.IGNORECASE,
     ),
     re.compile(
-        r"\b(?:all|every|each)\s+(?:(?:six|6)\s+)?(?:dimensions?|competenc(?:y|ies)|abilit(?:y|ies))"
-        r"\s+(?:have|has|show)\s+(?:evidence|proof)\b",
-        re.IGNORECASE,
-    ),
-    re.compile(
-        r"\b(?:six|6)\s+(?:dimensions?|competenc(?:y|ies)|abilit(?:y|ies))"
-        r"\s+(?:are|have|show)\s+(?:fully\s+)?"
-        r"(?:supported\s+by\s+evidence|evidence-backed|verified|validated|assessed|covered|evidence)\b",
+        r"\b(?:six|6)\s+(?:dimensions?|competenc(?:y|ies)|"
+        r"abilit(?:y|ies)|capabilit(?:y|ies))\b",
         re.IGNORECASE,
     ),
 )
 
-_COUNT_ONLY_ALL_VERIFIED_PATTERNS = (
+_COMPLETION_PATTERNS = (
     re.compile(
-        r"(?:六项|六个|六种|六大|六维|6项|6个|6种|6大|6维)"
-        r"(?:均|都|全部|已经|已)"
-        r"(?:有(?:充分|完整|足够)?证据|证据(?:充分|完整|足够)?|形成证据|得到验证|已验证|完成验证|被验证|验证完成|验证|覆盖)"
+        r"(?:已|已经)?(?:形成(?:了)?|有|拥有|具备|获得(?:了)?)"
+        r"(?:充分|完整|足够)?证据"
     ),
     re.compile(
-        r"(?:全部|所有|全量|各)(?:均|都|全部|已经|已)"
-        r"(?:有(?:充分|完整|足够)?证据|证据(?:充分|完整|足够)?|形成证据|得到验证|已验证|完成验证|被验证|验证完成|验证|覆盖)"
+        r"(?:证据)(?:充分|完整|足够)"
+    ),
+    re.compile(
+        r"(?:已|已经)?(?:得到(?:了)?|获得(?:了)?)"
+        r"(?:充分|完整|足够)?(?:证明|验证|核验)"
+    ),
+    re.compile(r"(?:已|已经)?(?:完成(?:了)?|被)(?:验证|核验|确认)"),
+    re.compile(r"(?:验证|核验|确认)(?:完成|覆盖)"),
+    re.compile(r"(?:已|已经)(?:验证|核验|确认|覆盖)"),
+    re.compile(r"(?:验证|核验|确认|覆盖)"),
+    re.compile(
+        r"(?:have|has|are|were|show)(?:\s+been)?\s+"
+        r"(?:fully\s+)?(?:supported\s+by\s+evidence|"
+        r"evidence[- ]backed|verified|validated|assessed|covered|"
+        r"evidence|proof)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:fully\s+)?(?:verified|validated|assessed|covered|"
+        r"evidence[- ]backed)\b",
+        re.IGNORECASE,
     ),
 )
 
-_NEGATED_ALL_VERIFIED_PREFIX = re.compile(
-    r"(?:并非|不是|并不|并未|不代表|不意味着|尚未|未能|无法|不能|没有|未|not|no)"
-    r"(?:做到|说明|代表|意味着|声称|表示|证明|完成|形成|达到|具备|满足|说|确认)?$",
-    re.IGNORECASE,
+_NEGATION_SCOPE_PATTERNS = (
+    re.compile(
+        r"(?:并非|不是|并不|并未|不代表|不意味着|尚未|未能|无法|不能|没有|"
+        r"(?<!未)未(?=全部|所有|六|验证|形成|有|覆盖|完成|能|曾|被)|"
+        r"没(?=有|证据|验证|形成|覆盖|完成)|没$|未$)"
+    ),
+    re.compile(
+        r"\b(?:not|no|never|without|don't|doesn't|didn't)\b",
+        re.IGNORECASE,
+    ),
 )
+
+_UNCERTAINTY_SCOPE_PATTERNS = (
+    re.compile(
+        r"(?:需要|需|待|仍需|尚需|有待)(?:进一步)?"
+        r"(?:确认|核验|验证|检查|补充)?"
+    ),
+    re.compile(
+        r"(?:是否|可能|或许|大概|也许|不一定|未必|不确定|待定|"
+        r"仍待|理论上|若|如果|假设|建议)"
+    ),
+    re.compile(
+        r"\b(?:need(?:s|ed)?\s+to|may|might|possibly|whether|"
+        r"if|should|could)\b",
+        re.IGNORECASE,
+    ),
+)
+
+_PARTIAL_SCOPE_PATTERNS = (
+    re.compile(
+        r"(?:部分|某些|少数|个别|只有|仅有|未全部|不全|大部分|大多|多数|"
+        r"几乎|近乎|基本|除[^，,:：；;。.!！?？\n]*(?:外|以外|之外))"
+    ),
+    re.compile(
+        r"\b(?:some|only|partial|partially|most|mostly|nearly|almost|"
+        r"largely|except|but)\b",
+        re.IGNORECASE,
+    ),
+)
+
+
+def _matches_any(patterns: tuple[re.Pattern[str], ...], text: str) -> bool:
+    return any(pattern.search(text) for pattern in patterns)
 
 
 def _contains_all_verified_claim(text: str) -> bool:
-    # Evaluate each short clause independently. This preserves an explicit
-    # negative such as “并非全部能力已验证” while still rejecting a positive
-    # clause later in the same report text.
-    clauses = re.split(r"[，,:：；;。.!！?？\n]", text)
+    """Detect an affirmative claim that the complete competency set is verified.
+
+    This is a small deterministic semantic check rather than a catalogue of
+    complete sentences.  It independently identifies a full-range reference
+    (for example ``六项能力`` or ``all six dimensions``) and a completion
+    predicate (for example ``均已形成证据`` or ``have been validated``), then
+    checks the scope between them for negation, uncertainty, or partial-coverage
+    cues.  A report containing a later affirmative clause is still rejected;
+    each clause is evaluated independently.
+    """
+
+    # Keep terminal question marks with their clause so an affirmative-looking
+    # question such as “所有能力均已验证吗？” is not treated as a fact.
+    clauses = re.split(r"(?<=[，,:：；;。.!！?？\n])", text)
     for clause in clauses:
-        normalized = clause.strip()
+        normalized = re.sub(r"\s+", " ", clause.strip())
         if not normalized:
             continue
-        for pattern in (*_ALL_VERIFIED_PATTERNS, *_COUNT_ONLY_ALL_VERIFIED_PATTERNS):
-            for match in pattern.finditer(normalized):
-                prefix = normalized[: match.start()].strip()
-                if _NEGATED_ALL_VERIFIED_PREFIX.search(prefix):
+
+        ranges = [
+            match
+            for pattern in _ALL_RANGE_PATTERNS
+            for match in pattern.finditer(normalized)
+        ]
+        completions = [
+            match
+            for pattern in _COMPLETION_PATTERNS
+            for match in pattern.finditer(normalized)
+        ]
+        for range_match in ranges:
+            for completion_match in completions:
+                if completion_match.start() < range_match.end():
+                    continue
+
+                prefix = normalized[: range_match.start()]
+                between = normalized[range_match.end() : completion_match.start()]
+                scope = prefix + between
+                if _matches_any(_NEGATION_SCOPE_PATTERNS, scope):
+                    continue
+                if _matches_any(_UNCERTAINTY_SCOPE_PATTERNS, scope):
+                    continue
+                if _matches_any(_PARTIAL_SCOPE_PATTERNS, scope):
+                    continue
+
+                suffix = normalized[completion_match.end() :].strip()
+                if re.search(r"(?:吗|么|呢|[?？])\s*$", suffix):
                     continue
                 return True
     return False
