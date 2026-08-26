@@ -63,3 +63,32 @@
 - 第二轮 TDD 定向测试：**21 passed**（含 env-read/dotenv spy、容错 audit、空题库、路径、
   维度、fingerprint 和日期边界）。
 - 第二轮全后端回归：`python -m unittest discover -s tests` — **560 passed**。
+
+## 第二轮复审修复追加
+
+- 将 apply 的 provider、model、dimension、index version、index path 和 base URL 收敛到
+  `build_question_index_config()`；默认值与 runtime 当前合同一致（`siliconflow`、
+  `BAAI/bge-m3`、`1024`、`questions-v1`），并按 `QUESTION_RAG_*` 优先、legacy alias 回退解析。
+  dry-run 继续使用静态默认值，不读取环境、不加载 dotenv。
+- tolerant audit 保留 raw 记录诊断路径，严格保留 root `role_version`；记录版本漂移会进入
+  `invalid_record` 并从 eligible 排除。畸形 URL 先转换为受控 invalid-source 标记，缺失 URL
+  仍分类为 missing-source，不会让单条记录中止 audit。
+- embedding client 在付费 embed 前预检声明的 provider/model/dimension；返回向量维度必须与
+  canonical config 相同；fingerprint 的 provider/model/dimension/index version 也必须逐项与
+  client/config 一致，任何漂移均在 store 构造或 mutation 前以 code 2 失败。
+- audit 的 question/source ID 统一稳定短 hash（缺失记录仅保留受控 ordinal），未知 status
+  统一为 `invalid`；human/JSON 和参数错误均不回显题目文本、来源 URL、原始 ID/status 或输入
+  片段。日期格式、极值和 auditor 的 ValueError/OverflowError 统一返回 validation code 2。
+- README 的环境变量示例改为纯注释变量名，明确 unset 与 blank 的区别、apply 成本和 key 不得
+  入库；追加测试覆盖默认维度、client identity、fingerprint 漂移、role version、畸形 URL、
+  参数错误和 secret-safe 输出。
+
+## 复审修复验证
+
+- 定向：`\.venv\Scripts\python.exe -m unittest tests.test_run_question_bank -v` — **32/32 通过**。
+- 全后端：`\.venv\Scripts\python.exe -m unittest discover -s tests` — **571/571 通过**。
+- 编译：`\.venv\Scripts\python.exe -m compileall -q profile_agent tests run_question_bank.py` —
+  **通过**。
+- `git diff --check -- README.md run_question_bank.py tests/test_run_question_bank.py
+  rag-task-7-report.md` — **通过**；tracked secret scan（`sk-*`）— **无匹配**；未读取或打印
+  任何真实 key。

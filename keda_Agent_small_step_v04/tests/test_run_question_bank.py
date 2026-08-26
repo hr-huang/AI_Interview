@@ -11,7 +11,7 @@ import unittest
 from unittest.mock import patch
 
 import run_question_bank
-from run_question_bank import QuestionBankDependencies
+from run_question_bank import QuestionBankDependencies, build_question_index_config
 
 
 FIXTURE_PATH = (
@@ -171,6 +171,50 @@ class RunQuestionBankTests(unittest.TestCase):
         self.assertEqual(store_calls, [])
         self.assertEqual(stderr, "")
 
+    def test_dry_run_uses_runtime_canonical_index_defaults(self) -> None:
+        bank = self._write_bank()
+
+        code, stdout, stderr = self._run(
+            ["rebuild", "--bank", str(bank), "--format", "json"]
+        )
+
+        self.assertEqual(code, 0)
+        summary = json.loads(stdout)
+        self.assertEqual(summary["model"], "BAAI/bge-m3")
+        self.assertEqual(summary["index_version"], "questions-v1")
+        self.assertEqual(stderr, "")
+
+    def test_apply_uses_canonical_embedding_aliases_and_identity(self) -> None:
+        bank = self._write_bank()
+        store = FakeStore()
+
+        class PlainEmbedding:
+            def embed(self, texts: list[str]) -> list[list[float]]:
+                return [[1.0, 2.0, 3.0] for _ in texts]
+
+        code, stdout, stderr = self._run(
+            ["rebuild", "--bank", str(bank), "--apply", "--format", "json"],
+            env={
+                "QUESTION_RAG_EMBEDDING_MODEL": "canonical-model",
+                "SILICONFLOW_EMBEDDING_MODEL": "legacy-model",
+                "QUESTION_RAG_EMBEDDING_PROVIDER": "canonical-provider",
+                "QUESTION_RAG_EMBEDDING_DIMENSION": "3",
+                "QUESTION_RAG_INDEX_VERSION": "canonical-index-v2",
+            },
+            embedding_factory=lambda **_: PlainEmbedding(),
+            store_factory=lambda **_: store,
+        )
+
+        self.assertEqual(code, 0)
+        self.assertEqual(len(store.rebuild_calls), 1)
+        fingerprint = store.rebuild_calls[0][2]
+        self.assertEqual(fingerprint.provider, "canonical-provider")
+        self.assertEqual(fingerprint.model, "canonical-model")
+        self.assertEqual(fingerprint.dimension, 3)
+        self.assertEqual(fingerprint.index_version, "canonical-index-v2")
+        self.assertIn("canonical-model", stdout)
+        self.assertEqual(stderr, "")
+
     def test_dry_run_never_loads_dotenv_or_reads_a_key_into_process(self) -> None:
         bank = self._write_bank()
 
@@ -231,6 +275,11 @@ class RunQuestionBankTests(unittest.TestCase):
 
         code, stdout, stderr = self._run(
             ["rebuild", "--bank", str(bank), "--apply", "--as-of", "2026-08-26"],
+            env={
+                "QUESTION_RAG_EMBEDDING_PROVIDER": "fake-provider",
+                "QUESTION_RAG_EMBEDDING_MODEL": "fake-model",
+                "QUESTION_RAG_EMBEDDING_DIMENSION": "3",
+            },
             embedding_factory=lambda **_: embedding,
             store_factory=lambda **_: store,
         )
@@ -256,6 +305,11 @@ class RunQuestionBankTests(unittest.TestCase):
 
         code, stdout, stderr = self._run(
             ["sync", "--bank", str(bank), "--apply", "--as-of", "2026-08-26"],
+            env={
+                "QUESTION_RAG_EMBEDDING_PROVIDER": "fake-provider",
+                "QUESTION_RAG_EMBEDDING_MODEL": "fake-model",
+                "QUESTION_RAG_EMBEDDING_DIMENSION": "3",
+            },
             embedding_factory=lambda **_: embedding,
             store_factory=lambda **_: store,
         )
@@ -329,6 +383,84 @@ class RunQuestionBankTests(unittest.TestCase):
         self.assertIn("<record:0>", report["invalid_record_ids"])
         self.assertEqual(stderr, "")
 
+    def test_audit_rejects_record_role_version_drift_from_bank_root(self) -> None:
+        payload = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
+        payload["test_only"] = False
+        for question in payload["questions"]:
+            question["source_type"] = "public_interview_experience"
+        payload["questions"][0]["role_version"] = "different-role-version"
+        self.bank_path.write_text(
+            json.dumps(payload, ensure_ascii=False), encoding="utf-8"
+        )
+
+        code, stdout, stderr = self._run(
+            ["audit", "--bank", str(self.bank_path), "--format", "json"]
+        )
+
+        self.assertEqual(code, 0)
+        report = json.loads(stdout)
+        self.assertGreaterEqual(report["invalid_record_count"], 1)
+        self.assertEqual(report["role_version_mismatch_count"], 1)
+        self.assertNotIn("different-role-version", stdout)
+        self.assertLess(report["eligible_count"], report["records"])
+        self.assertEqual(stderr, "")
+
+    def test_audit_classifies_malformed_source_url_as_invalid_source(self) -> None:
+        payload = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
+        payload["test_only"] = False
+        for question in payload["questions"]:
+            question["source_type"] = "public_interview_experience"
+        payload["questions"][0]["source_url"] = "http://["
+        self.bank_path.write_text(
+            json.dumps(payload, ensure_ascii=False), encoding="utf-8"
+        )
+
+        code, stdout, stderr = self._run(
+            ["audit", "--bank", str(self.bank_path), "--format", "json"]
+        )
+
+        self.assertEqual(code, 0)
+        report = json.loads(stdout)
+        self.assertEqual(report["invalid_source_count"], 1)
+        self.assertNotIn("http://[", stdout)
+        self.assertNotEqual(report["status"], "error")
+        self.assertEqual(stderr, "")
+
+    def test_audit_never_echoes_untrusted_ids_or_statuses(self) -> None:
+        payload = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
+        payload["test_only"] = False
+        for question in payload["questions"]:
+            question["source_type"] = "public_interview_experience"
+        sensitive_id = "api-key=do-not-print-credential-value"
+        sensitive_source_id = "source-secret=do-not-print-source-id"
+        sensitive_source_url = "https://secret.example/should-never-appear"
+        sensitive_text = "question-snippet=do-not-print-question-text"
+        sensitive_status = "opaque-status-do-not-print"
+        payload["questions"][0]["question_id"] = sensitive_id
+        payload["questions"][0]["source_id"] = sensitive_source_id
+        payload["questions"][0]["source_url"] = sensitive_source_url
+        payload["questions"][0]["question_text"] = sensitive_text
+        payload["questions"][0]["status"] = sensitive_status
+        self.bank_path.write_text(
+            json.dumps(payload, ensure_ascii=False), encoding="utf-8"
+        )
+
+        code, stdout, stderr = self._run(
+            ["audit", "--bank", str(self.bank_path), "--format", "json"]
+        )
+
+        self.assertEqual(code, 0)
+        report = json.loads(stdout)
+        self.assertNotIn(sensitive_id, stdout)
+        self.assertNotIn(sensitive_source_id, stdout)
+        self.assertNotIn(sensitive_source_url, stdout)
+        self.assertNotIn(sensitive_text, stdout)
+        self.assertNotIn(sensitive_status, stdout)
+        self.assertEqual(set(report["status_counts"]).difference(
+            {"active", "needs_review", "retired", "invalid"}
+        ), set())
+        self.assertEqual(stderr, "")
+
     def test_empty_bank_fails_validate_dry_run_and_apply_before_dependencies(self) -> None:
         payload = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
         payload["test_only"] = False
@@ -393,6 +525,10 @@ class RunQuestionBankTests(unittest.TestCase):
 
         code, stdout, stderr = self._run(
             ["rebuild", "--bank", str(bank), "--apply", "--dimension", "4"],
+            env={
+                "QUESTION_RAG_EMBEDDING_PROVIDER": "fake-provider",
+                "QUESTION_RAG_EMBEDDING_MODEL": "fake-model",
+            },
             embedding_factory=lambda **_: embedding,
             store_factory=lambda **_: store_calls.append(True),
         )
@@ -410,8 +546,42 @@ class RunQuestionBankTests(unittest.TestCase):
 
         code, stdout, stderr = self._run(
             ["rebuild", "--bank", str(bank), "--apply"],
+            env={
+                "QUESTION_RAG_EMBEDDING_PROVIDER": "fake-provider",
+                "QUESTION_RAG_EMBEDDING_MODEL": "fake-model",
+                "QUESTION_RAG_EMBEDDING_DIMENSION": "3",
+            },
             embedding_factory=lambda **_: embedding,
             fingerprint_factory=lambda **_: object(),
+            store_factory=lambda **_: store_calls.append(True),
+        )
+
+        self.assertEqual(code, 2)
+        self.assertEqual(len(embedding.calls), 1)
+        self.assertEqual(store_calls, [])
+        self.assertEqual(stdout, "")
+        self.assertIn("配置错误", stderr)
+
+    def test_fingerprint_dimension_drift_fails_before_store(self) -> None:
+        bank = self._write_bank()
+        embedding = FakeEmbedding()
+        store_calls: list[bool] = []
+
+        def drifted_fingerprint(**kwargs):
+            return {
+                **kwargs,
+                "dimension": kwargs["dimension"] + 1,
+            }
+
+        code, stdout, stderr = self._run(
+            ["rebuild", "--bank", str(bank), "--apply"],
+            env={
+                "QUESTION_RAG_EMBEDDING_PROVIDER": "fake-provider",
+                "QUESTION_RAG_EMBEDDING_MODEL": "fake-model",
+                "QUESTION_RAG_EMBEDDING_DIMENSION": "3",
+            },
+            embedding_factory=lambda **_: embedding,
+            fingerprint_factory=drifted_fingerprint,
             store_factory=lambda **_: store_calls.append(True),
         )
 
@@ -433,6 +603,24 @@ class RunQuestionBankTests(unittest.TestCase):
             env={
                 "QUESTION_RAG_INDEX_PATH": str(occupied_path),
             },
+            embedding_factory=lambda **_: embedding,
+            store_factory=lambda **_: store_calls.append(True),
+        )
+
+        self.assertEqual(code, 2)
+        self.assertEqual(embedding.calls, [])
+        self.assertEqual(store_calls, [])
+        self.assertEqual(stdout, "")
+        self.assertIn("配置错误", stderr)
+
+    def test_malformed_base_url_is_configuration_error_before_embedding(self) -> None:
+        bank = self._write_bank()
+        embedding = FakeEmbedding()
+        store_calls: list[bool] = []
+
+        code, stdout, stderr = self._run(
+            ["rebuild", "--bank", str(bank), "--apply"],
+            env={"SILICONFLOW_EMBEDDING_BASE_URL": "http://["},
             embedding_factory=lambda **_: embedding,
             store_factory=lambda **_: store_calls.append(True),
         )
@@ -522,6 +710,75 @@ class RunQuestionBankTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(json.loads(stdout)["records"], 6)
         self.assertEqual(stderr, "")
+
+    def test_default_dimension_is_enforced_for_injected_embedding(self) -> None:
+        bank = self._write_bank()
+        embedding = FakeEmbedding()
+        embedding.dimension = 3
+        store_calls: list[bool] = []
+
+        code, stdout, stderr = self._run(
+            ["rebuild", "--bank", str(bank), "--apply"],
+            env={
+                "QUESTION_RAG_EMBEDDING_PROVIDER": "fake-provider",
+                "QUESTION_RAG_EMBEDDING_MODEL": "fake-model",
+            },
+            embedding_factory=lambda **_: embedding,
+            store_factory=lambda **_: store_calls.append(True),
+        )
+
+        self.assertEqual(code, 2)
+        self.assertEqual(len(embedding.calls), 0)
+        self.assertEqual(store_calls, [])
+        self.assertEqual(stdout, "")
+        self.assertIn("配置错误", stderr)
+
+    def test_declared_embedding_identity_drift_fails_before_paid_embed(self) -> None:
+        bank = self._write_bank()
+        store_calls: list[bool] = []
+
+        class DriftedEmbedding:
+            provider = "unexpected-provider"
+            model = "unexpected-model"
+            dimension = 3
+
+            def embed(self, texts: list[str]) -> list[list[float]]:
+                raise AssertionError("identity drift must fail before embed")
+
+        code, stdout, stderr = self._run(
+            ["rebuild", "--bank", str(bank), "--apply"],
+            env={
+                "QUESTION_RAG_EMBEDDING_PROVIDER": "configured-provider",
+                "QUESTION_RAG_EMBEDDING_MODEL": "configured-model",
+                "QUESTION_RAG_EMBEDDING_DIMENSION": "3",
+            },
+            embedding_factory=lambda **_: DriftedEmbedding(),
+            store_factory=lambda **_: store_calls.append(True),
+        )
+
+        self.assertEqual(code, 2)
+        self.assertEqual(store_calls, [])
+        self.assertEqual(stdout, "")
+        self.assertIn("配置错误", stderr)
+
+    def test_canonical_config_rejects_non_integer_dimension_values(self) -> None:
+        with self.assertRaises(run_question_bank.QuestionBankConfigurationError):
+            build_question_index_config(
+                {},
+                index_path=Path(self.temp_dir.name),
+                dimension=3.5,
+            )
+
+    def test_argument_errors_do_not_echo_untrusted_input(self) -> None:
+        secret = "api-key=argument-secret-must-not-print"
+
+        code, stdout, stderr = self._run(
+            ["audit", "--bank", str(self.bank_path), "--format", secret]
+        )
+
+        self.assertEqual(code, 2)
+        self.assertEqual(stdout, "")
+        self.assertNotIn(secret, stderr)
 
     def test_apply_without_key_returns_secret_safe_configuration_error(self) -> None:
         bank = self._write_bank()

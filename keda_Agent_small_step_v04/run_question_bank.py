@@ -13,6 +13,7 @@ from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
+import hashlib
 import inspect
 import json
 import math
@@ -37,14 +38,17 @@ from profile_agent.services.question_bank_service import (
     load_question_bank,
 )
 from profile_agent.services.siliconflow_embedding_service import (
+    DEFAULT_BASE_URL as EMBEDDING_DEFAULT_BASE_URL,
+    DEFAULT_MODEL as EMBEDDING_DEFAULT_MODEL,
     SiliconFlowEmbeddingClient,
 )
 
 
-DEFAULT_MODEL = "BAAI/bge-m3"
-DEFAULT_BASE_URL = "https://api.siliconflow.cn/v1"
+DEFAULT_MODEL = EMBEDDING_DEFAULT_MODEL
+DEFAULT_BASE_URL = EMBEDDING_DEFAULT_BASE_URL
 DEFAULT_PROVIDER = "siliconflow"
-DEFAULT_INDEX_VERSION = "question-bank.v1"
+DEFAULT_DIMENSION = 1024
+DEFAULT_INDEX_VERSION = "questions-v1"
 DEFAULT_INDEX_PATH = Path("data/qdrant-question-index")
 DEFAULT_EXPIRING_WITHIN_DAYS = 30
 
@@ -59,6 +63,13 @@ class QuestionBankValidationError(ValueError):
 
 class QuestionBankConfigurationError(ValueError):
     """The command cannot safely perform the requested apply operation."""
+
+
+class _SafeArgumentParser(argparse.ArgumentParser):
+    """Keep argparse from echoing untrusted values in its default errors."""
+
+    def error(self, _message: str) -> None:
+        raise QuestionBankConfigurationError("invalid command arguments")
 
 
 @dataclass(frozen=True)
@@ -80,6 +91,29 @@ class QuestionBankDependencies:
     now_provider: Callable[[], date] | None = None
     test_dependency: object | None = None
     raw_audit_loader: Callable[..., Any] | None = None
+
+
+@dataclass(frozen=True)
+class QuestionIndexConfig:
+    """Canonical identity/configuration shared by index writers and readers.
+
+    The runtime reader's contract is provider/model/dimension/index_version.
+    CLI-specific overrides are resolved into this value before any client is
+    constructed, so the manifest identity cannot silently drift from defaults.
+    """
+
+    provider: str
+    model: str
+    dimension: int
+    index_version: str
+    index_path: Path
+    base_url: str
+
+
+@dataclass(frozen=True)
+class _RawAuditPayload:
+    records: list[Mapping[str, Any]]
+    role_version: str | None = None
 
 
 class _DependencyView:
@@ -135,7 +169,7 @@ class _DependencyView:
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = _SafeArgumentParser(
         description="管理版本化面试题库与可重建的 Qdrant 索引"
     )
     subparsers = parser.add_subparsers(dest="action", required=True)
@@ -282,19 +316,6 @@ def _env_value(env: Mapping[str, str], name: str, default: str = "") -> str:
 _MISSING_ENV_VALUE = object()
 
 
-def _env_setting(env: Mapping[str, str], name: str, default: str) -> str:
-    """Read one non-secret setting while preserving an explicitly blank value."""
-
-    value = env.get(name, _MISSING_ENV_VALUE)
-    if value is _MISSING_ENV_VALUE:
-        return default.strip()
-    if value is None:
-        return ""
-    if not isinstance(value, str):
-        return str(value).strip()
-    return value.strip()
-
-
 def _require_non_blank(value: Any, label: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise QuestionBankConfigurationError(f"{label} must not be blank")
@@ -303,7 +324,12 @@ def _require_non_blank(value: Any, label: str) -> str:
 
 def _validate_base_url(value: Any) -> str:
     base_url = _require_non_blank(value, "embedding base URL")
-    parsed = urlparse(base_url)
+    try:
+        parsed = urlparse(base_url)
+        # Accessing .port forces urlparse to validate malformed port syntax.
+        _ = parsed.port
+    except (UnicodeError, ValueError) as exc:
+        raise QuestionBankConfigurationError("embedding base URL is invalid") from exc
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         raise QuestionBankConfigurationError("embedding base URL is invalid")
     return base_url
@@ -343,6 +369,139 @@ def _validate_index_path(value: Any) -> Path:
     except (OSError, ValueError) as exc:
         raise QuestionBankConfigurationError("index path is unavailable") from exc
     return path
+
+
+def _env_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        return str(value).strip()
+    return value.strip()
+
+
+def _first_env_setting(
+    env: Mapping[str, str],
+    names: Sequence[str],
+    default: str,
+) -> str:
+    for name in names:
+        value = env.get(name, _MISSING_ENV_VALUE)
+        if value is _MISSING_ENV_VALUE:
+            continue
+        text = _env_text(value)
+        if text:
+            return text
+    return default.strip()
+
+
+def _parse_dimension_setting(value: Any) -> int:
+    if isinstance(value, bool):
+        raise QuestionBankConfigurationError(
+            "embedding dimension must be a positive integer"
+        )
+    if isinstance(value, int):
+        dimension = value
+    elif isinstance(value, str) and re.fullmatch(r"[+]?[0-9]+", value.strip()):
+        try:
+            dimension = int(value.strip())
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise QuestionBankConfigurationError(
+                "embedding dimension must be a positive integer"
+            ) from exc
+    else:
+        raise QuestionBankConfigurationError(
+            "embedding dimension must be a positive integer"
+        )
+    if dimension <= 0:
+        raise QuestionBankConfigurationError(
+            "embedding dimension must be a positive integer"
+        )
+    return dimension
+
+
+def build_question_index_config(
+    env: Mapping[str, str],
+    *,
+    model: str | None = None,
+    index_version: str | None = None,
+    index_path: Path | None = None,
+    dimension: int | None = None,
+) -> QuestionIndexConfig:
+    """Resolve the one canonical index identity/configuration.
+
+    Environment aliases intentionally follow the runtime reader: the
+    ``QUESTION_RAG_*`` names win over legacy/provider-specific names, and blank
+    environment entries behave like unset values.  Explicit CLI values are
+    validated by the caller before this builder is reached.
+    """
+
+    if not isinstance(env, Mapping):
+        raise QuestionBankConfigurationError("environment configuration is invalid")
+    resolved_model = _require_non_blank(
+        model
+        if model is not None
+        else _first_env_setting(
+            env,
+            ("QUESTION_RAG_EMBEDDING_MODEL", "SILICONFLOW_EMBEDDING_MODEL"),
+            DEFAULT_MODEL,
+        ),
+        "embedding model",
+    )
+    resolved_provider = _require_non_blank(
+        _first_env_setting(
+            env,
+            ("QUESTION_RAG_EMBEDDING_PROVIDER",),
+            DEFAULT_PROVIDER,
+        ),
+        "embedding provider",
+    )
+    if dimension is None:
+        raw_dimension = _first_env_setting(
+            env,
+            ("QUESTION_RAG_EMBEDDING_DIMENSION",),
+            str(DEFAULT_DIMENSION),
+        )
+        resolved_dimension = _parse_dimension_setting(raw_dimension)
+    else:
+        resolved_dimension = _parse_dimension_setting(dimension)
+    resolved_version = _require_non_blank(
+        index_version
+        if index_version is not None
+        else _first_env_setting(
+            env,
+            ("QUESTION_RAG_INDEX_VERSION",),
+            DEFAULT_INDEX_VERSION,
+        ),
+        "index version",
+    )
+    resolved_path = _validate_index_path(
+        index_path
+        if index_path is not None
+        else _first_env_setting(
+            env,
+            ("QUESTION_RAG_INDEX_PATH", "QDRANT_QUESTION_INDEX_PATH"),
+            str(DEFAULT_INDEX_PATH),
+        )
+    )
+    resolved_base_url = _validate_base_url(
+        _first_env_setting(
+            env,
+            ("SILICONFLOW_EMBEDDING_BASE_URL",),
+            DEFAULT_BASE_URL,
+        )
+    )
+    return QuestionIndexConfig(
+        provider=resolved_provider,
+        model=resolved_model,
+        dimension=resolved_dimension,
+        index_version=resolved_version,
+        index_path=resolved_path,
+        base_url=resolved_base_url,
+    )
+
+
+# Keep the private spelling available for callers from the first Task7 draft.
+_build_index_config = build_question_index_config
 
 
 def _normalise_records(value: Any, *, test_dependency: object | None) -> list[InterviewQuestionRecord]:
@@ -410,7 +569,7 @@ def _read_raw_audit_bank(
     path: Path,
     *,
     test_dependency: object | None,
-) -> list[Mapping[str, Any]]:
+) -> _RawAuditPayload:
     """Read enough bank structure for audit without enforcing record strictness.
 
     Audit is intentionally the diagnostic path: malformed record/source fields,
@@ -478,7 +637,7 @@ def _read_raw_audit_bank(
         raise QuestionBankValidationError(
             "test-only synthetic records require an explicit test dependency"
         )
-    return normalised_questions
+    return _RawAuditPayload(normalised_questions, role_version=role_version)
 
 
 def _call_raw_audit_loader(
@@ -486,7 +645,7 @@ def _call_raw_audit_loader(
     path: Path,
     *,
     test_dependency: object | None,
-) -> list[Mapping[str, Any]]:
+) -> _RawAuditPayload:
     try:
         loaded = _call_with_supported_kwargs(
             loader,
@@ -498,6 +657,47 @@ def _call_raw_audit_loader(
         )
     except Exception as exc:
         raise QuestionBankValidationError("question bank audit loader failed") from exc
+    if isinstance(loaded, _RawAuditPayload):
+        if loaded.role_version is not None and (
+            not isinstance(loaded.role_version, str)
+            or not loaded.role_version.strip()
+        ):
+            raise QuestionBankValidationError("question bank role_version is invalid")
+        raw_records = loaded.records
+        if isinstance(raw_records, (str, bytes, bytearray)):
+            raise QuestionBankValidationError(
+                "question bank audit loader returned invalid records"
+            )
+        try:
+            raw_records = list(raw_records)
+        except TypeError as exc:
+            raise QuestionBankValidationError(
+                "question bank audit loader returned invalid records"
+            ) from exc
+        if not raw_records:
+            raise QuestionBankValidationError("question bank audit must contain records")
+        normalised_records: list[Mapping[str, Any]] = []
+        for index, record in enumerate(raw_records):
+            if isinstance(record, Mapping):
+                normalised_records.append(record)
+            elif isinstance(record, InterviewQuestionRecord):
+                normalised_records.append(record.model_dump(mode="python"))
+            else:
+                normalised_records.append(
+                    {
+                        "question_id": f"<record:{index}>",
+                        "valid_until": date.max,
+                        "status": None,
+                    }
+                )
+        if any(
+            record.get("source_type") == "test_only_synthetic"
+            for record in normalised_records
+        ) and test_dependency is None:
+            raise QuestionBankValidationError(
+                "test-only synthetic records require an explicit test dependency"
+            )
+        return _RawAuditPayload(normalised_records, loaded.role_version)
     if isinstance(loaded, (str, bytes, bytearray)):
         raise QuestionBankValidationError("question bank audit loader returned invalid records")
     try:
@@ -527,7 +727,7 @@ def _call_raw_audit_loader(
         raise QuestionBankValidationError(
             "test-only synthetic records require an explicit test dependency"
         )
-    return normalised_records
+    return _RawAuditPayload(normalised_records)
 
 
 def _call_with_supported_kwargs(
@@ -589,9 +789,9 @@ def _call_auditor(
         kwargs.setdefault("expiring_within_days", expiring_within_days)
     try:
         return _call_with_supported_kwargs(auditor, (records,), kwargs)
-    except OverflowError as exc:
-        # A date at the edge of Python's representable range plus a warning
-        # window is a command/configuration error, not a backend failure.
+    except (OverflowError, ValueError) as exc:
+        # Date/window validation is a command/configuration error, not a
+        # backend failure, even when an injected auditor raises ValueError.
         raise QuestionBankConfigurationError("date range cannot be represented") from exc
 
 
@@ -616,6 +816,60 @@ def _audit_ids(report: Any, *names: str) -> list[str]:
         return []
 
 
+def _raw_record_identifier(record: Mapping[str, Any], index: int) -> str:
+    value = record.get("question_id")
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return f"<record:{index}>"
+
+
+def _prepare_audit_records(
+    records: Sequence[Mapping[str, Any]],
+) -> list[Mapping[str, Any]]:
+    """Keep malformed URLs diagnostic instead of letting urlparse abort audit."""
+
+    prepared: list[Mapping[str, Any]] = []
+    for index, record in enumerate(records):
+        if not isinstance(record, Mapping):
+            prepared.append(
+                {
+                    "question_id": f"<record:{index}>",
+                    "valid_until": date.max,
+                    "status": None,
+                }
+            )
+            continue
+        copied = dict(record)
+        source_url = copied.get("source_url")
+        if isinstance(source_url, str):
+            try:
+                parsed = urlparse(source_url.strip())
+                _ = parsed.port
+            except (UnicodeError, ValueError):
+                # The canonical auditor sees this as a syntactically invalid
+                # URL and can safely report invalid_source.  The original URL
+                # is never rendered or included in an exception message.
+                copied["source_url"] = "invalid://source"
+        elif source_url is not None:
+            copied["source_url"] = "invalid://source"
+        prepared.append(copied)
+    return prepared
+
+
+def _role_version_mismatch_ids(
+    records: Sequence[Mapping[str, Any]],
+    root_role_version: str | None,
+) -> list[str]:
+    if root_role_version is None:
+        return []
+    return [
+        _raw_record_identifier(record, index)
+        for index, record in enumerate(records)
+        if not isinstance(record.get("role_version"), str)
+        or record.get("role_version") != root_role_version
+    ]
+
+
 def _raw_audit_diagnostics(
     records: Sequence[Mapping[str, Any]],
 ) -> dict[str, list[str]]:
@@ -625,12 +879,7 @@ def _raw_audit_diagnostics(
     hash_groups: defaultdict[str, list[str]] = defaultdict(list)
     hash_mismatch_ids: list[str] = []
     for index, raw_record in enumerate(records):
-        question_id = raw_record.get("question_id")
-        safe_id = (
-            question_id.strip()
-            if isinstance(question_id, str) and question_id.strip()
-            else f"<record:{index}>"
-        )
+        safe_id = _raw_record_identifier(raw_record, index)
         id_groups[safe_id].append(safe_id)
 
         content_hash = raw_record.get("content_hash")
@@ -668,15 +917,41 @@ def _raw_audit_diagnostics(
 
 
 def _record_count_by_status(records: Sequence[Any]) -> dict[str, int]:
+    allowed_statuses = {"active", "needs_review", "retired"}
     counts: dict[str, int] = {}
     for record in records:
         if isinstance(record, Mapping):
             status_value = record.get("status")
         else:
             status_value = getattr(record, "status", None)
-        status = str(status_value) if status_value is not None else "invalid"
+        status = (
+            status_value
+            if isinstance(status_value, str) and status_value in allowed_statuses
+            else "invalid"
+        )
         counts[status] = counts.get(status, 0) + 1
     return dict(sorted(counts.items()))
+
+
+def _safe_audit_identifier(value: Any) -> str:
+    """Project an untrusted question id to a stable, non-echoing token."""
+
+    text = str(value)
+    if re.fullmatch(r"<record:[0-9]+>", text):
+        return text
+    digest = hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()[:12]
+    return f"id:{digest}"
+
+
+def _safe_audit_identifiers(values: Sequence[Any]) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        projected = _safe_audit_identifier(value)
+        if projected not in seen:
+            seen.add(projected)
+            result.append(projected)
+    return result
 
 
 def _public_model(value: Any) -> str:
@@ -782,17 +1057,39 @@ def _build_fingerprint(
     *,
     embedding: Any,
     vectors: Sequence[Sequence[float]],
+    configured_provider: str,
     configured_model: str,
+    configured_dimension: int,
     configured_index_version: str,
     fingerprint_factory: Callable[..., Any] | None,
 ) -> IndexFingerprint:
-    provider = _public_model(
-        getattr(embedding, "provider", DEFAULT_PROVIDER) or DEFAULT_PROVIDER
+    _validate_embedding_identity(
+        embedding,
+        configured_provider=configured_provider,
+        configured_model=configured_model,
+        configured_dimension=configured_dimension,
     )
-    model = _public_model(
-        getattr(embedding, "model", configured_model) or configured_model
+    provider_value = getattr(embedding, "provider", None)
+    provider = _require_non_blank(
+        provider_value if provider_value is not None else configured_provider,
+        "embedding provider",
+    )
+    model_value = getattr(embedding, "model", None)
+    model = _require_non_blank(
+        model_value if model_value is not None else configured_model,
+        "embedding model",
     )
     dimension = len(vectors[0]) if vectors else 0
+    if dimension <= 0 or any(len(vector) != dimension for vector in vectors):
+        raise QuestionBankConfigurationError("embedding vectors have inconsistent dimensions")
+    if dimension != configured_dimension:
+        raise QuestionBankConfigurationError(
+            "embedding vectors do not match configured dimension"
+        )
+    configured_index_version = _require_non_blank(
+        configured_index_version,
+        "index version",
+    )
     if fingerprint_factory is not None:
         fingerprint = _call_with_supported_kwargs(
             fingerprint_factory,
@@ -811,12 +1108,62 @@ def _build_fingerprint(
             dimension=dimension,
             index_version=configured_index_version,
         )
-    if isinstance(fingerprint, IndexFingerprint):
-        return fingerprint
-    try:
-        return IndexFingerprint.model_validate(fingerprint)
-    except Exception as exc:
-        raise ValueError("fingerprint dependency returned an invalid value") from exc
+    if not isinstance(fingerprint, IndexFingerprint):
+        try:
+            fingerprint = IndexFingerprint.model_validate(fingerprint)
+        except Exception as exc:
+            raise ValueError("fingerprint dependency returned an invalid value") from exc
+    if (
+        fingerprint.provider != provider
+        or fingerprint.model != model
+        or fingerprint.dimension != dimension
+        or fingerprint.index_version != configured_index_version
+    ):
+        raise QuestionBankConfigurationError(
+            "fingerprint identity does not match embedding/index configuration"
+        )
+    return fingerprint
+
+
+def _validate_embedding_identity(
+    embedding: Any,
+    *,
+    configured_provider: str,
+    configured_model: str,
+    configured_dimension: int,
+) -> None:
+    """Reject a client whose declared contract cannot write this index.
+
+    This preflight runs immediately after construction and before ``embed`` so
+    an injected or provider client with an explicit identity mismatch cannot
+    trigger a paid request.  A client that does not expose optional metadata is
+    checked against the returned vectors and fingerprint after embedding.
+    """
+
+    configured_provider = _require_non_blank(configured_provider, "embedding provider")
+    configured_model = _require_non_blank(configured_model, "embedding model")
+    configured_dimension = _parse_dimension_setting(configured_dimension)
+    provider_value = getattr(embedding, "provider", None)
+    if provider_value is not None and _require_non_blank(
+        provider_value, "embedding provider"
+    ) != configured_provider:
+        raise QuestionBankConfigurationError(
+            "embedding client provider does not match configured provider"
+        )
+    model_value = getattr(embedding, "model", None)
+    if model_value is not None and _require_non_blank(
+        model_value, "embedding model"
+    ) != configured_model:
+        raise QuestionBankConfigurationError(
+            "embedding client model does not match configured model"
+        )
+    declared_dimension = getattr(embedding, "dimension", None)
+    if declared_dimension is None:
+        declared_dimension = getattr(embedding, "embedding_dimension", None)
+    if declared_dimension is not None and _parse_dimension_setting(declared_dimension) != configured_dimension:
+        raise QuestionBankConfigurationError(
+            "embedding client dimension does not match configured dimension"
+        )
 
 
 def _default_embedding_factory(
@@ -916,6 +1263,9 @@ def _summary_for_audit(
     }
     for key, names in categories.items():
         ids = _audit_ids(report, *names)
+        if key == "invalid_record":
+            ids.extend(diagnostics.get("role_version_mismatch", ()))
+            ids = list(dict.fromkeys(ids))
         if key == "eligible":
             excluded = {
                 item
@@ -924,15 +1274,16 @@ def _summary_for_audit(
             }
             ids = list(dict.fromkeys(item for item in ids if item not in excluded))
         summary[f"{key}_count"] = len(ids)
-        summary[f"{key}_ids"] = ids
+        summary[f"{key}_ids"] = _safe_audit_identifiers(ids)
     for key in (
         "duplicate_question_id",
         "duplicate_content_hash",
         "content_hash_mismatch",
+        "role_version_mismatch",
     ):
         ids = list(dict.fromkeys(str(item) for item in diagnostics.get(key, ())))
         summary[f"{key}_count"] = len(ids)
-        summary[f"{key}_ids"] = ids
+        summary[f"{key}_ids"] = _safe_audit_identifiers(ids)
     warning_days = _audit_value(
         report,
         "expiring_within_days",
@@ -1056,6 +1407,7 @@ def _render_summary(summary: Mapping[str, Any], *, output_format: str) -> str:
             "duplicate_question_id",
             "duplicate_content_hash",
             "content_hash_mismatch",
+            "role_version_mismatch",
             "inactive",
             "eligible",
         ):
@@ -1295,10 +1647,11 @@ def main(
             raise QuestionBankValidationError("question bank loader is not callable")
         test_only_dependency = view.get("test_dependency", default=None)
         diagnostics: dict[str, list[str]] = {}
+        root_role_version: str | None = None
         if args.action == "audit" and loader is load_question_bank:
             raw_audit_loader = view.get("raw_audit_loader", default=None)
             if raw_audit_loader is None:
-                records = _read_raw_audit_bank(
+                raw_payload = _read_raw_audit_bank(
                     args.bank,
                     test_dependency=test_only_dependency,
                 )
@@ -1307,12 +1660,18 @@ def main(
                     raise QuestionBankValidationError(
                         "question bank audit loader is not callable"
                     )
-                records = _call_raw_audit_loader(
+                raw_payload = _call_raw_audit_loader(
                     raw_audit_loader,
                     args.bank,
                     test_dependency=test_only_dependency,
                 )
+            records = _prepare_audit_records(raw_payload.records)
+            root_role_version = raw_payload.role_version
             diagnostics = _raw_audit_diagnostics(records)
+            diagnostics["role_version_mismatch"] = _role_version_mismatch_ids(
+                records,
+                root_role_version,
+            )
         else:
             records = _call_loader(
                 loader,
@@ -1439,40 +1798,18 @@ def main(
                 pass
             env_value = os.environ
 
-        if model is None:
-            model = _require_non_blank(
-                _env_setting(
-                    env_value,
-                    "SILICONFLOW_EMBEDDING_MODEL",
-                    DEFAULT_MODEL,
-                ),
-                "embedding model",
-            )
-        if index_version is None:
-            index_version = _require_non_blank(
-                _env_setting(
-                    env_value,
-                    "QUESTION_RAG_INDEX_VERSION",
-                    DEFAULT_INDEX_VERSION,
-                ),
-                "index version",
-            )
-        if index_path is None:
-            index_path = _validate_index_path(
-                _env_setting(
-                    env_value,
-                    "QUESTION_RAG_INDEX_PATH",
-                    str(DEFAULT_INDEX_PATH),
-                )
-            )
-
-        base_url = _validate_base_url(
-            _env_setting(
-                env_value,
-                "SILICONFLOW_EMBEDDING_BASE_URL",
-                DEFAULT_BASE_URL,
-            )
+        config = build_question_index_config(
+            env_value,
+            model=model,
+            index_version=index_version,
+            index_path=index_path,
+            dimension=expected_dimension,
         )
+        model = config.model
+        index_version = config.index_version
+        index_path = config.index_path
+        base_url = config.base_url
+        expected_embedding_dimension = config.dimension
         api_key = ""
         if using_default_embedding:
             api_key = _require_non_blank(
@@ -1500,17 +1837,25 @@ def main(
         store: Any | None = None
         store_owned = False
         try:
+            _validate_embedding_identity(
+                embedding,
+                configured_provider=config.provider,
+                configured_model=config.model,
+                configured_dimension=config.dimension,
+            )
             vectors = _embed(
                 embedding,
                 texts,
-                expected_dimension=expected_dimension,
+                expected_dimension=expected_embedding_dimension,
             )
             try:
                 fingerprint = _build_fingerprint(
                     embedding=embedding,
                     vectors=vectors,
-                    configured_model=model,
-                    configured_index_version=index_version,
+                    configured_provider=config.provider,
+                    configured_model=config.model,
+                    configured_dimension=config.dimension,
+                    configured_index_version=config.index_version,
                     fingerprint_factory=fingerprint_impl,
                 )
             except (TypeError, ValueError, KeyError) as exc:
@@ -1518,8 +1863,8 @@ def main(
                     "fingerprint configuration is invalid"
                 ) from exc
             store_kwargs = {
-                "index_path": index_path,
-                "path": index_path,
+                "index_path": config.index_path,
+                "path": config.index_path,
                 "fingerprint": fingerprint,
                 "collection_name": COLLECTION_NAME,
             }
@@ -1601,6 +1946,7 @@ __all__ = [
     "DEFAULT_BASE_URL",
     "DEFAULT_INDEX_PATH",
     "DEFAULT_INDEX_VERSION",
+    "DEFAULT_DIMENSION",
     "DEFAULT_MODEL",
     "DEFAULT_PROVIDER",
     "EXIT_OK",
@@ -1608,6 +1954,8 @@ __all__ = [
     "EXIT_USAGE_ERROR",
     "QuestionBankConfigurationError",
     "QuestionBankDependencies",
+    "QuestionIndexConfig",
     "QuestionBankValidationError",
+    "build_question_index_config",
     "main",
 ]

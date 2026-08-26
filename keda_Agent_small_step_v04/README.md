@@ -257,21 +257,30 @@ python -m compileall profile_agent tests run_interview_demo.py
 `--apply` 会为题库问题调用 SiliconFlow `BAAI/bge-m3` embedding，可能产生费用并受网络、
 限流和服务可用性影响；建议先运行 dry-run。校验、审计和 dry-run 不读取环境变量，也不会
 调用 `load_dotenv`，因此不会把 `.env` 中的 key 带入当前进程；只有 bank、参数和路径预检
-通过后的显式 `--apply` 才会发现环境配置。可用变量名如下，示例中的 key 故意留空：
+通过后的显式 `--apply` 才会发现环境配置。可用变量名如下；这里仅列出注释，表示“保持未
+设置”，不要把注释改成 `NAME=` 空值：
 
 ```text
-SILICONFLOW_API_KEY=
-SILICONFLOW_EMBEDDING_MODEL=
-SILICONFLOW_EMBEDDING_BASE_URL=
-QUESTION_RAG_INDEX_VERSION=
-QUESTION_RAG_INDEX_PATH=
+# 必须仅在本机 apply 前设置，禁止提交或复制到仓库
+# SILICONFLOW_API_KEY
+# 未设置时使用程序默认值；需要覆盖时再在本机设置
+# SILICONFLOW_EMBEDDING_MODEL
+# SILICONFLOW_EMBEDDING_BASE_URL
+# QUESTION_RAG_INDEX_VERSION
+# QUESTION_RAG_INDEX_PATH
+# QUESTION_RAG_EMBEDDING_PROVIDER
+# QUESTION_RAG_EMBEDDING_DIMENSION
 ```
 
 执行 apply 前仅在本机 `.env` 或进程环境中设置 `SILICONFLOW_API_KEY`，不要把真实 key 写入
 仓库、题库、日志或命令输出。未设置 model、base URL、index version、index path 时分别
-使用程序默认值；若显式提供空值或不可用路径，命令会在 embedding/store 之前以 code 2
-拒绝。`QUESTION_RAG_INDEX_PATH` 指向本地 Qdrant 路径，未设置时使用
+使用程序默认值；若显式 CLI 提供空值或不可用路径，命令会在 embedding/store 之前以 code 2
+拒绝。环境变量的空白值按未设置处理；`QUESTION_RAG_INDEX_PATH` 指向本地 Qdrant 路径，未设置时使用
 `data/qdrant-question-index`。
+
+默认索引身份与运行时一致：provider=`siliconflow`、model=`BAAI/bge-m3`、dimension=`1024`、
+index version=`questions-v1`；`QUESTION_RAG_EMBEDDING_*` 覆盖项会在 CLI 与运行时使用相同的
+优先级解析。
 
 命令退出码固定为：`0` 成功，`1` embedding/Qdrant 等操作失败，`2` 参数、配置或题库校验
 失败。`tests/fixtures/question_rag/minimal_question_bank.json` 是明确标记的
