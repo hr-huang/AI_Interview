@@ -31,6 +31,78 @@ function DrawerHarness() {
 }
 
 describe('EvidenceDrawer', () => {
+  test('renders every public source field without repeating the full answer or exposing ids', () => {
+    render(<EvidenceDrawer
+      groups={[{
+        dimensionName: 'Agent 编排',
+        reasons: [{
+          reason_type: 'strength',
+          text: '该能力得到支持。',
+          sources: [{
+            turn_id: 'turn_public_001',
+            conclusion: '该回答证明了状态边界意识。',
+            quote: '关键回答片段',
+            interpretation: '片段说明候选人知道状态由谁合并。',
+            limitation: '尚未证明异常恢复能力。',
+          }],
+        }],
+      }]}
+      onClose={() => undefined}
+      onTurnSelect={() => undefined}
+    />)
+
+    expect(screen.getByText('该回答证明了状态边界意识。')).toBeVisible()
+    expect(screen.getByText('关键回答片段')).toBeVisible()
+    expect(screen.getByText('片段说明候选人知道状态由谁合并。')).toBeVisible()
+    expect(screen.getByText('尚未证明异常恢复能力。')).toBeVisible()
+    expect(screen.queryByText('turn_public_001')).not.toBeInTheDocument()
+    expect(screen.queryByText('候选人完整回答')).not.toBeInTheDocument()
+  })
+
+  test('translates critical and unknown reason types into safe enterprise labels', () => {
+    render(<EvidenceDrawer
+      groups={[{
+        dimensionName: '可靠性',
+        reasons: [
+          { reason_type: 'critical_error', text: '需要重点核验。', sources: [] },
+          { reason_type: 'internal_reason_kind', text: '仍需核验。', sources: [] },
+        ],
+      }]}
+      onClose={() => undefined}
+      onTurnSelect={() => undefined}
+    />)
+
+    expect(screen.getAllByText('关键限制').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('决策依据').length).toBeGreaterThan(0)
+    expect(screen.queryByText('critical_error')).not.toBeInTheDocument()
+    expect(screen.queryByText('internal_reason_kind')).not.toBeInTheDocument()
+  })
+
+  test('uses a neutral Chinese explanation label for unknown reason types', () => {
+    render(<EvidenceDrawer
+      groups={[{
+        dimensionName: '可靠性',
+        reasons: [{
+          reason_type: 'internal_reason_kind',
+          text: '仍需核验。',
+          sources: [{
+            turn_id: 'turn_unknown_001',
+            conclusion: '当前判断需要保留。',
+            quote: '尚未覆盖的片段',
+            interpretation: '该片段尚不足以支持明确结论。',
+            limitation: '仍需独立复核。',
+          }],
+        }],
+      }]}
+      onClose={() => undefined}
+      onTurnSelect={() => undefined}
+    />)
+
+    expect(screen.getByText('相关判断依据')).toBeVisible()
+    expect(screen.queryByText('为什么支持该判断')).not.toBeInTheDocument()
+    expect(screen.queryByText('internal_reason_kind')).not.toBeInTheDocument()
+  })
+
   test('traps Tab focus and restores the opening trigger after Escape closes', async () => {
     const user = userEvent.setup()
     const trigger = document.createElement('button')

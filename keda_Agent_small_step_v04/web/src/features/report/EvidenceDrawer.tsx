@@ -18,17 +18,19 @@ function reasonLabel(reasonType: string): string {
     risk: '限制信号',
     limiting: '限制信号',
     error: '关键限制',
+    critical_error: '关键限制',
     unverified: '待核验信号',
   }
-  return labels[reasonType] ?? (reasonType || '决策信号')
+  return labels[reasonType] ?? '决策依据'
 }
 
 function interpretationLabel(reasonType: string): string {
-  if (reasonType === 'risk' || reasonType === 'limiting' || reasonType === 'error') {
+  if (reasonType === 'risk' || reasonType === 'limiting' || reasonType === 'error' || reasonType === 'critical_error') {
     return '为什么形成限制'
   }
   if (reasonType === 'unverified') return '为什么仍待核验'
-  return '为什么支持该判断'
+  if (reasonType === 'strength') return '为什么支持该判断'
+  return '相关判断依据'
 }
 
 function focusableElements(container: HTMLElement): HTMLElement[] {
@@ -162,8 +164,12 @@ export function EvidenceDrawer({ groups, onClose, onTurnSelect }: EvidenceDrawer
                         </div>
                         <dl>
                           <div>
+                            <dt>该证据的结论</dt>
+                            <dd>{source.conclusion || reason.text || '当前判断依据待核验。'}</dd>
+                          </div>
+                          <div>
                             <dt>{interpretationLabel(reason.reason_type)}</dt>
-                            <dd>{source.interpretation || source.conclusion}</dd>
+                            <dd>{source.interpretation || '当前没有更多解释，需结合完整面试记录复核。'}</dd>
                           </div>
                           <div>
                             <dt>尚未证明</dt>

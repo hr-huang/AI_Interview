@@ -190,6 +190,52 @@ describe('ReportPage', () => {
     expect(screen.getByText('节点只返回增量更新，状态机负责合并。')).toBeVisible()
   })
 
+  test('places the overall assessment and decision signals before radar details', async () => {
+    vi.mocked(api.getReport).mockResolvedValue(report())
+    renderEnterprisePage()
+
+    expect(await screen.findByRole('heading', { name: '岗位胜任力报告' })).toBeVisible()
+    const overallHeading = screen.getByRole('heading', { name: '候选人总评' })
+    const signalsHeading = screen.getByRole('heading', { name: '优势、风险与待确认' })
+    const radarHeading = screen.getByRole('heading', { name: '能力雷达' })
+
+    expect(overallHeading.compareDocumentPosition(signalsHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(signalsHeading.compareDocumentPosition(radarHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  test('opens up to three grounded reasons for the selected radar dimension', async () => {
+    const firstDimension = report().radar_dimensions[0]
+    vi.mocked(api.getReport).mockResolvedValue(report({
+      radar_dimensions: [{
+        ...firstDimension,
+        reasons: [
+          ...firstDimension.reasons,
+          {
+            reason_type: 'risk',
+            text: '迁移边界仍需确认。',
+            sources: [{
+              turn_id: 'turn_004',
+              conclusion: '该回答只覆盖了局部迁移流程。',
+              quote: '先在小流量环境验证',
+              interpretation: '回答提到灰度验证，但没有说明回滚门槛。',
+              limitation: '尚未证明全量迁移下的恢复能力。',
+            }],
+          },
+        ],
+      }],
+    }))
+    const user = userEvent.setup()
+    renderEnterprisePage()
+
+    expect(await screen.findByRole('heading', { name: '岗位胜任力报告' })).toBeVisible()
+    await user.click(within(screen.getByRole('table')).getByRole('button', { name: /Agent 编排/ }))
+
+    const drawer = screen.getByRole('dialog')
+    expect(within(drawer).getByText('能够解释状态流转。')).toBeVisible()
+    expect(within(drawer).getByText('迁移边界仍需确认。')).toBeVisible()
+    expect(within(drawer).getByText('先在小流量环境验证')).toBeVisible()
+  })
+
   test('groups every dimension linked to a transcript turn in the shared evidence drawer', async () => {
     vi.mocked(api.getReport).mockResolvedValue(report({
       radar_dimensions: [

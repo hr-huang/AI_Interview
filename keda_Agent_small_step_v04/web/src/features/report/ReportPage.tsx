@@ -295,8 +295,9 @@ function ReinterviewPlan({ items }: { items: ReinterviewFocusView[] }) {
 
 function groupsForDimension(dimension: RadarDimensionView): EvidenceDrawerGroup[] {
   const reasons = dimension.reasons ?? []
-  const reason = reasons.find((item) => (item.sources ?? []).length > 0) ?? reasons[0]
-  return reason ? [{ dimensionName: dimension.name, reasons: [reason] }] : []
+  const groundedReasons = reasons.filter((reason) => (reason.sources ?? []).length > 0).slice(0, 3)
+  const visibleReasons = groundedReasons.length > 0 ? groundedReasons : reasons.slice(0, 3)
+  return visibleReasons.length > 0 ? [{ dimensionName: dimension.name, reasons: visibleReasons }] : []
 }
 
 function groupsForTurn(dimensions: RadarDimensionView[], turnId: string): EvidenceDrawerGroup[] {
@@ -396,6 +397,7 @@ function ReportView({ report, demo = report.demo }: { report: ReportViewModel; d
       <CandidateOverview overview={candidateOverview} />
       <DecisionBrief assessment={enterprise} jobMatch={jobMatch} />
       <OverallAssessment assessment={enterprise} narrativeSummary={narrativeSummary} />
+      <DecisionSignals assessment={enterprise} />
 
       <section className="report-metrics" aria-label="报告指标">
         <div><span>岗位覆盖率</span><strong>{percentage(jobMatch.coverage)}</strong><small>加权证据覆盖</small></div>
@@ -443,7 +445,6 @@ function ReportView({ report, demo = report.demo }: { report: ReportViewModel; d
         </aside>
       </div>
 
-      <DecisionSignals assessment={enterprise} />
       <ReinterviewPlan items={enterprise.reinterview_plan} />
 
       <InterviewTranscript
