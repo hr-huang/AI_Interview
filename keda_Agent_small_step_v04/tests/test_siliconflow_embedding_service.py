@@ -137,6 +137,28 @@ class SiliconFlowEmbeddingClientTests(unittest.TestCase):
 
         self.assertNotIn(secret_value, str(raised.exception))
 
+    def test_wraps_huge_integer_conversion_overflow_as_provider_error(self) -> None:
+        huge_integer = 10**4000
+
+        def handler(_: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json={"data": [{"index": 0, "embedding": [huge_integer]}]},
+            )
+
+        client, _ = self._client(handler)
+        try:
+            with self.assertRaises(EmbeddingProviderError) as raised:
+                client.embed(["text"])
+        finally:
+            client.close()
+
+        self.assertNotIn("OverflowError", str(raised.exception))
+        self.assertEqual(
+            str(raised.exception),
+            "SiliconFlow embedding response was invalid.",
+        )
+
     def test_rejects_empty_batch_before_http_call(self) -> None:
         def forbidden_handler(_: httpx.Request) -> httpx.Response:
             self.fail("empty input must not make an HTTP request")

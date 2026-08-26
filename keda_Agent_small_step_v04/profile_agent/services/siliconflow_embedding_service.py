@@ -234,7 +234,16 @@ class SiliconFlowEmbeddingClient:
                     raise EmbeddingProviderError(
                         "SiliconFlow embedding response was invalid."
                     )
-                numeric_value = float(value)
+                conversion_failed = False
+                try:
+                    numeric_value = float(value)
+                except (OverflowError, ValueError, TypeError):
+                    conversion_failed = True
+                    numeric_value = 0.0
+                if conversion_failed:
+                    raise EmbeddingProviderError(
+                        "SiliconFlow embedding response was invalid."
+                    )
                 if not math.isfinite(numeric_value):
                     raise EmbeddingProviderError(
                         "SiliconFlow embedding response was invalid."
