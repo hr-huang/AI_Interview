@@ -293,6 +293,7 @@ class IntentBuilderTests(unittest.TestCase):
         attacks = [
             ("SILICONFLOW_API_KEY=sf-secret-123", "sf-secret-123"),
             ("OPENAI_API_KEY openai-secret", "openai-secret"),
+            ("OPENAI_API_KEY='quoted openai secret'", "quoted openai secret"),
             ("AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE", "AKIAIOSFODNN7EXAMPLE"),
             ("AWS_SECRET_ACCESS_KEY=aws-secret", "aws-secret"),
             (
@@ -300,6 +301,7 @@ class IntentBuilderTests(unittest.TestCase):
                 "eyJhbGciOiJIUzI1NiJ9.abc.signature",
             ),
             ("Authorization Bearer header-secret", "header-secret"),
+            ("Bearer 'quoted bearer secret'", "quoted bearer secret"),
             ("bearer bearer-secret", "bearer-secret"),
             ("Bearer x", "Bearer x"),
             ("api-key api-secret", "api-secret"),
@@ -329,6 +331,10 @@ class IntentBuilderTests(unittest.TestCase):
                     self.assertNotIn("authToken", intent.query_text)
                 if attack.startswith("apiSecret"):
                     self.assertNotIn("apiSecret", intent.query_text)
+                if attack.startswith("OPENAI_API_KEY='"):
+                    self.assertNotIn("openai", intent.query_text.lower())
+                if "quoted" in attack:
+                    self.assertNotIn("quoted", intent.query_text)
 
                 embedding = FakeEmbedding()
                 store = FakeStore(QuestionStoreSearchResult(status="no_match"))

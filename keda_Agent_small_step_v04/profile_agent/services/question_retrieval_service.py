@@ -74,19 +74,22 @@ _SECRET_ASSIGNMENT_RE = re.compile(
     r"private[_-]?(?:key|secret|token)|client[_-]?(?:secret|token|key)|"
     r"auth(?:entication)?[_-]?(?:token|key)|secret|token|authorization|"
     r"bearer|password|credential)"
-    r"(?:[a-z0-9_.-]*)\s*(?:=|:|\s+)\s*[^\s,;|]+"
+    r"(?:[a-z0-9_.-]*)\s*(?:=|:|\s+)\s*"
+    r"(?:(?:bearer|basic|token|jwt)\s+)?(?:\"[^\"]*\"|'[^']*'|[^\s,;|]+)"
 )
 _AUTH_HEADER_RE = re.compile(
     r"(?ix)(?<![a-z0-9])(?:authorization|proxy-authorization|x-api-key|api-key)"
-    r"\s*[:=]\s*(?:(?:bearer|basic|token|jwt)\s+)?[^\s,;|]+"
+    r"\s*[:=]\s*(?:(?:bearer|basic|token|jwt)\s+)?"
+    r"(?:\"[^\"]*\"|'[^']*'|[^\s,;|]+)"
 )
 _AUTH_HEADER_SPACED_RE = re.compile(
     r"(?ix)(?<![a-z0-9])(?:authorization|proxy-authorization|x-api-key|api-key)"
-    r"\s+(?:(?:bearer|basic|token|jwt)\s+)?[^\s,;|]+"
+    r"\s+(?:(?:bearer|basic|token|jwt)\s+)?"
+    r"(?:\"[^\"]*\"|'[^']*'|[^\s,;|]+)"
 )
 _AUTH_SCHEME_RE = re.compile(
     r"(?ix)(?<![a-z0-9])(?:bearer|basic|token|jwt)\s+"
-    r"[a-z0-9._~+/=-]+"
+    r"(?:\"[^\"]*\"|'[^']*'|[a-z0-9._~+/=-]+)"
 )
 _SECRET_LABEL_RE = re.compile(
     r"(?ix)(?<![a-z0-9])(?:api[_-]?(?:key|secret|token)|"
