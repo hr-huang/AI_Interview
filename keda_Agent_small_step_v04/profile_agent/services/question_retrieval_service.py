@@ -650,15 +650,31 @@ def _coerce_hit(value: Any, *, index_version: str | None) -> RetrievedQuestion |
     # non-vector source look like a retrieval hit.
     if not isinstance(value, RetrievedQuestion):
         return None
-    if not isinstance(value.record, InterviewQuestionRecord):
+    # ``model_copy(update=...)`` skips validation, including for the nested
+    # record.  Re-dump the typed object to plain Python data and validate the
+    # complete envelope again so malformed hash/date/role/mode values cannot
+    # reach ranking or leak a raw TypeError to callers.  Suppress serializer
+    # warnings because the whole point of this boundary is to reject malformed
+    # values immediately and return the safe unavailable result below.
+    try:
+        dumped = value.model_dump(mode="python", warnings=False)
+        raw_score = dumped.get("score")
+        if raw_score is not None and (
+            isinstance(raw_score, bool) or not isinstance(raw_score, (int, float))
+        ):
+            return None
+        validated = RetrievedQuestion.model_validate(dumped)
+    except Exception:
         return None
-    if _finite_score(value.score) is None:
+    if not isinstance(validated.record, InterviewQuestionRecord):
         return None
-    if not isinstance(value.index_version, str) or not value.index_version.strip():
+    if _finite_score(validated.score) is None:
         return None
-    if not isinstance(value.record.source_id, str) or not value.record.source_id.strip():
+    if not isinstance(validated.index_version, str) or not validated.index_version.strip():
         return None
-    return value
+    if not isinstance(validated.record.source_id, str) or not validated.record.source_id.strip():
+        return None
+    return validated
 
 
 def _store_status_and_hits(value: Any) -> tuple[str, list[Any], str | None]:

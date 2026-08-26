@@ -603,6 +603,40 @@ class IntentBuilderTests(unittest.TestCase):
 
 
 class RetrieverTests(unittest.TestCase):
+    def test_retriever_revalidates_mutable_typed_hits_and_falls_back_safely(self) -> None:
+        updates = {
+            "hash": {"content_hash": "not-a-hash"},
+            "date": {"valid_until": "not-a-date"},
+            "role": {"role": "not-a-role"},
+            "mode": {"question_mode": "not-a-mode"},
+        }
+        intent = build_question_retrieval_intent(action=make_action(), plan=make_plan())
+        for label, update in updates.items():
+            with self.subTest(label=label):
+                valid_hit = RetrievedQuestion(
+                    record=make_record("q_malformed"),
+                    score=0.9,
+                    index_version="idx",
+                )
+                malformed_record = valid_hit.record.model_copy(update=update)
+                malformed_hit = valid_hit.model_copy(update={"record": malformed_record})
+                retriever = QuestionRetriever(
+                    FakeEmbedding(),
+                    FakeStore(
+                        QuestionStoreSearchResult(
+                            status="hit",
+                            hits=[malformed_hit],
+                            index_version="idx",
+                        )
+                    ),
+                    today=TODAY,
+                )
+
+                result = retriever.retrieve(intent)
+
+                self.assertEqual(result.status, "unavailable")
+                self.assertIsNone(result.selected_question)
+
     def test_retriever_selects_explainable_deterministic_best_hit(self) -> None:
         first = RetrievedQuestion(
             record=make_record("q_low_trust", trust_level="low"),

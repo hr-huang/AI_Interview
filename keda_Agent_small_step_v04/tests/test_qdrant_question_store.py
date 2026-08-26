@@ -49,9 +49,9 @@ class QdrantQuestionStoreTests(unittest.TestCase):
         status: str = "active",
         valid_until: date = date(2027, 1, 1),
     ) -> InterviewQuestionRecord:
-        # model_copy is intentional for filter fixtures: the store must still
-        # write and filter payload fields even when a malformed point enters a
-        # disposable index through a test-only boundary.
+        # model_copy is intentional for filter fixtures: malformed records are
+        # injected directly into the backend when search-side filtering needs
+        # to exercise a corrupted payload.
         base = InterviewQuestionRecord(
             question_id=question_id,
             question_text=f"如何处理 {question_id}？",
@@ -87,6 +87,56 @@ class QdrantQuestionStoreTests(unittest.TestCase):
 
     def make_store(self, *, fingerprint: IndexFingerprint | None = None) -> QdrantQuestionStore:
         return QdrantQuestionStore(path=":memory:", fingerprint=fingerprint)
+
+    def make_legacy_store(self) -> tuple[QdrantQuestionStore, QdrantClient]:
+        client = QdrantClient(path=":memory:")
+        client.create_collection(
+            collection_name=COLLECTION_NAME,
+            vectors_config=VectorParams(size=3, distance=Distance.COSINE),
+        )
+        store = QdrantQuestionStore(client=client, fingerprint=self.fingerprint)
+        old = self.record("q-old")
+        old_payload = store._record_to_payload(old)
+        old_payload["record_type"] = "question"
+        old_payload["valid_until_epoch"] = old.valid_until.toordinal()
+        client.upsert(
+            collection_name=COLLECTION_NAME,
+            points=[
+                store._manifest_point(self.fingerprint),
+                PointStruct(
+                    id=store._question_point_id(old.question_id),
+                    vector=[1.0, 0.0, 0.0],
+                    payload=old_payload,
+                ),
+            ],
+        )
+        return store, client
+
+    @staticmethod
+    def temporary_collections_with_question(
+        client: QdrantClient,
+        question_id: str,
+    ) -> list[str]:
+        names = [
+            collection.name
+            for collection in client.get_collections().collections
+            if collection.name.startswith(f"{COLLECTION_NAME}__")
+        ]
+        matches: list[str] = []
+        for name in names:
+            points, _ = client.scroll(
+                collection_name=name,
+                limit=100,
+                with_payload=True,
+                with_vectors=False,
+            )
+            if any(
+                isinstance(point.payload, dict)
+                and point.payload.get("question_id") == question_id
+                for point in points
+            ):
+                matches.append(name)
+        return matches
 
     def search(self, store: QdrantQuestionStore, *, query_vector=(1.0, 0.0, 0.0), limit=3):
         return store.search(
@@ -130,7 +180,6 @@ class QdrantQuestionStoreTests(unittest.TestCase):
         store = self.make_store(fingerprint=self.fingerprint)
         records = [
             self.record("q-good"),
-            self.record("q-wrong-role", role="other_role"),
             self.record("q-wrong-dimension", dimension_id="role_dim_02"),
             self.record("q-wrong-mode", question_mode="coding"),
             self.record("q-retired", status="retired"),
@@ -139,6 +188,24 @@ class QdrantQuestionStoreTests(unittest.TestCase):
         ]
         vectors = [[1.0, 0.0, 0.0]] + [[0.99, 0.01, 0.0]] * (len(records) - 1)
         store.rebuild(records, vectors, self.fingerprint)
+
+        # A malformed role can only enter a disposable index through a raw
+        # backend fault; the public record boundary rejects it.  Seed this
+        # payload directly to keep the search-side filter regression intact.
+        wrong_role = self.record("q-wrong-role", role="other_role")
+        wrong_role_payload = wrong_role.model_dump(mode="json", warnings=False)
+        wrong_role_payload["record_type"] = "question"
+        wrong_role_payload["valid_until_epoch"] = wrong_role.valid_until.toordinal()
+        store.client.upsert(
+            collection_name=COLLECTION_NAME,
+            points=[
+                PointStruct(
+                    id=store._question_point_id(wrong_role.question_id),
+                    vector=[0.99, 0.01, 0.0],
+                    payload=wrong_role_payload,
+                )
+            ],
+        )
         self.intent = self.intent.model_copy(update={"excluded_question_ids": ["q-excluded"]})
 
         result = self.search(store, limit=10)
@@ -209,6 +276,25 @@ class QdrantQuestionStoreTests(unittest.TestCase):
             )
 
         self.assertEqual(self.search(store).hits[0].record.question_id, "q-old")
+
+    def test_rebuild_revalidates_mutable_record_before_writing(self) -> None:
+        updates = {
+            "hash": {"content_hash": "not-a-hash"},
+            "date": {"valid_until": "not-a-date"},
+            "role": {"role": "not-a-role"},
+            "mode": {"question_mode": "not-a-mode"},
+        }
+        for label, update in updates.items():
+            with self.subTest(label=label):
+                store = self.make_store(fingerprint=self.fingerprint)
+                old = self.record("q-old")
+                store.rebuild([old], [[1.0, 0.0, 0.0]], self.fingerprint)
+                malformed = old.model_copy(update=update)
+
+                with self.assertRaises(ValueError):
+                    store.rebuild([malformed], [[0.0, 1.0, 0.0]], self.fingerprint)
+
+                self.assertEqual(self.search(store).hits[0].record.question_id, "q-old")
 
     def test_fingerprint_mismatch_returns_safe_index_mismatch(self) -> None:
         expected = self.fingerprint
@@ -335,27 +421,7 @@ class QdrantQuestionStoreTests(unittest.TestCase):
         self.assertEqual(store.get_manifest(), self.fingerprint)
 
     def test_legacy_collection_alias_failure_preserves_old_index(self) -> None:
-        client = QdrantClient(path=":memory:")
-        client.create_collection(
-            collection_name=COLLECTION_NAME,
-            vectors_config=VectorParams(size=3, distance=Distance.COSINE),
-        )
-        store = QdrantQuestionStore(client=client, fingerprint=self.fingerprint)
-        old = self.record("q-old")
-        old_payload = store._record_to_payload(old)
-        old_payload["record_type"] = "question"
-        old_payload["valid_until_epoch"] = old.valid_until.toordinal()
-        client.upsert(
-            collection_name=COLLECTION_NAME,
-            points=[
-                store._manifest_point(self.fingerprint),
-                PointStruct(
-                    id=store._question_point_id(old.question_id),
-                    vector=[1.0, 0.0, 0.0],
-                    payload=old_payload,
-                ),
-            ],
-        )
+        store, client = self.make_legacy_store()
 
         with patch.object(
             client,
@@ -374,6 +440,102 @@ class QdrantQuestionStoreTests(unittest.TestCase):
         self.assertEqual(result.hits[0].record.question_id, "q-old")
         self.assertEqual(store.get_manifest(), self.fingerprint)
         self.assertEqual(client.get_aliases().aliases, [])
+
+    def test_legacy_delete_after_effect_restores_searchable_old_index_and_keeps_backup(self) -> None:
+        store, client = self.make_legacy_store()
+        original_delete = client.delete_collection
+
+        def delete_then_raise(*args: object, **kwargs: object) -> object:
+            result = original_delete(*args, **kwargs)
+            if kwargs.get("collection_name") == COLLECTION_NAME:
+                raise RuntimeError("delete applied before response failed")
+            return result
+
+        with patch.object(client, "delete_collection", side_effect=delete_then_raise):
+            with self.assertRaisesRegex(RuntimeError, "delete applied"):
+                store.rebuild(
+                    [self.record("q-new")],
+                    [[0.0, 1.0, 0.0]],
+                    self.fingerprint,
+                )
+
+        result = self.search(store)
+        self.assertEqual(result.status, "hit")
+        self.assertEqual(result.hits[0].record.question_id, "q-old")
+        self.assertEqual(client.get_aliases().aliases, [])
+        self.assertTrue(
+            self.temporary_collections_with_question(client, "q-old"),
+            "legacy backup must remain recoverable after an ambiguous delete",
+        )
+
+    def test_legacy_delete_after_effect_restore_failure_keeps_backup_and_logs(self) -> None:
+        store, client = self.make_legacy_store()
+        original_delete = client.delete_collection
+
+        def delete_then_raise(*args: object, **kwargs: object) -> object:
+            result = original_delete(*args, **kwargs)
+            if kwargs.get("collection_name") == COLLECTION_NAME:
+                raise RuntimeError("delete applied before response failed")
+            return result
+
+        with patch.object(client, "delete_collection", side_effect=delete_then_raise):
+            with patch.object(
+                store,
+                "_restore_collection",
+                side_effect=RuntimeError("injected restore failure"),
+            ):
+                with self.assertLogs(
+                    "profile_agent.knowledge.qdrant_question_store",
+                    level=logging.WARNING,
+                ):
+                    with self.assertRaisesRegex(RuntimeError, "delete applied"):
+                        store.rebuild(
+                            [self.record("q-new")],
+                            [[0.0, 1.0, 0.0]],
+                            self.fingerprint,
+                        )
+
+        result = self.search(store)
+        self.assertEqual(result.status, "hit")
+        self.assertEqual(result.hits[0].record.question_id, "q-old")
+        backup_target = store._alias_target()
+        self.assertIsNotNone(backup_target)
+        self.assertTrue(backup_target.startswith(f"{COLLECTION_NAME}__"))
+        self.assertTrue(
+            self.temporary_collections_with_question(client, "q-old"),
+            "backup must remain after restore failure",
+        )
+
+    def test_legacy_backup_cleanup_failure_keeps_new_index_and_backup(self) -> None:
+        store, client = self.make_legacy_store()
+        original_delete = client.delete_collection
+
+        def fail_backup_cleanup(*args: object, **kwargs: object) -> object:
+            collection_name = kwargs.get("collection_name")
+            if isinstance(collection_name, str) and collection_name.startswith(
+                f"{COLLECTION_NAME}__"
+            ):
+                raise RuntimeError("injected backup cleanup failure")
+            return original_delete(*args, **kwargs)
+
+        with patch.object(client, "delete_collection", side_effect=fail_backup_cleanup):
+            with self.assertLogs(
+                "profile_agent.knowledge.qdrant_question_store",
+                level=logging.WARNING,
+            ):
+                store.rebuild(
+                    [self.record("q-new")],
+                    [[0.0, 1.0, 0.0]],
+                    self.fingerprint,
+                )
+
+        result = self.search(store)
+        self.assertEqual(result.status, "hit")
+        self.assertEqual(result.hits[0].record.question_id, "q-new")
+        self.assertTrue(
+            self.temporary_collections_with_question(client, "q-old"),
+            "backup must remain recoverable when cleanup fails",
+        )
 
     def test_temporary_cleanup_failure_is_logged_and_old_index_remains(self) -> None:
         store = self.make_store(fingerprint=self.fingerprint)

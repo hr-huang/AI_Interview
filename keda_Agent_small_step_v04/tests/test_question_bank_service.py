@@ -265,6 +265,16 @@ class QuestionBankServiceTests(unittest.TestCase):
             [records[5].question_id],
         )
 
+    def test_audit_classifies_malformed_url_as_invalid_source(self) -> None:
+        record = load_question_bank(FIXTURE_PATH, allow_test_only=True)[0]
+        malformed_url = record.model_copy(update={"source_url": "http://["})
+
+        report = audit_question_bank([malformed_url], as_of=date(2026, 8, 26))
+
+        self.assertEqual(report.invalid_source_question_ids, [record.question_id])
+        self.assertEqual(report.missing_source_question_ids, [])
+        self.assertEqual(report.eligible_question_ids, [])
+
     def test_audit_rejects_structurally_invalid_raw_mappings_from_eligibility(self) -> None:
         payload = self._load_fixture_json()
         base = payload["questions"][0]

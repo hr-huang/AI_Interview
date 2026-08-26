@@ -80,7 +80,13 @@ def _source_issue(record: Any) -> str | None:
         if not isinstance(value, str) or not value.strip():
             return "missing"
 
-    parsed_url = urlparse(record.source_url.strip())
+    try:
+        parsed_url = urlparse(record.source_url.strip())
+    except (ValueError, UnicodeError):
+        # ``urlparse`` rejects malformed bracketed hosts and a few malformed
+        # Unicode inputs.  Audit is a diagnostic boundary: classify those
+        # values as invalid source metadata instead of aborting the report.
+        return "invalid"
     if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
         return "invalid"
     if record.source_type not in SUPPORTED_SOURCE_TYPES:

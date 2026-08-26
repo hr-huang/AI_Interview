@@ -199,6 +199,8 @@ class QdrantQuestionStore:
         """
 
         normalized_fingerprint = self._coerce_fingerprint(fingerprint)
+        if normalized_fingerprint is None:
+            raise ValueError("fingerprint is required")
         self._assert_expected_fingerprint(normalized_fingerprint)
         prepared = self._prepare_records(records, vectors, normalized_fingerprint)
         self._write_collection(prepared, normalized_fingerprint)
@@ -219,6 +221,8 @@ class QdrantQuestionStore:
         """
 
         normalized_fingerprint = self._coerce_fingerprint(fingerprint)
+        if normalized_fingerprint is None:
+            raise ValueError("fingerprint is required")
         prepared = self._prepare_records(records, vectors, normalized_fingerprint)
         self._assert_expected_fingerprint(normalized_fingerprint)
         as_of = today if today is not None else date.today()
@@ -432,7 +436,18 @@ class QdrantQuestionStore:
         record: InterviewQuestionRecord | Mapping[str, Any],
     ) -> dict[str, Any]:
         if isinstance(record, InterviewQuestionRecord):
-            payload = record.model_dump(mode="json")
+            # Pydantic's ``model_copy(update=...)`` intentionally skips
+            # validation.  Never trust such a mutable typed instance at the
+            # persistence boundary: dump to plain Python values first, then
+            # run the complete schema (including nested/model validators)
+            # before serializing to a Qdrant payload.
+            try:
+                validated_record = InterviewQuestionRecord.model_validate(
+                    record.model_dump(mode="python", warnings=False)
+                )
+                payload = validated_record.model_dump(mode="json")
+            except Exception as exc:
+                raise ValueError("invalid interview question record") from exc
         elif isinstance(record, Mapping):
             try:
                 payload = InterviewQuestionRecord.model_validate(record).model_dump(
@@ -574,12 +589,25 @@ class QdrantQuestionStore:
         """Switch a pre-alias collection without losing its active snapshot."""
 
         backup_collection = self._temporary_collection_name()
-        restore_failed = False
         self._clone_collection(COLLECTION_NAME, backup_collection)
+        migration_succeeded = False
         try:
             # The complete copy is now a rollback point.  Only after it is
             # ready do we touch the legacy fixed-name collection.
-            self._client.delete_collection(collection_name=COLLECTION_NAME)
+            try:
+                self._client.delete_collection(collection_name=COLLECTION_NAME)
+            except Exception:
+                # A request can be applied remotely and still raise while
+                # returning.  The collection state is therefore unknown;
+                # probe both the fixed name and alias before deciding whether
+                # to restore.  In particular, never clean the only rollback
+                # copy on this path.
+                if self._migration_target_is_verified(new_collection):
+                    migration_succeeded = True
+                    return
+                self._recover_legacy_collection(backup_collection)
+                raise
+
             try:
                 self._client.update_collection_aliases(
                     [
@@ -591,25 +619,139 @@ class QdrantQuestionStore:
                         )
                     ]
                 )
+                if not self._migration_target_is_verified(new_collection):
+                    raise RuntimeError("legacy alias verification failed")
             except Exception:
-                try:
-                    self._restore_collection(
-                        backup_collection,
-                        COLLECTION_NAME,
-                    )
-                except Exception as restore_error:
-                    restore_failed = True
-                    logger.warning(
-                        "qdrant legacy collection restore failed",
-                        extra={
-                            "collection_name": COLLECTION_NAME,
-                            "error_type": type(restore_error).__name__,
-                        },
-                    )
+                # Alias creation is also an external request.  If it applied
+                # despite reporting an error, the target verification above
+                # (or the probe below) allows us to complete safely; otherwise
+                # restore the legacy snapshot and retain the backup.
+                if self._migration_target_is_verified(new_collection):
+                    migration_succeeded = True
+                    return
+                self._recover_legacy_collection(backup_collection)
                 raise
+
+            migration_succeeded = True
         finally:
-            if not restore_failed:
+            # A backup is disposable only after the new alias and its
+            # manifest have both been verified.  Cleanup itself is best
+            # effort; a failure leaves the backup available for operators.
+            if migration_succeeded:
                 self._delete_collection_safely(backup_collection)
+
+    def _migration_target_is_verified(self, new_collection: str) -> bool:
+        """Return whether the fixed alias now points to a valid new index."""
+
+        try:
+            if self._alias_target() != new_collection:
+                return False
+            return (
+                self._read_manifest(collection_name=new_collection)
+                == self._expected_fingerprint
+            )
+        except Exception:
+            return False
+
+    def _recover_legacy_collection(
+        self,
+        backup_collection: str,
+    ) -> None:
+        """Restore the old fixed-name index after an uncertain migration.
+
+        The method deliberately swallows recovery errors so the original
+        backend failure remains the API error.  If cloning back to the fixed
+        name fails, the still-intact backup is exposed through the same alias
+        as a last-resort read path; callers can then continue searching while
+        an operator repairs/reclaims the orphan.
+        """
+
+        try:
+            fixed_exists, alias_target = self._probe_legacy_collection_state()
+        except Exception as probe_error:
+            self._log_legacy_recovery_failure("probe", probe_error)
+            return
+
+        # If the delete did not take effect and the legacy fixed collection is
+        # still present, do not touch it.  It is already the safest rollback
+        # target; the backup remains for later manual cleanup.
+        if (
+            fixed_exists
+            and alias_target is None
+            and self._legacy_collection_is_verified()
+        ):
+            return
+
+        try:
+            if alias_target is not None:
+                self._remove_fixed_alias()
+            self._restore_collection(backup_collection, COLLECTION_NAME)
+            if self._legacy_collection_is_verified():
+                return
+            raise RuntimeError("restored legacy collection verification failed")
+        except Exception as restore_error:
+            self._log_legacy_recovery_failure("restore", restore_error)
+
+        # A failed clone can leave the fixed name unavailable.  The backup is
+        # a complete old snapshot, so point the fixed alias at it as a final
+        # read-only fallback.  This operation is intentionally independent of
+        # the original restore error and never makes the backup disposable.
+        try:
+            self._client.update_collection_aliases(
+                [
+                    DeleteAliasOperation(
+                        delete_alias=DeleteAlias(alias_name=COLLECTION_NAME)
+                    ),
+                    CreateAliasOperation(
+                        create_alias=CreateAlias(
+                            collection_name=backup_collection,
+                            alias_name=COLLECTION_NAME,
+                        )
+                    ),
+                ]
+            )
+            if self._alias_target() != backup_collection:
+                raise RuntimeError("legacy backup alias verification failed")
+        except Exception as fallback_error:
+            self._log_legacy_recovery_failure("backup alias", fallback_error)
+
+    def _probe_legacy_collection_state(self) -> tuple[bool, str | None]:
+        """Probe fixed collection and alias independently after ambiguity."""
+
+        alias_target = self._alias_target()
+        fixed_exists = self._client.collection_exists(COLLECTION_NAME)
+        return fixed_exists, alias_target
+
+    def _legacy_collection_is_verified(self) -> bool:
+        try:
+            return (
+                self._alias_target() is None
+                and self._client.collection_exists(COLLECTION_NAME)
+                and self._read_manifest(collection_name=COLLECTION_NAME)
+                == self._expected_fingerprint
+            )
+        except Exception:
+            return False
+
+    def _remove_fixed_alias(self) -> None:
+        self._client.update_collection_aliases(
+            [
+                DeleteAliasOperation(
+                    delete_alias=DeleteAlias(alias_name=COLLECTION_NAME)
+                )
+            ]
+        )
+
+    @staticmethod
+    def _log_legacy_recovery_failure(operation: str, error: Exception) -> None:
+        logger.warning(
+            "qdrant legacy collection %s failed",
+            operation,
+            extra={
+                "collection_name": COLLECTION_NAME,
+                "error_type": type(error).__name__,
+            },
+        )
 
     def _clone_collection(self, source: str, target: str) -> None:
         """Copy a local dense collection, including vectors and payloads."""
