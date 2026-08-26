@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
+from uuid import uuid4
 
 from profile_agent.knowledge.qdrant_question_store import (
     COLLECTION_NAME,
@@ -142,9 +147,15 @@ class QdrantQuestionStoreTests(unittest.TestCase):
         old = self.record("q-old")
         keep = self.record("q-keep")
         retired = self.record("q-retired", status="retired")
+        expired = self.record("q-expired", valid_until=date(2026, 8, 25))
         store.rebuild([old, keep], [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], self.fingerprint)
 
-        store.sync([keep, retired], [[1.0, 0.0, 0.0], [0.0, 0.0, 1.0]], self.fingerprint)
+        store.sync(
+            [keep, retired, expired],
+            [[1.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.5, 0.5, 0.0]],
+            self.fingerprint,
+            today=date(2026, 8, 26),
+        )
 
         points, _ = store.client.scroll(
             collection_name=COLLECTION_NAME,
@@ -159,6 +170,27 @@ class QdrantQuestionStoreTests(unittest.TestCase):
         }
         self.assertEqual(question_ids, {"q-keep"})
         self.assertEqual(self.search(store).hits[0].record.question_id, "q-keep")
+
+    def test_sync_rejects_fingerprint_mismatch_without_writes(self) -> None:
+        store = self.make_store(fingerprint=self.fingerprint)
+        store.rebuild([self.record("q-old")], [[1.0, 0.0, 0.0]], self.fingerprint)
+        mismatched = IndexFingerprint(
+            provider="fake-embeddings",
+            model="fake-model-v2",
+            dimension=3,
+            index_version="questions-v2",
+        )
+
+        with self.assertRaises(ValueError):
+            store.sync(
+                [self.record("q-new")],
+                [[0.0, 1.0, 0.0]],
+                mismatched,
+                today=date(2026, 8, 26),
+            )
+
+        self.assertEqual(self.search(store).hits[0].record.question_id, "q-old")
+        self.assertEqual(store.get_manifest(), self.fingerprint)
 
     def test_invalid_rebuild_does_not_replace_usable_collection(self) -> None:
         store = self.make_store(fingerprint=self.fingerprint)
@@ -183,9 +215,13 @@ class QdrantQuestionStoreTests(unittest.TestCase):
             index_version="questions-v2",
         )
         store = self.make_store(fingerprint=expected)
-        store.rebuild([self.record("q-good")], [[1.0, 0.0, 0.0]], actual)
+        store.rebuild([self.record("q-good")], [[1.0, 0.0, 0.0]], expected)
+        mismatched_reader = QdrantQuestionStore(
+            client=store.client,
+            fingerprint=actual,
+        )
 
-        result = self.search(store)
+        result = self.search(mismatched_reader)
 
         self.assertEqual(result.status, "index_mismatch")
         self.assertEqual(result.hits, [])
@@ -198,6 +234,164 @@ class QdrantQuestionStoreTests(unittest.TestCase):
 
         self.assertEqual(result.status, "index_mismatch")
         self.assertEqual(result.hits, [])
+
+    def test_reader_fingerprint_is_required(self) -> None:
+        with self.assertRaises(ValueError):
+            QdrantQuestionStore(path=":memory:")
+
+    def test_rebuild_rejects_mismatched_fingerprint_without_replacing_index(self) -> None:
+        store = self.make_store(fingerprint=self.fingerprint)
+        store.rebuild([self.record("q-old")], [[1.0, 0.0, 0.0]], self.fingerprint)
+        mismatched = IndexFingerprint(
+            provider="fake-embeddings",
+            model="fake-model-v2",
+            dimension=3,
+            index_version="questions-v2",
+        )
+
+        with self.assertRaises(ValueError):
+            store.rebuild([self.record("q-new")], [[1.0, 0.0, 0.0]], mismatched)
+
+        self.assertEqual(self.search(store).hits[0].record.question_id, "q-old")
+
+    def test_persisted_reader_with_different_fingerprint_returns_index_mismatch(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir)
+            writer = QdrantQuestionStore(path=path, fingerprint=self.fingerprint)
+            writer.rebuild(
+                [self.record("q-good")],
+                [[1.0, 0.0, 0.0]],
+                self.fingerprint,
+            )
+            writer.close()
+            different = IndexFingerprint(
+                provider="fake-embeddings",
+                model="fake-model-v2",
+                dimension=3,
+                index_version="questions-v2",
+            )
+            reader = QdrantQuestionStore(path=path, fingerprint=different)
+            result = self.search(reader)
+            reader.close()
+
+        self.assertEqual(result.status, "index_mismatch")
+        self.assertEqual(result.hits, [])
+
+    def test_rebuild_write_failure_keeps_previous_collection_and_manifest(self) -> None:
+        store = self.make_store(fingerprint=self.fingerprint)
+        store.rebuild([self.record("q-old")], [[1.0, 0.0, 0.0]], self.fingerprint)
+
+        with patch.object(store.client, "upsert", side_effect=RuntimeError("injected")):
+            with self.assertRaises(RuntimeError):
+                store.rebuild(
+                    [self.record("q-new")],
+                    [[0.0, 1.0, 0.0]],
+                    self.fingerprint,
+                )
+
+        self.assertEqual(self.search(store).hits[0].record.question_id, "q-old")
+        self.assertEqual(store.get_manifest(), self.fingerprint)
+
+    def test_rebuild_create_failure_keeps_previous_collection_and_manifest(self) -> None:
+        store = self.make_store(fingerprint=self.fingerprint)
+        store.rebuild([self.record("q-old")], [[1.0, 0.0, 0.0]], self.fingerprint)
+
+        with patch.object(
+            store.client,
+            "create_collection",
+            side_effect=RuntimeError("injected create failure"),
+        ):
+            with self.assertRaises(RuntimeError):
+                store.rebuild(
+                    [self.record("q-new")],
+                    [[0.0, 1.0, 0.0]],
+                    self.fingerprint,
+                )
+
+        self.assertEqual(self.search(store).hits[0].record.question_id, "q-old")
+        self.assertEqual(store.get_manifest(), self.fingerprint)
+
+    def test_rebuild_alias_switch_failure_keeps_previous_collection_and_manifest(self) -> None:
+        store = self.make_store(fingerprint=self.fingerprint)
+        store.rebuild([self.record("q-old")], [[1.0, 0.0, 0.0]], self.fingerprint)
+
+        with patch.object(
+            store.client,
+            "update_collection_aliases",
+            side_effect=RuntimeError("injected alias failure"),
+        ):
+            with self.assertRaises(RuntimeError):
+                store.rebuild(
+                    [self.record("q-new")],
+                    [[0.0, 1.0, 0.0]],
+                    self.fingerprint,
+                )
+
+        self.assertEqual(self.search(store).hits[0].record.question_id, "q-old")
+        self.assertEqual(store.get_manifest(), self.fingerprint)
+
+    def test_sync_write_failure_keeps_previous_collection_and_manifest(self) -> None:
+        store = self.make_store(fingerprint=self.fingerprint)
+        old = self.record("q-old")
+        keep = self.record("q-keep")
+        store.rebuild(
+            [old, keep],
+            [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+            self.fingerprint,
+        )
+
+        with patch.object(store.client, "upsert", side_effect=RuntimeError("injected")):
+            with self.assertRaises(RuntimeError):
+                store.sync(
+                    [keep],
+                    [[0.0, 1.0, 0.0]],
+                    self.fingerprint,
+                    today=date(2026, 8, 26),
+                )
+
+        self.assertEqual(self.search(store).hits[0].record.question_id, "q-old")
+        self.assertEqual(store.get_manifest(), self.fingerprint)
+
+    def test_sync_scrolls_all_pages_when_removing_stale_points(self) -> None:
+        store = self.make_store(fingerprint=self.fingerprint)
+        keep = self.record("q-keep")
+        store.rebuild([keep], [[1.0, 0.0, 0.0]], self.fingerprint)
+        first_id = uuid4()
+        second_id = uuid4()
+        calls: list[object] = []
+
+        def paginated_scroll(*args, **kwargs):
+            calls.append(kwargs.get("offset"))
+            if kwargs.get("offset") is None:
+                return [
+                    SimpleNamespace(
+                        id=first_id,
+                        payload={"record_type": "question", "question_id": "q-stale-1"},
+                    )
+                ], "next-page"
+            return [
+                SimpleNamespace(
+                    id=second_id,
+                    payload={"record_type": "question", "question_id": "q-stale-2"},
+                )
+            ], None
+
+        with patch.object(store.client, "scroll", side_effect=paginated_scroll):
+            points = store._question_points()
+
+        self.assertEqual(calls, [None, "next-page"])
+        self.assertEqual(
+            points,
+            {"q-stale-1": first_id, "q-stale-2": second_id},
+        )
+
+    def test_collection_name_is_fixed_to_interview_questions(self) -> None:
+        with self.assertRaises(ValueError):
+            QdrantQuestionStore(
+                path=":memory:",
+                fingerprint=self.fingerprint,
+                collection_name="parallel_questions",
+            )
 
 
 if __name__ == "__main__":

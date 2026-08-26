@@ -15,12 +15,16 @@ from datetime import date
 import math
 from pathlib import Path
 from typing import Any, Literal
-from uuid import NAMESPACE_URL, UUID, uuid5
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
     Distance,
+    CreateAlias,
+    CreateAliasOperation,
+    DeleteAlias,
+    DeleteAliasOperation,
     FieldCondition,
     Filter,
     MatchAny,
@@ -133,8 +137,8 @@ class QdrantQuestionStore:
 
     ``path=':memory:'`` is the default so constructing this class is local and
     side-effect free.  A caller may inject a local ``QdrantClient`` or provide
-    a persistence path.  The optional fingerprint is the contract expected by
-    readers; a manifest created with another fingerprint is never queried.
+    a persistence path.  The fingerprint is required for every reader and
+    writer; a manifest created with another fingerprint is never queried.
     """
 
     def __init__(
@@ -148,12 +152,15 @@ class QdrantQuestionStore:
     ) -> None:
         if fingerprint is not None and expected_fingerprint is not None:
             raise ValueError("pass only one of fingerprint and expected_fingerprint")
-        if not isinstance(collection_name, str) or not collection_name.strip():
-            raise ValueError("collection_name must not be blank")
-        self.collection_name = collection_name.strip()
-        self._expected_fingerprint = self._coerce_fingerprint(
+        if collection_name != COLLECTION_NAME:
+            raise ValueError(f"collection_name must be {COLLECTION_NAME!r}")
+        configured_fingerprint = self._coerce_fingerprint(
             expected_fingerprint if expected_fingerprint is not None else fingerprint
         )
+        if configured_fingerprint is None:
+            raise ValueError("fingerprint is required")
+        self.collection_name = COLLECTION_NAME
+        self._expected_fingerprint = configured_fingerprint
         self._owns_client = client is None
         self._client = client if client is not None else QdrantClient(path=str(path))
 
@@ -164,7 +171,7 @@ class QdrantQuestionStore:
         return self._client
 
     @property
-    def fingerprint(self) -> IndexFingerprint | None:
+    def fingerprint(self) -> IndexFingerprint:
         return self._expected_fingerprint
 
     def close(self) -> None:
@@ -190,6 +197,7 @@ class QdrantQuestionStore:
         """
 
         normalized_fingerprint = self._coerce_fingerprint(fingerprint)
+        self._assert_expected_fingerprint(normalized_fingerprint)
         prepared = self._prepare_records(records, vectors, normalized_fingerprint)
         self._write_collection(prepared, normalized_fingerprint)
 
@@ -216,16 +224,7 @@ class QdrantQuestionStore:
             raise TypeError("today must be a date")
 
         current_manifest = self._read_manifest()
-        if current_manifest is None:
-            active = [
-                item
-                for item in prepared
-                if item["payload"].get("status") == "active"
-                and self._date_from_payload(item["payload"].get("valid_until")) >= as_of
-            ]
-            self._write_collection(active, normalized_fingerprint)
-            return
-        if current_manifest != normalized_fingerprint:
+        if current_manifest is not None and current_manifest != normalized_fingerprint:
             raise ValueError("index fingerprint mismatch")
 
         active = [
@@ -234,39 +233,10 @@ class QdrantQuestionStore:
             if item["payload"].get("status") == "active"
             and self._date_from_payload(item["payload"].get("valid_until")) >= as_of
         ]
-        active_ids = {item["payload"]["question_id"] for item in active}
-        existing_points = self._question_points()
-        stale_ids = [
-            point_id
-            for question_id, point_id in existing_points.items()
-            if question_id not in active_ids
-        ]
-        if stale_ids:
-            self._client.delete(
-                collection_name=self.collection_name,
-                points_selector=stale_ids,
-                wait=True,
-            )
-        if active:
-            self._client.upsert(
-                collection_name=self.collection_name,
-                points=[
-                    PointStruct(
-                        id=item["point_id"],
-                        vector=item["vector"],
-                        payload=item["payload"],
-                    )
-                    for item in active
-                ],
-                wait=True,
-            )
-        # Re-upsert the manifest to make the durable contract explicit even
-        # after an older client has persisted only the question points.
-        self._client.upsert(
-            collection_name=self.collection_name,
-            points=[self._manifest_point(normalized_fingerprint)],
-            wait=True,
-        )
+        # Sync is a full snapshot replacement as well: staging the active
+        # subset and switching the alias means retired/expired/stale points
+        # disappear together with the new manifest.
+        self._write_collection(active, normalized_fingerprint)
 
     def search(
         self,
@@ -510,29 +480,134 @@ class QdrantQuestionStore:
         prepared: Sequence[Mapping[str, Any]],
         fingerprint: IndexFingerprint,
     ) -> None:
-        if self._client.collection_exists(self.collection_name):
-            self._client.delete_collection(collection_name=self.collection_name)
-        self._client.create_collection(
-            collection_name=self.collection_name,
-            vectors_config=VectorParams(
-                size=fingerprint.dimension,
-                distance=Distance.COSINE,
-            ),
-        )
-        points = [self._manifest_point(fingerprint)]
-        points.extend(
-            PointStruct(
-                id=item["point_id"],
-                vector=item["vector"],
-                payload=item["payload"],
+        temporary_collection = self._temporary_collection_name()
+        try:
+            self._client.create_collection(
+                collection_name=temporary_collection,
+                vectors_config=VectorParams(
+                    size=fingerprint.dimension,
+                    distance=Distance.COSINE,
+                ),
             )
-            for item in prepared
-        )
-        self._client.upsert(
-            collection_name=self.collection_name,
-            points=points,
-            wait=True,
-        )
+            points = [self._manifest_point(fingerprint)]
+            points.extend(
+                PointStruct(
+                    id=item["point_id"],
+                    vector=item["vector"],
+                    payload=item["payload"],
+                )
+                for item in prepared
+            )
+            self._client.upsert(
+                collection_name=temporary_collection,
+                points=points,
+                wait=True,
+            )
+            self._verify_staged_collection(
+                temporary_collection,
+                fingerprint,
+                expected_question_count=len(prepared),
+            )
+            old_collection = self._active_collection_name()
+            self._switch_active_collection(temporary_collection, old_collection)
+        except Exception:
+            self._delete_collection_safely(temporary_collection)
+            raise
+
+    def _verify_staged_collection(
+        self,
+        collection_name: str,
+        fingerprint: IndexFingerprint,
+        *,
+        expected_question_count: int,
+    ) -> None:
+        if self._read_manifest(collection_name=collection_name) != fingerprint:
+            raise RuntimeError("staged index manifest verification failed")
+        if (
+            len(self._question_points(collection_name=collection_name))
+            != expected_question_count
+        ):
+            raise RuntimeError("staged index question count verification failed")
+
+    def _switch_active_collection(
+        self,
+        new_collection: str,
+        old_collection: str | None,
+    ) -> None:
+        alias_target = self._alias_target()
+        if alias_target is not None:
+            # Qdrant applies the delete/create alias operations as one update,
+            # leaving the old alias readable if the update is rejected.
+            self._client.update_collection_aliases(
+                [
+                    DeleteAliasOperation(
+                        delete_alias=DeleteAlias(alias_name=COLLECTION_NAME)
+                    ),
+                    CreateAliasOperation(
+                        create_alias=CreateAlias(
+                            collection_name=new_collection,
+                            alias_name=COLLECTION_NAME,
+                        )
+                    ),
+                ]
+            )
+        elif self._client.collection_exists(COLLECTION_NAME):
+            # Compatibility path for an index written by the pre-alias
+            # implementation.  All validation and staging are complete before
+            # this legacy collection is touched.
+            self._client.delete_collection(collection_name=COLLECTION_NAME)
+            self._client.update_collection_aliases(
+                [
+                    CreateAliasOperation(
+                        create_alias=CreateAlias(
+                            collection_name=new_collection,
+                            alias_name=COLLECTION_NAME,
+                        )
+                    )
+                ]
+            )
+        else:
+            self._client.update_collection_aliases(
+                [
+                    CreateAliasOperation(
+                        create_alias=CreateAlias(
+                            collection_name=new_collection,
+                            alias_name=COLLECTION_NAME,
+                        )
+                    )
+                ]
+            )
+
+        if old_collection and old_collection not in {COLLECTION_NAME, new_collection}:
+            self._delete_collection_safely(old_collection)
+
+    @staticmethod
+    def _temporary_collection_name() -> str:
+        return f"{COLLECTION_NAME}__{uuid4().hex}"
+
+    def _alias_target(self) -> str | None:
+        aliases = self._client.get_aliases().aliases
+        for alias in aliases:
+            if alias.alias_name == COLLECTION_NAME:
+                return alias.collection_name
+        return None
+
+    def _active_collection_name(self) -> str | None:
+        alias_target = self._alias_target()
+        if alias_target is not None:
+            return alias_target
+        if self._client.collection_exists(COLLECTION_NAME):
+            return COLLECTION_NAME
+        return None
+
+    def _delete_collection_safely(self, collection_name: str) -> None:
+        try:
+            if self._client.collection_exists(collection_name):
+                self._client.delete_collection(collection_name=collection_name)
+        except Exception:
+            # Cleanup failure must not mask the write failure or compromise the
+            # old active alias.
+            return
 
     @staticmethod
     def _manifest_point(fingerprint: IndexFingerprint) -> PointStruct:
@@ -551,11 +626,12 @@ class QdrantQuestionStore:
             },
         )
 
-    def _read_manifest(self) -> IndexFingerprint | None:
-        if not self._client.collection_exists(self.collection_name):
+    def _read_manifest(self, *, collection_name: str | None = None) -> IndexFingerprint | None:
+        target_collection = collection_name or self._active_collection_name()
+        if target_collection is None or not self._client.collection_exists(target_collection):
             return None
         points = self._client.retrieve(
-            collection_name=self.collection_name,
+            collection_name=target_collection,
             ids=[self._manifest_point_id()],
             with_payload=True,
             with_vectors=False,
@@ -577,25 +653,36 @@ class QdrantQuestionStore:
         except Exception:
             return None
 
-    def _question_points(self) -> dict[str, str | UUID | int]:
-        points, _ = self._client.scroll(
-            collection_name=self.collection_name,
-            scroll_filter=Filter(
-                must=[
-                    FieldCondition(
-                        key="record_type", match=MatchValue(value=_QUESTION_RECORD_TYPE)
-                    )
-                ]
-            ),
-            limit=10000,
-            with_payload=True,
-            with_vectors=False,
-        )
+    def _question_points(
+        self, *, collection_name: str | None = None
+    ) -> dict[str, str | UUID | int]:
+        target_collection = collection_name or self._active_collection_name()
+        if target_collection is None:
+            return {}
         result: dict[str, str | UUID | int] = {}
-        for point in points:
-            payload = point.payload
-            if isinstance(payload, Mapping) and isinstance(payload.get("question_id"), str):
-                result[payload["question_id"]] = point.id
+        offset: str | UUID | int | None = None
+        while True:
+            points, next_offset = self._client.scroll(
+                collection_name=target_collection,
+                scroll_filter=Filter(
+                    must=[
+                        FieldCondition(
+                            key="record_type", match=MatchValue(value=_QUESTION_RECORD_TYPE)
+                        )
+                    ]
+                ),
+                limit=10000,
+                offset=offset,
+                with_payload=True,
+                with_vectors=False,
+            )
+            for point in points:
+                payload = point.payload
+                if isinstance(payload, Mapping) and isinstance(payload.get("question_id"), str):
+                    result[payload["question_id"]] = point.id
+            if next_offset is None:
+                break
+            offset = next_offset
         return result
 
     @staticmethod
