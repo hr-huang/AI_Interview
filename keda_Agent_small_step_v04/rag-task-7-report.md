@@ -46,3 +46,20 @@
   建议先 dry-run，测试与离线验证不执行真实调用。
 - Qdrant 路径默认是 `data/qdrant-question-index`，可通过
   `QUESTION_RAG_INDEX_PATH` 或 `--index-path` 覆盖；下一步仍需真实题库评审与召回校准。
+
+## 复审修复追加
+
+- 修复 I-1：validate、audit 和 dry-run 在任何环境读取或 `load_dotenv` 之前返回；只有
+  显式 `--apply` 且题库、参数、依赖形状和路径预检通过后才发现环境配置。dry-run 不会把
+  `.env` key 载入当前进程。
+- 修复 I-2：audit 使用保留根 role/schema/test-only 边界的容错 raw 路径，交给生命周期审计
+  输出 missing/invalid source、invalid record，并追加 duplicate question id/content hash
+  与 hash mismatch 诊断；诊断项不会被误计为 eligible。
+- 修复 I-3：空题库在 validate、dry-run 和 apply 共用前置校验，统一 code 2，且不构造
+  embedding/store。
+- 修复 I-4/M-1：预检非空 model/index version、可用 index path、URL、依赖工厂和正维度；
+  向量维度或 fingerprint 无效时在 store 之前失败。日期严格限定 `YYYY-MM-DD`，日期/窗口
+  溢出按配置错误 code 2 返回。
+- 第二轮 TDD 定向测试：**21 passed**（含 env-read/dotenv spy、容错 audit、空题库、路径、
+  维度、fingerprint 和日期边界）。
+- 第二轮全后端回归：`python -m unittest discover -s tests` — **560 passed**。

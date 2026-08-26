@@ -9,6 +9,7 @@ dry-run never needs an API key.
 from __future__ import annotations
 
 import argparse
+from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -20,6 +21,7 @@ from pathlib import Path
 import re
 import sys
 from typing import Any
+from urllib.parse import urlparse
 
 from profile_agent.knowledge.qdrant_question_store import (
     COLLECTION_NAME,
@@ -28,8 +30,10 @@ from profile_agent.knowledge.qdrant_question_store import (
 )
 from profile_agent.schemas.question_rag_schema import InterviewQuestionRecord
 from profile_agent.services.question_bank_service import (
+    SUPPORTED_SCHEMA_VERSIONS,
     SUPPORTED_ROLE,
     audit_question_bank,
+    build_question_content_hash,
     load_question_bank,
 )
 from profile_agent.services.siliconflow_embedding_service import (
@@ -75,6 +79,7 @@ class QuestionBankDependencies:
     env: Mapping[str, str] | None = None
     now_provider: Callable[[], date] | None = None
     test_dependency: object | None = None
+    raw_audit_loader: Callable[..., Any] | None = None
 
 
 class _DependencyView:
@@ -110,6 +115,8 @@ class _DependencyView:
                 "store",
                 "fingerprint_factory",
                 "build_fingerprint",
+                "raw_audit_loader",
+                "audit_bank_loader",
                 "env",
                 "environment",
                 "now_provider",
@@ -177,7 +184,7 @@ def _build_parser() -> argparse.ArgumentParser:
                 "--index-path",
                 "--qdrant-path",
                 dest="index_path",
-                type=Path,
+                type=_parse_path,
                 default=None,
                 help="本地 Qdrant 路径；默认读取 QUESTION_RAG_INDEX_PATH",
             )
@@ -191,13 +198,21 @@ def _build_parser() -> argparse.ArgumentParser:
                 default=None,
                 help="覆盖 QUESTION_RAG_INDEX_VERSION",
             )
+            subparser.add_argument(
+                "--dimension",
+                type=_parse_positive_int,
+                default=None,
+                help="可选的 embedding 维度约束，必须为正整数",
+            )
     return parser
 
 
 def _parse_date(value: str) -> date:
+    if not isinstance(value, str) or re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value) is None:
+        raise argparse.ArgumentTypeError("日期必须为 YYYY-MM-DD")
     try:
         parsed = date.fromisoformat(value)
-    except (TypeError, ValueError) as exc:
+    except (TypeError, ValueError, OverflowError) as exc:
         raise argparse.ArgumentTypeError("日期必须为 YYYY-MM-DD") from exc
     return parsed
 
@@ -205,11 +220,30 @@ def _parse_date(value: str) -> date:
 def _parse_non_negative_int(value: str) -> int:
     try:
         parsed = int(value)
-    except (TypeError, ValueError) as exc:
+    except (TypeError, ValueError, OverflowError) as exc:
         raise argparse.ArgumentTypeError("天数必须为非负整数") from exc
     if parsed < 0:
         raise argparse.ArgumentTypeError("天数必须为非负整数")
     return parsed
+
+
+def _parse_positive_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise argparse.ArgumentTypeError("数值必须为正整数") from exc
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("数值必须为正整数")
+    return parsed
+
+
+def _parse_path(value: str) -> Path:
+    if not isinstance(value, str) or not value.strip():
+        raise argparse.ArgumentTypeError("路径不能为空")
+    try:
+        return Path(value)
+    except (TypeError, ValueError, OSError) as exc:
+        raise argparse.ArgumentTypeError("路径无效") from exc
 
 
 def _now_provider(value: Callable[[], date] | None) -> Callable[[], date]:
@@ -227,7 +261,10 @@ def _resolve_today(
     if requested is not None:
         result = requested
     else:
-        result = provider()
+        try:
+            result = provider()
+        except (OverflowError, TypeError, ValueError) as exc:
+            raise QuestionBankConfigurationError("as-of date is invalid") from exc
     if isinstance(result, datetime) or not isinstance(result, date):
         raise QuestionBankConfigurationError("as-of date must be a date")
     return result
@@ -242,6 +279,72 @@ def _env_value(env: Mapping[str, str], name: str, default: str = "") -> str:
     return value.strip()
 
 
+_MISSING_ENV_VALUE = object()
+
+
+def _env_setting(env: Mapping[str, str], name: str, default: str) -> str:
+    """Read one non-secret setting while preserving an explicitly blank value."""
+
+    value = env.get(name, _MISSING_ENV_VALUE)
+    if value is _MISSING_ENV_VALUE:
+        return default.strip()
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        return str(value).strip()
+    return value.strip()
+
+
+def _require_non_blank(value: Any, label: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise QuestionBankConfigurationError(f"{label} must not be blank")
+    return value.strip()
+
+
+def _validate_base_url(value: Any) -> str:
+    base_url = _require_non_blank(value, "embedding base URL")
+    parsed = urlparse(base_url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise QuestionBankConfigurationError("embedding base URL is invalid")
+    return base_url
+
+
+def _validate_index_path(value: Any) -> Path:
+    """Check a local index path without creating files or directories."""
+
+    if value is None or (isinstance(value, str) and not value.strip()):
+        raise QuestionBankConfigurationError("index path must not be blank")
+    try:
+        path = value if isinstance(value, Path) else Path(value)
+    except (TypeError, ValueError, OSError) as exc:
+        raise QuestionBankConfigurationError("index path is invalid") from exc
+    if not str(path).strip():
+        raise QuestionBankConfigurationError("index path must not be blank")
+
+    try:
+        if path.exists():
+            if not path.is_dir():
+                raise QuestionBankConfigurationError("index path must be a directory")
+            if not os.access(path, os.W_OK):
+                raise QuestionBankConfigurationError("index path is not writable")
+            return path
+
+        # The store may create the final directory.  Verify that the nearest
+        # existing ancestor is a writable directory, but never create it here.
+        parent = path.parent
+        while not parent.exists() and parent != parent.parent:
+            parent = parent.parent
+        if not parent.exists() or not parent.is_dir():
+            raise QuestionBankConfigurationError("index path parent is unavailable")
+        if not os.access(parent, os.W_OK):
+            raise QuestionBankConfigurationError("index path parent is not writable")
+    except QuestionBankConfigurationError:
+        raise
+    except (OSError, ValueError) as exc:
+        raise QuestionBankConfigurationError("index path is unavailable") from exc
+    return path
+
+
 def _normalise_records(value: Any, *, test_dependency: object | None) -> list[InterviewQuestionRecord]:
     if isinstance(value, (str, bytes, bytearray)):
         raise QuestionBankValidationError("question bank loader returned invalid records")
@@ -249,6 +352,8 @@ def _normalise_records(value: Any, *, test_dependency: object | None) -> list[In
         raw_records = list(value)
     except TypeError as exc:
         raise QuestionBankValidationError("question bank loader returned invalid records") from exc
+    if not raw_records:
+        raise QuestionBankValidationError("question bank must contain at least one record")
 
     records: list[InterviewQuestionRecord] = []
     for _index, raw_record in enumerate(raw_records):
@@ -299,6 +404,130 @@ def _call_loader(
         # its exception text.  Keep that detail out of the CLI boundary.
         raise QuestionBankValidationError("question bank validation failed") from exc
     return _normalise_records(loaded, test_dependency=test_dependency)
+
+
+def _read_raw_audit_bank(
+    path: Path,
+    *,
+    test_dependency: object | None,
+) -> list[Mapping[str, Any]]:
+    """Read enough bank structure for audit without enforcing record strictness.
+
+    Audit is intentionally the diagnostic path: malformed record/source fields,
+    duplicate IDs, and stored hashes must reach ``audit_question_bank`` instead
+    of being rejected by the strict indexing loader.  Root identity and the
+    synthetic-fixture boundary remain strict so audit cannot inspect a bank
+    for another role or accidentally bless test data in production.
+    """
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise QuestionBankValidationError("question bank audit JSON could not be read") from exc
+    if not isinstance(payload, Mapping):
+        raise QuestionBankValidationError("question bank audit root must be an object")
+
+    schema_version = payload.get("schema_version", payload.get("version"))
+    if (
+        isinstance(schema_version, bool)
+        or type(schema_version) not in {int, str}
+        or schema_version not in SUPPORTED_SCHEMA_VERSIONS
+    ):
+        raise QuestionBankValidationError("question bank schema_version is invalid")
+    if payload.get("role") != SUPPORTED_ROLE:
+        raise QuestionBankValidationError("unsupported question bank role")
+    role_version = payload.get("role_version")
+    if not isinstance(role_version, str) or not role_version.strip():
+        raise QuestionBankValidationError("question bank role_version is invalid")
+
+    test_only = payload.get("test_only", False)
+    if not isinstance(test_only, bool):
+        raise QuestionBankValidationError("question bank test_only is invalid")
+    if test_only and test_dependency is None:
+        raise QuestionBankValidationError(
+            "test-only synthetic banks require an explicit test dependency"
+        )
+
+    questions = payload.get("questions")
+    if questions is None:
+        questions = payload.get("records")
+    if not isinstance(questions, list):
+        raise QuestionBankValidationError("question bank questions must be a list")
+    if not questions:
+        raise QuestionBankValidationError("question bank must contain at least one record")
+    # Keep non-object items on the diagnostic path as synthetic placeholders;
+    # the canonical auditor can then classify them as invalid records without
+    # exposing or echoing arbitrary malformed input.
+    normalised_questions: list[Mapping[str, Any]] = []
+    for index, question in enumerate(questions):
+        if isinstance(question, Mapping):
+            normalised_questions.append(question)
+        else:
+            normalised_questions.append(
+                {
+                    "question_id": f"<record:{index}>",
+                    "valid_until": date.max,
+                    "status": None,
+                }
+            )
+
+    if any(
+        question.get("source_type") == "test_only_synthetic"
+        for question in normalised_questions
+    ) and (test_dependency is None or test_only is not True):
+        raise QuestionBankValidationError(
+            "test-only synthetic records require an explicit test dependency"
+        )
+    return normalised_questions
+
+
+def _call_raw_audit_loader(
+    loader: Callable[..., Any],
+    path: Path,
+    *,
+    test_dependency: object | None,
+) -> list[Mapping[str, Any]]:
+    try:
+        loaded = _call_with_supported_kwargs(
+            loader,
+            (path,),
+            {
+                "allow_test_only": test_dependency is not None,
+                "test_dependency": test_dependency,
+            },
+        )
+    except Exception as exc:
+        raise QuestionBankValidationError("question bank audit loader failed") from exc
+    if isinstance(loaded, (str, bytes, bytearray)):
+        raise QuestionBankValidationError("question bank audit loader returned invalid records")
+    try:
+        records = list(loaded)
+    except TypeError as exc:
+        raise QuestionBankValidationError("question bank audit loader returned invalid records") from exc
+    if not records:
+        raise QuestionBankValidationError("question bank audit must contain records")
+    normalised_records: list[Mapping[str, Any]] = []
+    for index, record in enumerate(records):
+        if isinstance(record, Mapping):
+            normalised_records.append(record)
+        elif isinstance(record, InterviewQuestionRecord):
+            normalised_records.append(record.model_dump(mode="python"))
+        else:
+            normalised_records.append(
+                {
+                    "question_id": f"<record:{index}>",
+                    "valid_until": date.max,
+                    "status": None,
+                }
+            )
+    if any(
+        record.get("source_type") == "test_only_synthetic"
+        for record in normalised_records
+    ) and test_dependency is None:
+        raise QuestionBankValidationError(
+            "test-only synthetic records require an explicit test dependency"
+        )
+    return normalised_records
 
 
 def _call_with_supported_kwargs(
@@ -358,7 +587,12 @@ def _call_auditor(
     ):
         kwargs.setdefault("as_of", as_of)
         kwargs.setdefault("expiring_within_days", expiring_within_days)
-    return _call_with_supported_kwargs(auditor, (records,), kwargs)
+    try:
+        return _call_with_supported_kwargs(auditor, (records,), kwargs)
+    except OverflowError as exc:
+        # A date at the edge of Python's representable range plus a warning
+        # window is a command/configuration error, not a backend failure.
+        raise QuestionBankConfigurationError("date range cannot be represented") from exc
 
 
 def _audit_value(report: Any, *names: str, default: Any = None) -> Any:
@@ -382,10 +616,65 @@ def _audit_ids(report: Any, *names: str) -> list[str]:
         return []
 
 
-def _record_count_by_status(records: Sequence[InterviewQuestionRecord]) -> dict[str, int]:
+def _raw_audit_diagnostics(
+    records: Sequence[Mapping[str, Any]],
+) -> dict[str, list[str]]:
+    """Find duplicate/hash issues without echoing raw record content."""
+
+    id_groups: defaultdict[str, list[str]] = defaultdict(list)
+    hash_groups: defaultdict[str, list[str]] = defaultdict(list)
+    hash_mismatch_ids: list[str] = []
+    for index, raw_record in enumerate(records):
+        question_id = raw_record.get("question_id")
+        safe_id = (
+            question_id.strip()
+            if isinstance(question_id, str) and question_id.strip()
+            else f"<record:{index}>"
+        )
+        id_groups[safe_id].append(safe_id)
+
+        content_hash = raw_record.get("content_hash")
+        if isinstance(content_hash, str) and content_hash.strip():
+            hash_groups[content_hash.strip()].append(safe_id)
+        try:
+            record = InterviewQuestionRecord.model_validate(raw_record)
+            expected_hash = build_question_content_hash(record)
+        except Exception:
+            continue
+        # The strict loader de-duplicates by the canonical semantic hash, not
+        # merely by the stored field.  Keep that same diagnostic visible when
+        # a malformed bank stores two different (or stale) hash values.
+        if not isinstance(content_hash, str) or content_hash.strip() != expected_hash:
+            hash_groups[expected_hash].append(safe_id)
+        if record.content_hash != expected_hash:
+            hash_mismatch_ids.append(safe_id)
+
+    duplicate_ids = sorted(
+        question_id
+        for question_id, grouped_ids in id_groups.items()
+        if len(grouped_ids) > 1 and not question_id.startswith("<record:")
+    )
+    duplicate_hash_ids = sorted(
+        question_id
+        for grouped_ids in hash_groups.values()
+        if len(grouped_ids) > 1
+        for question_id in grouped_ids
+    )
+    return {
+        "duplicate_question_id": duplicate_ids,
+        "duplicate_content_hash": duplicate_hash_ids,
+        "content_hash_mismatch": sorted(set(hash_mismatch_ids)),
+    }
+
+
+def _record_count_by_status(records: Sequence[Any]) -> dict[str, int]:
     counts: dict[str, int] = {}
     for record in records:
-        status = str(record.status)
+        if isinstance(record, Mapping):
+            status_value = record.get("status")
+        else:
+            status_value = getattr(record, "status", None)
+        status = str(status_value) if status_value is not None else "invalid"
         counts[status] = counts.get(status, 0) + 1
     return dict(sorted(counts.items()))
 
@@ -416,7 +705,12 @@ def _validate_records_for_embedding(
     return [record.question_text for record in records]
 
 
-def _normalise_vectors(raw: Any, *, expected_count: int) -> list[list[float]]:
+def _normalise_vectors(
+    raw: Any,
+    *,
+    expected_count: int,
+    expected_dimension: int | None = None,
+) -> list[list[float]]:
     if isinstance(raw, (str, bytes, bytearray)):
         raise ValueError("embedding result must be a sequence")
     try:
@@ -458,10 +752,17 @@ def _normalise_vectors(raw: Any, *, expected_count: int) -> list[list[float]]:
                 raise ValueError("embedding vectors must contain finite numbers")
             vector.append(numeric)
         vectors.append(vector)
+    if expected_dimension is not None and dimension != expected_dimension:
+        raise QuestionBankConfigurationError("embedding dimension does not match configured dimension")
     return vectors
 
 
-def _embed(embedding: Any, texts: Sequence[str]) -> list[list[float]]:
+def _embed(
+    embedding: Any,
+    texts: Sequence[str],
+    *,
+    expected_dimension: int | None = None,
+) -> list[list[float]]:
     embed = getattr(embedding, "embed", None)
     if not callable(embed):
         if callable(embedding):
@@ -470,7 +771,11 @@ def _embed(embedding: Any, texts: Sequence[str]) -> list[list[float]]:
             raise TypeError("embedding dependency must provide embed")
     else:
         raw = embed(texts)
-    return _normalise_vectors(raw, expected_count=len(texts))
+    return _normalise_vectors(
+        raw,
+        expected_count=len(texts),
+        expected_dimension=expected_dimension,
+    )
 
 
 def _build_fingerprint(
@@ -562,11 +867,13 @@ def _summary_for_validation(
 
 
 def _summary_for_audit(
-    records: Sequence[InterviewQuestionRecord],
+    records: Sequence[Any],
     report: Any,
     *,
     as_of: date,
+    diagnostics: Mapping[str, Sequence[str]] | None = None,
 ) -> dict[str, Any]:
+    diagnostics = diagnostics or {}
     categories = {
         "expired": ("expired_question_ids", "expired_ids", "expired"),
         "expiring_soon": (
@@ -609,6 +916,21 @@ def _summary_for_audit(
     }
     for key, names in categories.items():
         ids = _audit_ids(report, *names)
+        if key == "eligible":
+            excluded = {
+                item
+                for diagnostic_ids in diagnostics.values()
+                for item in diagnostic_ids
+            }
+            ids = list(dict.fromkeys(item for item in ids if item not in excluded))
+        summary[f"{key}_count"] = len(ids)
+        summary[f"{key}_ids"] = ids
+    for key in (
+        "duplicate_question_id",
+        "duplicate_content_hash",
+        "content_hash_mismatch",
+    ):
+        ids = list(dict.fromkeys(str(item) for item in diagnostics.get(key, ())))
         summary[f"{key}_count"] = len(ids)
         summary[f"{key}_ids"] = ids
     warning_days = _audit_value(
@@ -731,6 +1053,9 @@ def _render_summary(summary: Mapping[str, Any], *, output_format: str) -> str:
             "missing_source",
             "invalid_source",
             "invalid_record",
+            "duplicate_question_id",
+            "duplicate_content_hash",
+            "content_hash_mismatch",
             "inactive",
             "eligible",
         ):
@@ -818,6 +1143,7 @@ def _resolve_injected_dependencies(
     embedding_factory: Callable[..., Any] | None,
     store_factory: Callable[..., Any] | None,
     fingerprint_factory: Callable[..., Any] | None,
+    raw_audit_loader: Callable[..., Any] | None,
     env: Mapping[str, str] | None,
     now_provider: Callable[[], date] | None,
     test_dependency: object | None,
@@ -856,6 +1182,11 @@ def _resolve_injected_dependencies(
         resolved_fingerprint_factory = view.get(
             "fingerprint_factory", "build_fingerprint", default=None
         )
+    resolved_raw_audit_loader = raw_audit_loader
+    if resolved_raw_audit_loader is None:
+        resolved_raw_audit_loader = view.get(
+            "raw_audit_loader", "audit_bank_loader", default=None
+        )
     resolved_env = env if env is not None else view.get("env", "environment", default=None)
     resolved_now_provider = now_provider or view.get(
         "now_provider", "today_provider", "clock", default=None
@@ -884,6 +1215,7 @@ def _resolve_injected_dependencies(
             "embedding_factory": resolved_embedding_factory,
             "store_factory": resolved_store_factory,
             "fingerprint_factory": resolved_fingerprint_factory,
+            "raw_audit_loader": resolved_raw_audit_loader,
             "env": resolved_env,
             "now_provider": resolved_now_provider,
             "test_dependency": resolved_test_dependency,
@@ -913,6 +1245,7 @@ def main(
     qdrant_factory: Callable[..., Any] | None = None,
     qdrant_store_factory: Callable[..., Any] | None = None,
     fingerprint_factory: Callable[..., Any] | None = None,
+    raw_audit_loader: Callable[..., Any] | None = None,
     env: Mapping[str, str] | None = None,
     now_provider: Callable[[], date] | None = None,
     today_provider: Callable[[], date] | None = None,
@@ -952,6 +1285,7 @@ def main(
             embedding_factory=embedding_factory,
             store_factory=store_factory,
             fingerprint_factory=fingerprint_factory,
+            raw_audit_loader=raw_audit_loader,
             env=env,
             now_provider=now_provider,
             test_dependency=test_dependency,
@@ -960,11 +1294,31 @@ def main(
         if not callable(loader):
             raise QuestionBankValidationError("question bank loader is not callable")
         test_only_dependency = view.get("test_dependency", default=None)
-        records = _call_loader(
-            loader,
-            args.bank,
-            test_dependency=test_only_dependency,
-        )
+        diagnostics: dict[str, list[str]] = {}
+        if args.action == "audit" and loader is load_question_bank:
+            raw_audit_loader = view.get("raw_audit_loader", default=None)
+            if raw_audit_loader is None:
+                records = _read_raw_audit_bank(
+                    args.bank,
+                    test_dependency=test_only_dependency,
+                )
+            else:
+                if not callable(raw_audit_loader):
+                    raise QuestionBankValidationError(
+                        "question bank audit loader is not callable"
+                    )
+                records = _call_raw_audit_loader(
+                    raw_audit_loader,
+                    args.bank,
+                    test_dependency=test_only_dependency,
+                )
+            diagnostics = _raw_audit_diagnostics(records)
+        else:
+            records = _call_loader(
+                loader,
+                args.bank,
+                test_dependency=test_only_dependency,
+            )
 
         today_provider = _now_provider(view.get("now_provider", default=None))
         as_of = _resolve_today(getattr(args, "as_of", None), today_provider)
@@ -988,7 +1342,12 @@ def main(
             )
             output(
                 _render_summary(
-                    _summary_for_audit(records, report, as_of=as_of),
+                    _summary_for_audit(
+                        records,
+                        report,
+                        as_of=as_of,
+                        diagnostics=diagnostics,
+                    ),
                     output_format=output_format,
                 )
             )
@@ -1002,25 +1361,57 @@ def main(
             as_of=as_of,
             expiring_within_days=DEFAULT_EXPIRING_WITHIN_DAYS,
         )
-        env_value = view.get("env", default=None)
-        if env_value is None:
-            # Loading .env is configuration discovery only; it does not build
-            # a client or perform a network operation.
-            try:
-                from dotenv import load_dotenv
 
-                load_dotenv()
-            except Exception:
-                pass
-            env_value = os.environ
-        model = getattr(args, "model", None) or _env_value(
-            env_value, "SILICONFLOW_EMBEDDING_MODEL", DEFAULT_MODEL
-        ) or DEFAULT_MODEL
-        index_version = getattr(args, "index_version", None) or _env_value(
-            env_value, "QUESTION_RAG_INDEX_VERSION", DEFAULT_INDEX_VERSION
-        ) or DEFAULT_INDEX_VERSION
+        # Validate CLI-only settings and dependency shapes before touching
+        # dotenv or reading any environment key.  This keeps early failures
+        # deterministic and guarantees that no paid/store call can occur.
+        explicit_model = getattr(args, "model", None)
+        model = (
+            _require_non_blank(explicit_model, "embedding model")
+            if explicit_model is not None
+            else None
+        )
+        explicit_index_version = getattr(args, "index_version", None)
+        index_version = (
+            _require_non_blank(explicit_index_version, "index version")
+            if explicit_index_version is not None
+            else None
+        )
+        explicit_index_path = getattr(args, "index_path", None)
+        index_path = (
+            _validate_index_path(explicit_index_path)
+            if explicit_index_path is not None
+            else None
+        )
+        expected_dimension = getattr(args, "dimension", None)
+        if expected_dimension is not None and (
+            isinstance(expected_dimension, bool)
+            or not isinstance(expected_dimension, int)
+            or expected_dimension <= 0
+        ):
+            raise QuestionBankConfigurationError("embedding dimension must be positive")
+
+        embedding_impl = view.get("embedding_factory", default=None)
+        store_impl = view.get("store_factory", default=None)
+        fingerprint_impl = view.get("fingerprint_factory", default=None)
+        if not using_default_embedding and not callable(embedding_impl):
+            raise QuestionBankConfigurationError(
+                "embedding dependency must be callable for --apply"
+            )
+        if not using_default_store and not callable(store_impl):
+            raise QuestionBankConfigurationError(
+                "store dependency must be callable for --apply"
+            )
+        if fingerprint_impl is not None and not callable(fingerprint_impl):
+            raise QuestionBankConfigurationError(
+                "fingerprint dependency must be callable for --apply"
+            )
+        texts = _validate_records_for_embedding(records)
 
         if not args.apply:
+            # A dry-run deliberately uses static defaults only.  In particular,
+            # it must not inspect env or invoke load_dotenv merely to decorate
+            # the preview with optional configuration.
             output(
                 _render_summary(
                     _summary_for_dry_run(
@@ -1028,63 +1419,104 @@ def main(
                         records,
                         report,
                         as_of=as_of,
-                        model=model,
-                        index_version=index_version,
+                        model=model or DEFAULT_MODEL,
+                        index_version=index_version or DEFAULT_INDEX_VERSION,
                     ),
                     output_format=output_format,
                 )
             )
             return EXIT_OK
 
-        api_key = _env_value(env_value, "SILICONFLOW_API_KEY")
-        embedding_impl = view.get("embedding_factory", default=None)
-        store_impl = view.get("store_factory", default=None)
-        fingerprint_impl = view.get("fingerprint_factory", default=None)
+        # The records and all explicit CLI/dependency settings have passed
+        # preflight.  Only an applying command may now discover .env values.
+        env_value = view.get("env", default=None)
+        if env_value is None:
+            try:
+                from dotenv import load_dotenv
 
-        if using_default_embedding and not api_key:
-            raise QuestionBankConfigurationError(
-                "SILICONFLOW_API_KEY is required for --apply"
+                load_dotenv()
+            except Exception:
+                pass
+            env_value = os.environ
+
+        if model is None:
+            model = _require_non_blank(
+                _env_setting(
+                    env_value,
+                    "SILICONFLOW_EMBEDDING_MODEL",
+                    DEFAULT_MODEL,
+                ),
+                "embedding model",
             )
+        if index_version is None:
+            index_version = _require_non_blank(
+                _env_setting(
+                    env_value,
+                    "QUESTION_RAG_INDEX_VERSION",
+                    DEFAULT_INDEX_VERSION,
+                ),
+                "index version",
+            )
+        if index_path is None:
+            index_path = _validate_index_path(
+                _env_setting(
+                    env_value,
+                    "QUESTION_RAG_INDEX_PATH",
+                    str(DEFAULT_INDEX_PATH),
+                )
+            )
+
+        base_url = _validate_base_url(
+            _env_setting(
+                env_value,
+                "SILICONFLOW_EMBEDDING_BASE_URL",
+                DEFAULT_BASE_URL,
+            )
+        )
+        api_key = ""
+        if using_default_embedding:
+            api_key = _require_non_blank(
+                _env_value(env_value, "SILICONFLOW_API_KEY"),
+                "SILICONFLOW_API_KEY",
+            )
+
         if using_default_embedding:
             embedding_impl = _default_embedding_factory
         if using_default_store:
             store_impl = _default_store_factory
-        if embedding_impl is None or store_impl is None:
+        if not callable(embedding_impl) or not callable(store_impl):
             raise QuestionBankConfigurationError(
                 "embedding and store dependencies are required for --apply"
             )
 
-        texts = _validate_records_for_embedding(records)
-        embedding_kwargs = {
-            "api_key": api_key,
-            "model": model,
-            "base_url": _env_value(
-                env_value, "SILICONFLOW_EMBEDDING_BASE_URL", DEFAULT_BASE_URL
-            )
-            or DEFAULT_BASE_URL,
-        }
+        embedding_kwargs: dict[str, Any] = {"model": model}
+        if using_default_embedding:
+            embedding_kwargs.update({"api_key": api_key, "base_url": base_url})
         # Never pass the API key to a caller-provided fake/factory.  The
         # default factory is the only seam that needs it, and this keeps test
         # call arguments and exception paths secret-free by construction.
-        if not using_default_embedding:
-            embedding_kwargs.pop("api_key", None)
         embedding = _call_with_supported_kwargs(embedding_impl, (), embedding_kwargs)
         embedding_owned = using_default_embedding
         store: Any | None = None
         store_owned = False
         try:
-            vectors = _embed(embedding, texts)
-            fingerprint = _build_fingerprint(
-                embedding=embedding,
-                vectors=vectors,
-                configured_model=model,
-                configured_index_version=index_version,
-                fingerprint_factory=fingerprint_impl,
+            vectors = _embed(
+                embedding,
+                texts,
+                expected_dimension=expected_dimension,
             )
-            index_path = getattr(args, "index_path", None) or Path(
-                _env_value(env_value, "QUESTION_RAG_INDEX_PATH", str(DEFAULT_INDEX_PATH))
-                or str(DEFAULT_INDEX_PATH)
-            )
+            try:
+                fingerprint = _build_fingerprint(
+                    embedding=embedding,
+                    vectors=vectors,
+                    configured_model=model,
+                    configured_index_version=index_version,
+                    fingerprint_factory=fingerprint_impl,
+                )
+            except (TypeError, ValueError, KeyError) as exc:
+                raise QuestionBankConfigurationError(
+                    "fingerprint configuration is invalid"
+                ) from exc
             store_kwargs = {
                 "index_path": index_path,
                 "path": index_path,
@@ -1130,6 +1562,14 @@ def main(
         _emit_error(
             error,
             category="bank",
+            output_format=locals().get("output_format", "human"),
+            error_fn=errors,
+        )
+        return EXIT_USAGE_ERROR
+    except OverflowError as error:
+        _emit_error(
+            error,
+            category="configuration",
             output_format=locals().get("output_format", "human"),
             error_fn=errors,
         )
