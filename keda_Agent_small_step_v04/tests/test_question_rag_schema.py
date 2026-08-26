@@ -3,7 +3,6 @@ import unittest
 
 from pydantic import ValidationError
 
-from profile_agent.schemas.interview_schema import QuestionMode
 from profile_agent.schemas.question_rag_schema import (
     InterviewQuestionRecord,
     QuestionRetrievalIntent,
@@ -95,7 +94,7 @@ class QuestionRetrievalSchemaTests(unittest.TestCase):
             difficulty="intermediate",
         )
 
-        self.assertEqual(intent.question_mode, QuestionMode.__args__[2])
+        self.assertEqual(intent.question_mode, "scenario")
         self.assertEqual(intent.excluded_question_ids, [])
 
     def test_hit_requires_a_selected_question_and_trace_ids(self) -> None:
@@ -115,10 +114,61 @@ class QuestionRetrievalSchemaTests(unittest.TestCase):
                 score=0.91,
                 index_version="idx-v1",
             ),
+            as_of=date(2026, 8, 26),
         )
 
         self.assertIs(result.selected_question, selected)
         self.assertEqual(result.trace.question_id, record.question_id)
+
+    def test_hit_requires_as_of_and_an_active_non_expired_record(self) -> None:
+        record = InterviewQuestionRecord(**valid_record_kwargs())
+        selected = RetrievedQuestion(record=record, score=0.91, index_version="idx-v1")
+        trace = QuestionRetrievalTrace(
+            status="hit",
+            question_id=record.question_id,
+            source_id=record.source_id,
+            score=0.91,
+            index_version="idx-v1",
+        )
+
+        with self.assertRaises(ValidationError):
+            QuestionRetrievalResult(
+                status="hit",
+                selected_question=selected,
+                trace=trace,
+            )
+
+        for record_status in ("retired", "needs_review"):
+            with self.subTest(record_status=record_status):
+                non_active = InterviewQuestionRecord(
+                    **{**valid_record_kwargs(), "status": record_status}
+                )
+                with self.assertRaises(ValidationError):
+                    QuestionRetrievalResult(
+                        status="hit",
+                        selected_question=RetrievedQuestion(
+                            record=non_active,
+                            score=0.91,
+                            index_version="idx-v1",
+                        ),
+                        trace=trace,
+                        as_of=date(2026, 8, 26),
+                    )
+
+        expired = InterviewQuestionRecord(
+            **{**valid_record_kwargs(), "valid_until": date(2026, 8, 26)}
+        )
+        with self.assertRaises(ValidationError):
+            QuestionRetrievalResult(
+                status="hit",
+                selected_question=RetrievedQuestion(
+                    record=expired,
+                    score=0.91,
+                    index_version="idx-v1",
+                ),
+                trace=trace,
+                as_of=date(2026, 8, 27),
+            )
 
     def test_non_hit_statuses_cannot_claim_a_selected_record(self) -> None:
         record = InterviewQuestionRecord(**valid_record_kwargs())
@@ -135,6 +185,76 @@ class QuestionRetrievalSchemaTests(unittest.TestCase):
                         status=status,
                         selected_question=selected,
                         trace=QuestionRetrievalTrace(status=status),
+                    )
+
+    def test_hit_rejects_trace_score_mismatch(self) -> None:
+        record = InterviewQuestionRecord(**valid_record_kwargs())
+        selected = RetrievedQuestion(record=record, score=0.91, index_version="idx-v1")
+
+        with self.assertRaises(ValidationError):
+            QuestionRetrievalResult(
+                status="hit",
+                selected_question=selected,
+                trace=QuestionRetrievalTrace(
+                    status="hit",
+                    question_id=record.question_id,
+                    source_id=record.source_id,
+                    score=0.90,
+                    index_version="idx-v1",
+                ),
+                as_of=date(2026, 8, 26),
+            )
+
+    def test_hit_rejects_trace_index_version_mismatch(self) -> None:
+        record = InterviewQuestionRecord(**valid_record_kwargs())
+        selected = RetrievedQuestion(record=record, score=0.91, index_version="idx-v1")
+
+        with self.assertRaises(ValidationError):
+            QuestionRetrievalResult(
+                status="hit",
+                selected_question=selected,
+                trace=QuestionRetrievalTrace(
+                    status="hit",
+                    question_id=record.question_id,
+                    source_id=record.source_id,
+                    score=0.91,
+                    index_version="idx-v2",
+                ),
+                as_of=date(2026, 8, 26),
+            )
+
+    def test_hit_rejects_trace_with_missing_id(self) -> None:
+        record = InterviewQuestionRecord(**valid_record_kwargs())
+
+        with self.assertRaises(ValidationError):
+            QuestionRetrievalTrace(
+                status="hit",
+                source_id=record.source_id,
+                score=0.91,
+                index_version="idx-v1",
+            )
+
+    def test_hit_rejects_trace_id_mismatch(self) -> None:
+        record = InterviewQuestionRecord(**valid_record_kwargs())
+        selected = RetrievedQuestion(record=record, score=0.91, index_version="idx-v1")
+
+        for question_id, source_id in (
+            ("q_agent_other", record.source_id),
+            (record.question_id, "src_public_other"),
+        ):
+            with self.subTest(question_id=question_id, source_id=source_id):
+                with self.assertRaises(ValidationError):
+                    QuestionRetrievalResult(
+                        status="hit",
+                        selected_question=selected,
+                        trace=QuestionRetrievalTrace(
+                            status="hit",
+                            question_id=question_id,
+                            source_id=source_id,
+                            score=0.91,
+                            index_version="idx-v1",
+                        ),
+                        as_of=date(2026, 8, 26),
                     )
 
     def test_trace_rejects_selected_ids_for_a_non_hit(self) -> None:

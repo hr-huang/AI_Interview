@@ -230,6 +230,7 @@ class QuestionRetrievalResult(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     status: RetrievalStatus
+    as_of: date | None = None
     selected_question: RetrievedQuestion | None = Field(
         default=None,
         validation_alias=AliasChoices(
@@ -257,13 +258,23 @@ class QuestionRetrievalResult(BaseModel):
             raise ValueError("result status and trace status must match")
 
         if self.status == "hit":
+            if self.as_of is None:
+                raise ValueError("hit result requires as_of")
             selected = self.selected_question
             if selected is None:
                 raise ValueError("hit result requires selected_question")
+            if selected.record.status != "active":
+                raise ValueError("hit result requires an active selected question")
+            if selected.record.valid_until < self.as_of:
+                raise ValueError("selected question is expired as of retrieval")
             if trace.question_id != selected.question_id:
                 raise ValueError("trace question_id must match selected_question")
             if trace.source_id != selected.source_id:
                 raise ValueError("trace source_id must match selected_question")
+            if trace.score != selected.score:
+                raise ValueError("trace score must match selected_question")
+            if trace.index_version != selected.index_version:
+                raise ValueError("trace index_version must match selected_question")
         elif self.selected_question is not None:
             raise ValueError("non-hit result must not contain selected_question")
 
