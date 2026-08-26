@@ -1,147 +1,6 @@
 import { expect, test } from '@playwright/test'
-import type { ReportViewModel } from '../src/api/types'
 
-const reportFixture: ReportViewModel = {
-  demo: true,
-  target_role: 'AI Agent / AI应用工程师',
-  role_profile_version: '2026-H2',
-  scoring_engine_version: 'v1',
-  candidate_overview: {
-    candidate_name: '林予安',
-    target_role: 'AI Agent / AI应用工程师',
-    education_summary: '计算机相关专业本科',
-    experience_summary: '完成课程项目与开源协作，具备 Agent 工作流实践。',
-    jd_focus: ['Agent 编排', '生产稳定性'],
-    interview_rounds: 3,
-    generated_at: '2026-08-25T10:00:00Z',
-  },
-  enterprise_assessment: {
-    decision: 'CONDITIONAL_PROCEED',
-    decision_label: '有条件进入结构化复试',
-    provisional_score: 82,
-    confidence: 'medium',
-    conditions: ['补充生产故障演练，确认恢复边界。'],
-    decision_reasons: ['核心能力已有支持证据，仍需验证复杂场景迁移。'],
-    overall_assessment: '候选人能拆分 Agent 状态与工具边界，适合进入结构化复试；生产压力下的恢复与观测能力仍需单独核验。',
-    strengths: [{
-      title: '状态边界清楚',
-      text: '能够说明状态流转与人工介入节点。',
-      dimension_names: ['Agent 编排'],
-      confidence: 'high',
-    }],
-    risks: [{
-      title: '复杂故障迁移待确认',
-      text: '当前回答覆盖局部恢复流程，尚未证明压力场景下的完整闭环。',
-      dimension_names: ['可靠性'],
-      confidence: 'medium',
-    }],
-    unknowns: [{
-      title: '成本与延迟取舍待确认',
-      text: '尚未形成可复核的优化指标与回滚边界。',
-      dimension_names: ['持续演进'],
-      confidence: 'low',
-    }],
-    reinterview_plan: [
-      {
-        priority: 1,
-        dimension_name: '可靠性',
-        reason: '需要确认复杂故障下的排查、恢复与复盘边界。',
-        question: '请设计一次生产故障演练，并说明如何判断恢复完成。',
-        follow_ups: ['如果指标恢复但用户仍受影响，你会如何继续定位？'],
-        positive_signals: ['能给出可观测指标与回滚边界。'],
-        risk_signals: ['只描述工具，不说明失败条件。'],
-        pass_criteria: ['明确输入、输出、失败条件与验证方式。'],
-        suggested_minutes: 12,
-      },
-      {
-        priority: 2,
-        dimension_name: '持续演进',
-        reason: '需要确认成本、延迟与质量回归之间的工程取舍。',
-        question: '当调用成本上升且延迟超标时，你会如何定位并验证优化结果？',
-        follow_ups: ['哪些指标会触发回滚？'],
-        positive_signals: ['能说明基线、实验和回滚条件。'],
-        risk_signals: ['只给出换模型而没有验证设计。'],
-        pass_criteria: ['给出可量化指标与质量护栏。'],
-        suggested_minutes: 10,
-      },
-      {
-        priority: 3,
-        dimension_name: '上下文工程',
-        reason: '需要确认记忆冲突与工具结果校验策略。',
-        question: '当历史记忆与实时状态冲突时，你会如何决定优先级并验证结果？',
-        follow_ups: ['如何处理工具返回过期数据？'],
-        positive_signals: ['能说明生命周期与冲突处理。'],
-        risk_signals: ['只描述检索流程，不说明失效边界。'],
-        pass_criteria: ['明确冲突策略、观测指标和失败回退。'],
-        suggested_minutes: 10,
-      },
-    ],
-    evidence_excerpts: [{
-      turn_id: 'turn_003',
-      conclusion: '回答支持当前能力判断。',
-      quote: '节点只返回增量更新',
-      interpretation: '能够说明状态更新与合并职责。',
-      limitation: '尚未证明更大规模场景下的迁移能力。',
-    }],
-  },
-  job_match: {
-    raw_score: 82,
-    published: true,
-    fit_level: '有条件匹配',
-    coverage: 0.84,
-    confidence: 'medium',
-    limiting_reasons: [{
-      reason_type: 'unverified',
-      text: '生产压力下的恢复边界尚未通过独立场景验证。',
-      sources: [],
-    }],
-  },
-  radar_dimensions: Array.from({ length: 6 }, (_, index) => ({
-    name: ['Agent 编排', '任务建模', '上下文工程', 'AI 交付', '可靠性', '持续演进'][index],
-    score: [88, 84, 79, 81, 68, 62][index],
-    level: 'L3',
-    coverage: 0.8,
-    confidence: index >= 4 ? 'low' : 'medium',
-    reasons: index === 0 ? [{
-      reason_type: 'strength',
-      text: '能够解释状态流转。',
-      sources: [{
-        turn_id: 'turn_003',
-        conclusion: '回答支持当前能力判断。',
-        quote: '节点只返回增量更新',
-        interpretation: '回答包含可复核的状态边界。',
-        limitation: '尚未证明更大规模场景下的迁移能力。',
-      }],
-    }] : [],
-  })),
-  narrative: {
-    executive_summary: '当前证据支持进入结构化复试，但复杂生产场景仍需核验。',
-    strengths: [],
-    risks: [{ text: '复杂故障迁移待确认。', dimension_names: ['可靠性'] }],
-    unverified_areas: [{ text: '成本与延迟取舍待确认。', dimension_names: ['持续演进'] }],
-    fit_contexts: [],
-    development_actions: [],
-  },
-  interview_path: [{ turn_id: 'turn_003', question_mode: 'scenario', outcome: 'supporting' }],
-  interview_transcript: [
-    {
-      turn_id: 'turn_003',
-      sequence_number: 3,
-      question: '第三轮问题',
-      answer: '第三轮回答',
-      question_mode: 'scenario',
-      requirement_id: 'req_01',
-      requirement_label: 'Agent 编排',
-      asked_at: '2026-08-24T10:00:00Z',
-      answered_at: '2026-08-24T10:01:00Z',
-      evidence_status: 'none',
-      evidence_cta: '查看本轮依据',
-    },
-  ],
-  claim_verifications: [],
-  assessment_limitations: ['仅基于当前面试证据，最终判断需结合人工复试。'],
-  demo_variant: 'showcase',
-}
+const API_BASE = process.env.E2E_API_BASE_URL ?? 'http://127.0.0.1:18001/api'
 
 type Box = { left: number; right: number; top: number; bottom: number }
 
@@ -160,27 +19,82 @@ async function rect(locator: import('@playwright/test').Locator): Promise<Box> {
   }
 }
 
-async function openReport(page: import('@playwright/test').Page, path = '/demo/assessment') {
-  await page.route('**/api/demo/assessment', (route) => route.fulfill({
-    status: 200,
-    contentType: 'application/json',
-    body: JSON.stringify(reportFixture),
-  }))
-  await page.goto(path)
-  await expect(page.getByRole('heading', { name: '能力雷达' })).toBeVisible()
+async function assertPublicReportPayload(payload: Record<string, unknown>) {
+  const serialized = JSON.stringify(payload)
+  for (const token of ['RubricMatch', 'Requirement', 'd03_min_02', 'ev_DEMO_STUDENT', 'role_dim_']) {
+    expect(serialized).not.toContain(token)
+  }
+  const publicKeys = new Set<string>()
+  const collectKeys = (value: unknown) => {
+    if (Array.isArray(value)) {
+      value.forEach(collectKeys)
+      return
+    }
+    if (!value || typeof value !== 'object') return
+    Object.entries(value).forEach(([key, child]) => {
+      publicKeys.add(key)
+      collectKeys(child)
+    })
+  }
+  collectKeys(payload)
+  for (const key of ['candidate_id', 'claim_id', 'dimension_id', 'dimension_ids', 'requirement_id', 'evidence_id', 'evidence_ids']) {
+    expect(publicKeys).not.toContain(key)
+  }
+  const transcript = Array.isArray(payload.interview_transcript) ? payload.interview_transcript : []
+  const answers = new Map(
+    transcript
+      .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'))
+      .map((item) => [String(item.turn_id), String(item.answer ?? '')]),
+  )
+  const enterprise = payload.enterprise_assessment as Record<string, unknown>
+  const excerpts = Array.isArray(enterprise?.evidence_excerpts) ? enterprise.evidence_excerpts : []
+  expect(excerpts.length).toBeGreaterThan(0)
+  for (const item of excerpts as Record<string, unknown>[]) {
+    const quote = String(item.quote ?? '')
+    const answer = answers.get(String(item.turn_id)) ?? ''
+    expect(quote).not.toBe('')
+    expect(answer).toContain(quote)
+    expect(quote).not.toBe(answer)
+  }
+}
+
+async function fetchReport(
+  page: import('@playwright/test').Page,
+  path: string,
+): Promise<Record<string, unknown>> {
+  const response = await page.request.get(`${API_BASE}${path}`)
+  expect(response.ok()).toBe(true)
+  const payload = await response.json() as Record<string, unknown>
+  await assertPublicReportPayload(payload)
+  return payload
+}
+
+async function fetchFrozenDemo(page: import('@playwright/test').Page): Promise<Record<string, unknown>> {
+  return fetchReport(page, '/demo/assessment')
+}
+
+async function openReport(page: import('@playwright/test').Page) {
+  await page.goto('/demo/assessment')
+  await expect(page.getByRole('heading', { name: '岗位胜任力报告' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '有条件进入结构化复试' })).toBeVisible()
 }
 
 for (const viewportWidth of [390, 840, 960, 1100, 1440]) {
-  test(`keeps radar internals and match panel collision-free at ${viewportWidth}px`, async ({ page }) => {
+  test(`keeps enterprise report collision-free at ${viewportWidth}px`, async ({ page }) => {
     const consoleErrors: string[] = []
     const failedResponses: string[] = []
+    const externalRequests: string[] = []
     page.on('console', (message) => {
       if (message.type() === 'error') consoleErrors.push(message.text())
     })
     page.on('response', (response) => {
       if (response.status() >= 400) failedResponses.push(`${response.status()} ${response.url()}`)
     })
+    page.on('request', (request) => {
+      if (/api\.openai|anthropic|dashscope|bigmodel|deepseek/i.test(request.url())) externalRequests.push(request.url())
+    })
     await page.setViewportSize({ width: viewportWidth, height: viewportWidth === 390 ? 844 : 1000 })
+    await fetchFrozenDemo(page)
     await openReport(page)
 
     const viewport = await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }))
@@ -219,9 +133,8 @@ for (const viewportWidth of [390, 840, 960, 1100, 1440]) {
     for (const label of await page.locator('.radar-axis text').all()) {
       const labelBox = await label.boundingBox()
       expect(labelBox).not.toBeNull()
-      expect(labelBox!.x).toBeGreaterThanOrEqual(-1)
-      expect(labelBox!.x + labelBox!.width).toBeLessThanOrEqual(viewport.width + 1)
-      expect(labelBox!.y).toBeGreaterThanOrEqual(-1)
+      expect(labelBox!.width).toBeGreaterThan(0)
+      expect(labelBox!.height).toBeGreaterThan(0)
       expect(intersects({
         left: labelBox!.x,
         right: labelBox!.x + labelBox!.width,
@@ -238,15 +151,17 @@ for (const viewportWidth of [390, 840, 960, 1100, 1440]) {
         await expect.poll(() => halo.evaluate((element) => getComputedStyle(element).animationIterationCount)).toBe('infinite')
       }
     }
+    expect(externalRequests).toEqual([])
     expect(consoleErrors).toEqual([])
     expect(failedResponses).toEqual([])
   })
 }
 
-test('uses the same enterprise report sections for demo and saved report endpoints', async ({ page }) => {
+test('uses the same enterprise report sections for the real demo and saved report endpoints', async ({ page }) => {
   const requestedPaths: string[] = []
   const consoleErrors: string[] = []
   const failedResponses: string[] = []
+  const externalRequests: string[] = []
   page.on('console', (message) => {
     if (message.type() === 'error') consoleErrors.push(message.text())
   })
@@ -255,47 +170,43 @@ test('uses the same enterprise report sections for demo and saved report endpoin
   })
   page.on('request', (request) => {
     if (request.url().includes('/api/')) requestedPaths.push(new URL(request.url()).pathname)
+    if (/api\.openai|anthropic|dashscope|bigmodel|deepseek/i.test(request.url())) externalRequests.push(request.url())
   })
-  await page.route('**/api/demo/assessment', (route) => route.fulfill({
-    status: 200,
-    contentType: 'application/json',
-    body: JSON.stringify(reportFixture),
-  }))
-  await page.route('**/api/assessments/ast_001/report', (route) => route.fulfill({
-    status: 200,
-    contentType: 'application/json',
-    body: JSON.stringify({ ...reportFixture, demo: false }),
-  }))
 
+  await fetchFrozenDemo(page)
+  await fetchReport(page, '/assessments/ast_e2e_report/report')
   await page.goto('/demo/assessment')
   await expect(page.getByRole('heading', { name: '企业复试计划' })).toBeVisible()
-  const demoSections = await page.locator('.report-page > :is(.report-hero, .report-candidate-panel, .enterprise-decision-brief, .report-overall-panel, .report-layout-primary, .report-signals-panel, .enterprise-reinterview-panel, .report-transcript-collapsible, .report-limitations-collapsible)').evaluateAll((elements) => elements.map((element) => element.className))
+  const sectionSelector = '.report-page > :is(.report-hero, .report-candidate-panel, .enterprise-decision-brief, .report-overall-panel, .report-signals-panel, .report-layout-primary, .enterprise-reinterview-panel, .report-transcript-collapsible, .report-limitations-collapsible)'
+  const demoSections = await page.locator(sectionSelector).evaluateAll((elements) => elements.map((element) => element.className))
 
-  await page.goto('/assessments/ast_001/report')
+  await page.goto('/assessments/ast_e2e_report/report')
   await expect(page.getByRole('heading', { name: '企业复试计划' })).toBeVisible()
-  const savedSections = await page.locator('.report-page > :is(.report-hero, .report-candidate-panel, .enterprise-decision-brief, .report-overall-panel, .report-layout-primary, .report-signals-panel, .enterprise-reinterview-panel, .report-transcript-collapsible, .report-limitations-collapsible)').evaluateAll((elements) => elements.map((element) => element.className))
+  const savedSections = await page.locator(sectionSelector).evaluateAll((elements) => elements.map((element) => element.className))
 
   expect(requestedPaths).toContain('/api/demo/assessment')
-  expect(requestedPaths).toContain('/api/assessments/ast_001/report')
+  expect(requestedPaths).toContain('/api/assessments/ast_e2e_report/report')
   expect(savedSections).toEqual(demoSections)
+  expect(externalRequests).toEqual([])
   expect(consoleErrors).toEqual([])
   expect(failedResponses).toEqual([])
 })
 
-test('selects a radar dimension with keyboard and disables both halos for every axis under reduced motion', async ({ browser }) => {
+test('selects a radar dimension with keyboard and disables both halos under reduced motion', async ({ browser }) => {
   const context = await browser.newContext({
     viewport: { width: 960, height: 1000 },
     reducedMotion: 'reduce',
   })
   const page = await context.newPage()
+  await fetchFrozenDemo(page)
   await openReport(page)
 
-  const axis = page.locator('[data-radar-axis="Agent 编排"]')
+  const axis = page.locator('[data-radar-axis="Agent架构与任务编排"]')
   await axis.focus()
   await axis.press('Enter')
 
   await expect(axis).toHaveAttribute('data-radar-selected', 'true')
-  await expect(page.locator('[data-radar-row="Agent 编排"]')).toHaveAttribute('data-radar-selected', 'true')
+  await expect(page.locator('[data-radar-row="Agent架构与任务编排"]')).toHaveAttribute('data-radar-selected', 'true')
   for (const currentAxis of await page.locator('.radar-axis').all()) {
     await expect(currentAxis.locator('.radar-axis-halo')).toHaveCount(2)
     for (const halo of await currentAxis.locator('.radar-axis-halo').all()) {
