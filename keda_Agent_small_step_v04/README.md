@@ -252,6 +252,11 @@ python -m compileall profile_agent tests run_interview_demo.py
 
 # 脚本可消费的机器摘要
 .\.venv\Scripts\python.exe run_question_bank.py audit --bank path\to\questions.json --format json
+
+# Task4 离线题库治理（只读；报告写入 artifacts/question_corpus）
+.\.venv\Scripts\python.exe run_question_bank.py audit-corpus --corpus-dir path\to\question_corpus --dry-run --format json
+.\.venv\Scripts\python.exe run_question_bank.py manifest --corpus-dir path\to\question_corpus --dry-run
+.\.venv\Scripts\python.exe run_question_bank.py evaluate-local --corpus-dir path\to\question_corpus --dry-run
 ```
 
 `--apply` 会为题库问题调用 SiliconFlow `BAAI/bge-m3` embedding，可能产生费用并受网络、

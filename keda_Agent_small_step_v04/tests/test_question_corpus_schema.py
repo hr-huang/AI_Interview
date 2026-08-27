@@ -123,7 +123,7 @@ def valid_manifest_kwargs() -> dict:
         "publication_status": "draft",
         "question_set_hash": "sha256:questions",
         "sidecar_set_hash": "sha256:sidecars",
-        "embedding_contract_version": "v2-six-section",
+        "embedding_contract_version": "six-section-v1",
     }
 
 
@@ -581,6 +581,51 @@ class QuestionCorpusSchemaTests(unittest.TestCase):
                 invalid[field] = bad_value
                 with self.assertRaises(ValidationError):
                     QuestionReviewRecord(**invalid)
+
+    def test_approved_review_requires_explicit_human_approval_record(self) -> None:
+        values = valid_review_kwargs()
+        values.update(
+            {
+                "decision": "approved",
+                "reviewer_ids": ["reviewer-1"],
+                "reviewer_type": "human",
+                "approval_actor": "human:reviewer-1",
+                "approval_timestamp": CORPUS_AS_OF,
+            }
+        )
+        review = QuestionReviewRecord(**values)
+        self.assertEqual(review.reviewer_type, "human")
+        self.assertEqual(review.approval_actor, "human:reviewer-1")
+
+        for field, bad_value in (
+            ("reviewer_type", "agent"),
+            ("reviewer_type", "model"),
+            ("reviewer_type", "luna"),
+            ("approval_actor", "Luna-1"),
+            ("approval_actor", "Luna-2"),
+            ("approval_timestamp", None),
+        ):
+            with self.subTest(field=field, bad_value=bad_value):
+                invalid = deepcopy(values)
+                invalid[field] = bad_value
+                with self.assertRaises(ValidationError):
+                    QuestionReviewRecord(**invalid)
+
+    def test_fallback_reason_code_is_a_strict_coverage_gap_enum(self) -> None:
+        values = valid_review_kwargs()
+        values.update(
+            {
+                "exception_reason_code": "coverage_gap",
+                "exception_reason": "coverage gap: no recent interview signal",
+            }
+        )
+        review = QuestionReviewRecord(**values)
+        self.assertEqual(review.exception_reason_code, "coverage_gap")
+
+        invalid = deepcopy(values)
+        invalid["exception_reason_code"] = "convenience"
+        with self.assertRaises(ValidationError):
+            QuestionReviewRecord(**invalid)
 
     def test_approved_rights_rejects_contradictory_access_and_safety_flags(self) -> None:
         values = valid_rights_kwargs()

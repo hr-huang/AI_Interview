@@ -8,7 +8,7 @@ runtime retrieval attempt selected (or why it could not select anything).
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import date
+from datetime import date, datetime
 from math import isfinite
 import re
 from typing import Any, Literal
@@ -53,6 +53,8 @@ QuestionReviewDecision = Literal[
     "needs_revision",
     "retired",
 ]
+QuestionReviewerType = Literal["human", "agent", "model", "luna", "unknown"]
+QuestionExceptionReasonCode = Literal["coverage_gap"]
 QuestionDedupeDecision = Literal[
     "unique",
     "duplicate",
@@ -67,6 +69,19 @@ QuestionNearDuplicateDecision = Literal[
     "pending",
 ]
 QuestionRightsDecision = Literal["approved", "rejected", "pending_human"]
+
+
+def _looks_like_non_human_reviewer(value: Any) -> bool:
+    """Reject automation identities at the approval boundary."""
+
+    if not isinstance(value, str):
+        return False
+    normalized = re.sub(r"[^a-z0-9]+", "-", value.casefold()).strip("-")
+    if normalized in {"agent", "model", "bot", "assistant", "system"}:
+        return True
+    return normalized.startswith(("luna-", "agent-", "model-")) or normalized.endswith(
+        "-agent"
+    )
 
 QUESTION_MODES: tuple[QuestionMode, ...] = (
     "foundation",
@@ -111,6 +126,7 @@ DEFAULT_PRIMARY_MODE_QUOTAS: dict[QuestionMode, int] = {
 CORPUS_ROLE = "ai_agent_engineer"
 CORPUS_ROLE_VERSION = "2026-H2"
 MODE_POLICY_VERSION = "2026-H2"
+EMBEDDING_CONTRACT_VERSION = "six-section-v1"
 CORPUS_AS_OF = date(2026, 8, 27)
 
 
@@ -1079,7 +1095,7 @@ class QuestionBankManifest(BaseModel):
         default="",
         validation_alias=AliasChoices("sidecar_set_hash", "sidecars_hash"),
     )
-    embedding_contract_version: str = ""
+    embedding_contract_version: str = EMBEDDING_CONTRACT_VERSION
 
     @field_validator("bank_id", "manifest_version", "mode_policy_version")
     @classmethod
@@ -1103,6 +1119,12 @@ class QuestionBankManifest(BaseModel):
 
     @model_validator(mode="after")
     def validate_manifest_constraints(self) -> "QuestionBankManifest":
+        if self.schema_version != "2":
+            raise ValueError("manifest schema_version must be exactly 2")
+        if self.embedding_contract_version != EMBEDDING_CONTRACT_VERSION:
+            raise ValueError(
+                "manifest embedding_contract_version must be six-section-v1"
+            )
         if self.question_count != 30:
             raise ValueError("question_count must be exactly 30")
         if self.dimension_quotas != DEFAULT_DIMENSION_QUOTAS:
@@ -1262,6 +1284,33 @@ class QuestionReviewRecord(BaseModel):
         validation_alias=AliasChoices("reviewer_ids", "reviewers"),
     )
     reviewer: str | None = None
+    reviewer_type: QuestionReviewerType = "unknown"
+    approval_actor: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "approval_actor",
+            "human_approval_actor",
+            "approved_by",
+            "actor",
+        ),
+    )
+    approval_timestamp: date | datetime | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "approval_timestamp",
+            "approval_at",
+            "approved_timestamp",
+            "approved_at",
+        ),
+    )
+    approval_record_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "approval_record_id",
+            "human_approval_record_id",
+            "approval_record",
+        ),
+    )
     reviewed_at: date
     signal_source_ids: list[str] = Field(default_factory=list)
     cross_validation_source_ids: list[str] = Field(default_factory=list)
@@ -1290,6 +1339,14 @@ class QuestionReviewRecord(BaseModel):
     rights_conclusion: str | None = None
     review_class: QuestionReviewClass = "dynamic"
     review_due_at: date | None = None
+    exception_reason_code: QuestionExceptionReasonCode | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "exception_reason_code",
+            "fallback_reason_code",
+            "reason_code",
+        ),
+    )
     exception_reason: str | None = None
     rejection_reason: str | None = None
     retirement_reason: str | None = None
@@ -1313,6 +1370,8 @@ class QuestionReviewRecord(BaseModel):
         "rejection_reason",
         "retirement_reason",
         "reviewer",
+        "approval_actor",
+        "approval_record_id",
         "rights_conclusion",
     )
     @classmethod
@@ -1323,10 +1382,34 @@ class QuestionReviewRecord(BaseModel):
 
     @model_validator(mode="after")
     def validate_approved_review(self) -> "QuestionReviewRecord":
+        reviewer_values = [*self.reviewer_ids]
+        if self.reviewer:
+            reviewer_values.append(self.reviewer)
+        reviewer_values.extend(
+            value
+            for value in (self.approval_actor,)
+            if value is not None
+        )
+        automated_reviewer = self.reviewer_type in {"agent", "model", "luna"} or any(
+            _looks_like_non_human_reviewer(value) for value in reviewer_values
+        )
+        if automated_reviewer and self.decision != "pending_human":
+            raise ValueError(
+                "automated reviewers may only leave a pending_human decision"
+            )
         if self.decision != "approved":
             return self
-        if not self.reviewer_ids and not (self.reviewer and self.reviewer.strip()):
-            raise ValueError("approved review requires reviewer identity")
+        if self.reviewer_type != "human":
+            raise ValueError("approved review requires a human reviewer_type")
+        actor = self.approval_actor
+        if not isinstance(actor, str) or not actor.strip():
+            raise ValueError("approved review requires an explicit approval_actor")
+        if any(_looks_like_non_human_reviewer(value) for value in reviewer_values):
+            raise ValueError("agent, model, or Luna reviewers cannot approve")
+        if self.approval_timestamp is None and not self.approval_record_id:
+            raise ValueError(
+                "approved review requires an approval timestamp or approval record"
+            )
         if not self.signal_source_ids:
             raise ValueError("approved review requires signal evidence")
         if not self.cross_validation_source_ids:

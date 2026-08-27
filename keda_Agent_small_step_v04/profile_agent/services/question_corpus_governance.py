@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -46,6 +47,7 @@ from profile_agent.schemas.question_rag_schema import (
     QuestionSourceRegistryEntry,
 )
 from profile_agent.services.question_bank_service import (
+    EMBEDDING_TEXT_VERSION,
     SUPPORTED_SCHEMA_VERSIONS,
     build_question_content_hash,
     compute_question_bank_manifest_hash,
@@ -57,6 +59,8 @@ from profile_agent.services.question_bank_service import (
 DEFAULT_CORPUS_DIR = Path(
     "profile_agent/knowledge/question_banks/ai_agent_engineer_2026_h2"
 )
+MANIFEST_SCHEMA_VERSION = "2"
+EMBEDDING_CONTRACT_VERSION = EMBEDDING_TEXT_VERSION
 SOURCE_TYPES = frozenset(
     {
         "public_interview_experience",
@@ -111,6 +115,20 @@ _UNACCEPTABLE_SOURCE_TEXT_RE = re.compile(
 )
 _GAP_REASON_RE = re.compile(
     r"(?ix)(?:gap|coverage|quota|缺口|覆盖|配额|能力\s*覆盖|能力缺口)"
+)
+_FORBIDDEN_FALLBACK_REASON_RE = re.compile(
+    r"(?ix)(?:"
+    r"\b(?:not\s+applicable|not\s+enough|insufficient|without\s+(?:a\s+|the\s+)?(?:source|evidence)|"
+    r"no\s+(?:data|source|evidence|usable\s+signal|qualifying\s+signal)|"
+    r"lack\s+of|not\s+available|cannot|can't|unable|"
+    r"unavailable|convenience|shortcut|temporary|easy)\b|"
+    r"否定|不(?:足|可|能|需要|用)|无需|不用|无须|没有(?:数据|来源|证据|可用)|"
+    r"没有(?:最新|近期|可用)?(?:面试)?(?:信号|来源|数据|证据)|"
+    r"方便|便利|省事|凑数|临时|无法获取|不可得"
+    r")"
+)
+_NON_HUMAN_REVIEWER_RE = re.compile(
+    r"(?ix)(?:^|[^a-z0-9])(?:luna(?:[-_ ]?[12])?|agent|model|bot|assistant|system)(?:$|[^a-z0-9])"
 )
 
 
@@ -176,6 +194,7 @@ def _validate_question_root(root: Mapping[str, Any]) -> None:
         isinstance(schema_version, bool)
         or type(schema_version) not in {int, str}
         or schema_version not in SUPPORTED_SCHEMA_VERSIONS
+        or str(schema_version) != MANIFEST_SCHEMA_VERSION
     ):
         raise ValueError("questions.json schema_version is invalid")
     if root.get("role") != CORPUS_ROLE:
@@ -350,6 +369,91 @@ def canonicalize_source_url(value: str) -> str:
     query_items.sort()
     path = parsed.path or "/"
     return urlunsplit((parsed.scheme.lower(), host, path, urlencode(query_items), ""))
+
+
+def _json_ready(value: Any) -> Any:
+    """Convert model/sidecar values to deterministic JSON primitives."""
+
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if hasattr(value, "model_dump"):
+        try:
+            value = value.model_dump(mode="json", warnings=False)
+        except Exception:
+            return None
+    if isinstance(value, Mapping):
+        return {
+            str(key): _json_ready(item)
+            for key, item in sorted(value.items(), key=lambda item: str(item[0]))
+        }
+    if isinstance(value, (list, tuple)):
+        return [_json_ready(item) for item in value]
+    return value
+
+
+def _sha256_payload(value: Any) -> str:
+    encoded = json.dumps(
+        _json_ready(value),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
+def compute_question_set_hash(records: Sequence[Any]) -> str:
+    """Compute the release hash for canonical question IDs and identities."""
+
+    entries: list[dict[str, str]] = []
+    for record in records:
+        question_id = _record_id(record)
+        if question_id is None:
+            raise ValueError("question record has no question_id")
+        entries.append(
+            {
+                "question_id": question_id,
+                "content_hash": compute_question_content_hash(record),
+            }
+        )
+    entries.sort(key=lambda item: item["question_id"])
+    return _sha256_payload({"version": "question-set-v1", "questions": entries})
+
+
+def _sidecar_entries(value: Any, *names: str) -> list[Any]:
+    entries = _entries(value, *names)
+    return sorted(
+        entries,
+        key=lambda item: (
+            _record_id(item) or "",
+            _source_id(item) or "",
+            str(_value(item, "source_id", "")),
+        ),
+    )
+
+
+def compute_sidecar_set_hash(snapshot: Any) -> str:
+    """Compute the release hash for source and governance sidecars."""
+
+    _, _, source_values, review_values, dedupe_values, rights_values, locator_values = _snapshot_parts(snapshot)
+    payload = {
+        "version": "sidecar-set-v1",
+        "source_registry": _sidecar_entries(
+            {"entries": source_values}, "entries", "sources"
+        ),
+        "review": _sidecar_entries(
+            {"records": review_values}, "records", "reviews"
+        ),
+        "dedupe": _sidecar_entries(
+            {"records": dedupe_values}, "records", "dedupe_records"
+        ),
+        "rights": _sidecar_entries(
+            {"records": rights_values}, "records", "rights_records"
+        ),
+        "locator": _sidecar_entries(
+            {"records": locator_values}, "records", "locator_records"
+        ),
+    }
+    return _sha256_payload(payload)
 
 
 def _safe_mapping(value: Any) -> Mapping[str, Any] | None:
@@ -554,6 +658,58 @@ def _source_published_date(entry: Any) -> date | None:
     return _date(_value(entry, "accessed_at", _value(entry, "retrieved_at")))
 
 
+def _looks_like_non_human_reviewer(value: Any) -> bool:
+    return isinstance(value, str) and _NON_HUMAN_REVIEWER_RE.search(value) is not None
+
+
+def _has_human_approval(review: Any, as_of: date) -> bool:
+    if _value(review, "reviewer_type") != "human":
+        return False
+    actor = _value(
+        review,
+        "approval_actor",
+        _value(review, "human_approval_actor", _value(review, "approved_by")),
+    )
+    if not isinstance(actor, str) or not actor.strip():
+        return False
+    reviewers = _value(review, "reviewer_ids", _value(review, "reviewers", ())) or ()
+    if isinstance(reviewers, (str, bytes, bytearray)):
+        reviewers = ()
+    try:
+        reviewer_values = list(reviewers)
+    except TypeError:
+        reviewer_values = []
+    reviewer_values.extend(
+        value
+        for value in (_value(review, "reviewer"), actor)
+        if value is not None
+    )
+    if any(_looks_like_non_human_reviewer(value) for value in reviewer_values):
+        return False
+    approval_timestamp = _value(
+        review,
+        "approval_timestamp",
+        _value(review, "approval_at", _value(review, "approved_at")),
+    )
+    approval_date = (
+        approval_timestamp.date()
+        if isinstance(approval_timestamp, datetime)
+        else _date(approval_timestamp)
+    )
+    approval_record_id = _value(
+        review,
+        "approval_record_id",
+        _value(review, "human_approval_record_id", _value(review, "approval_record")),
+    )
+    if approval_date is not None:
+        return approval_date <= as_of
+    return isinstance(approval_record_id, str) and bool(approval_record_id.strip())
+
+
+def _non_blank_text(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
 def _review_lookup(reviews: Sequence[Any]) -> dict[str, Any]:
     return {
         question_id: review
@@ -576,6 +732,16 @@ def _association_map(
     sources: Mapping[str, Any],
 ) -> dict[str, set[str]]:
     association: dict[str, set[str]] = defaultdict(set)
+    for source_id, source in sources.items():
+        values = _value(source, "question_ids", ()) or ()
+        if isinstance(values, (str, bytes, bytearray)):
+            continue
+        try:
+            for question_id in values:
+                if isinstance(question_id, str) and question_id.strip():
+                    association[source_id].add(question_id)
+        except TypeError:
+            continue
     for record in records:
         question_id = _record_id(record)
         if question_id is None:
@@ -652,6 +818,14 @@ def validate_question_corpus(
         _append_issue(issues, seen, "question_id_fk", "QuestionBankManifest.json.question_ids", "manifest question IDs must match records")
 
     # Role/version and manifest identity.
+    if _value(manifest, "schema_version") != MANIFEST_SCHEMA_VERSION:
+        _append_issue(
+            issues,
+            seen,
+            "manifest_schema_version",
+            "QuestionBankManifest.json.schema_version",
+            "manifest schema_version must be exactly 2",
+        )
     if _value(manifest, "role") != CORPUS_ROLE:
         _append_issue(issues, seen, "role_mismatch", "QuestionBankManifest.json.role", "role must match the corpus role")
     if _value(manifest, "role_version") != CORPUS_ROLE_VERSION:
@@ -662,6 +836,14 @@ def validate_question_corpus(
         _append_issue(issues, seen, "corpus_as_of_mismatch", "QuestionBankManifest.json.corpus_as_of", "manifest corpus_as_of must match the frozen date")
     if _value(manifest, "question_count") != 30:
         _append_issue(issues, seen, "manifest_question_count", "QuestionBankManifest.json.question_count", "manifest question_count must be exactly 30")
+    if _value(manifest, "embedding_contract_version") != EMBEDDING_CONTRACT_VERSION:
+        _append_issue(
+            issues,
+            seen,
+            "embedding_contract_version",
+            "QuestionBankManifest.json.embedding_contract_version",
+            "manifest must declare the fixed six-section embedding contract",
+        )
     try:
         active_trust_levels = set(_value(manifest, "active_trust_levels", ()) or ())
     except TypeError:
@@ -690,6 +872,73 @@ def validate_question_corpus(
                 f"QuestionBankManifest.json.{field_name}",
                 f"manifest {field_name} does not match the frozen governance contract",
             )
+
+    publication_status = _value(manifest, "publication_status", _value(manifest, "release_status"))
+    generated_at = _date(_value(manifest, "generated_at", _value(manifest, "created_at")))
+    reviewed_at = _date(_value(manifest, "reviewed_at", _value(manifest, "approved_at")))
+    published_at = _date(_value(manifest, "published_at"))
+    for field_name, field_value in (
+        ("generated_at", generated_at),
+        ("reviewed_at", reviewed_at),
+        ("published_at", published_at),
+    ):
+        if field_value is not None and field_value > as_of:
+            _append_issue(
+                issues,
+                seen,
+                "manifest_dates",
+                f"QuestionBankManifest.json.{field_name}",
+                "manifest dates must not be after the audit date",
+            )
+    if generated_at is None:
+        _append_issue(
+            issues,
+            seen,
+            "manifest_dates",
+            "QuestionBankManifest.json.generated_at",
+            "every manifest requires generated_at",
+        )
+    if generated_at is not None and reviewed_at is not None and generated_at > reviewed_at:
+        _append_issue(
+            issues,
+            seen,
+            "manifest_dates",
+            "QuestionBankManifest.json.reviewed_at",
+            "manifest generated_at must not be after reviewed_at",
+        )
+    if reviewed_at is not None and published_at is not None and reviewed_at > published_at:
+        _append_issue(
+            issues,
+            seen,
+            "manifest_dates",
+            "QuestionBankManifest.json.published_at",
+            "manifest reviewed_at must not be after published_at",
+        )
+    if publication_status in {"ready", "published"}:
+        if generated_at is None or reviewed_at is None:
+            _append_issue(
+                issues,
+                seen,
+                "manifest_dates",
+                "QuestionBankManifest.json",
+                "ready or published manifests require generated_at and reviewed_at",
+            )
+    if publication_status == "published" and published_at is None:
+        _append_issue(
+            issues,
+            seen,
+            "manifest_dates",
+            "QuestionBankManifest.json.published_at",
+            "published manifests require published_at",
+        )
+    if publication_status in {"draft", "ready"} and published_at is not None:
+        _append_issue(
+            issues,
+            seen,
+            "manifest_dates",
+            "QuestionBankManifest.json.published_at",
+            "draft or ready manifests must not declare published_at",
+        )
 
     role_pack_dimensions = _role_pack_dimensions(role_pack)
     if not role_pack_dimensions:
@@ -922,14 +1171,45 @@ def validate_question_corpus(
             _append_issue(issues, seen, "source_question_fk", f"{source_path}.question_ids", "active or release sources must declare question associations")
         next_review_at = _date(_value(source, "next_review_at"))
         verified_at = _date(_value(source, "verified_at"))
+        source_requires_lifecycle = source_is_in_use and (
+            _is_release(manifest, records) or lifecycle == "active"
+        )
+        review_days = 365 if _value(source, "review_class") == "evergreen" else 180
+        if source_requires_lifecycle and next_review_at is None:
+            _append_issue(
+                issues,
+                seen,
+                "source_next_review",
+                f"{source_path}.next_review_at",
+                "active or release sources require next_review_at",
+            )
         if next_review_at is not None and verified_at is not None:
-            review_days = 365 if _value(source, "review_class") == "evergreen" else 180
             if next_review_at != verified_at + timedelta(days=review_days):
                 _append_issue(issues, seen, "source_review_window", f"{source_path}.next_review_at", "source next_review_at does not match its review class window")
+            if source_requires_lifecycle and next_review_at <= as_of:
+                _append_issue(
+                    issues,
+                    seen,
+                    "source_review_due",
+                    f"{source_path}.next_review_at",
+                    "active or release sources must not be past their review deadline",
+                )
         if normalized_url is not None:
             for record_index, record in enumerate(records):
                 if source_id not in _record_source_ids(record):
                     continue
+                if source_requires_lifecycle and _is_active_record(record):
+                    record_valid_until = _date(_value(record, "valid_until"))
+                    if next_review_at is None or (
+                        record_valid_until is not None and record_valid_until > next_review_at
+                    ):
+                        _append_issue(
+                            issues,
+                            seen,
+                            "record_source_lifecycle",
+                            f"questions.json.questions[{record_index}].valid_until",
+                            "active question valid_until must not outlive its source review lifecycle",
+                        )
                 # ``source_url`` is the legacy primary-source projection.  A
                 # v2 record can reference independent secondary sources, whose
                 # concrete URLs are represented by locator/registry relations.
@@ -944,11 +1224,167 @@ def validate_question_corpus(
                     record_normalized_url = None
                 if record_normalized_url != normalized_url:
                     _append_issue(issues, seen, "canonical_url_mismatch", f"questions.json.questions[{record_index}].source_url", "record source URL must match the registry canonical URL")
+        if source_requires_lifecycle:
+            for record_index, record in enumerate(records):
+                if source_id not in _record_source_ids(record) or not _is_active_record(record):
+                    continue
+                record_valid_until = _date(_value(record, "valid_until"))
+                if next_review_at is None or (
+                    record_valid_until is not None and record_valid_until > next_review_at
+                ):
+                    _append_issue(
+                        issues,
+                        seen,
+                        "record_source_lifecycle",
+                        f"questions.json.questions[{record_index}].valid_until",
+                        "active question valid_until must not outlive its source review lifecycle",
+                    )
 
     # Record-level evidence, lifecycle and cross-sidecar checks.
     rights_lookup = {(key[0], key[1]): item for key, item in zip(rights_keys, rights_values) if key[0] is not None and key[1] is not None}
     locator_lookup = {(key[0], key[1]): item for key, item in zip(locator_keys, locator_values) if key[0] is not None and key[1] is not None}
+    try:
+        expected_question_set_hash = compute_question_set_hash(records)
+    except (AttributeError, TypeError, ValueError):
+        expected_question_set_hash = None
+    if _value(manifest, "question_set_hash") != expected_question_set_hash:
+        _append_issue(
+            issues,
+            seen,
+            "question_set_hash",
+            "QuestionBankManifest.json.question_set_hash",
+            "manifest question_set_hash does not match canonical records",
+        )
+    try:
+        expected_sidecar_set_hash = compute_sidecar_set_hash(snapshot)
+    except (AttributeError, TypeError, ValueError):
+        expected_sidecar_set_hash = None
+    if _value(manifest, "sidecar_set_hash") != expected_sidecar_set_hash:
+        _append_issue(
+            issues,
+            seen,
+            "sidecar_set_hash",
+            "QuestionBankManifest.json.sidecar_set_hash",
+            "manifest sidecar_set_hash does not match governance sidecars",
+        )
     association = _association_map(records, review_values, source_lookup)
+    record_by_id = {
+        question_id: record
+        for record in records
+        if (question_id := _record_id(record)) is not None
+    }
+    canonical_hash_groups: dict[str, set[str]] = defaultdict(set)
+    for question_id, record in record_by_id.items():
+        try:
+            canonical_record_hash = compute_question_content_hash(record)
+        except (AttributeError, TypeError, ValueError):
+            continue
+        canonical_hash_groups[canonical_record_hash].add(question_id)
+    semantic_hash_groups: dict[str, set[str]] = defaultdict(set)
+    for question_id, dedupe in dedupe_lookup.items():
+        semantic_hash = _value(dedupe, "semantic_hash", _value(dedupe, "normalized_semantic_hash"))
+        if isinstance(semantic_hash, str) and semantic_hash.strip():
+            semantic_hash_groups[semantic_hash].add(question_id)
+        record = record_by_id.get(question_id)
+        if record is not None:
+            try:
+                expected_semantic_hash = compute_question_content_hash(record)
+            except (AttributeError, TypeError, ValueError):
+                expected_semantic_hash = None
+            if semantic_hash != expected_semantic_hash:
+                _append_issue(
+                    issues,
+                    seen,
+                    "dedupe_semantic_hash",
+                    f"dedupe.json[{question_id}].semantic_hash",
+                    "semantic_hash must equal the canonical question content hash",
+                )
+        candidates = _value(
+            dedupe,
+            "candidate_duplicate_group",
+            _value(dedupe, "candidate_duplicate_ids", ()),
+        ) or ()
+        if isinstance(candidates, (str, bytes, bytearray)):
+            candidates = ()
+        try:
+            candidates = list(candidates)
+        except TypeError:
+            candidates = []
+        unknown_candidates = [
+            candidate
+            for candidate in candidates
+            if not isinstance(candidate, str) or candidate not in record_by_id
+        ]
+        if unknown_candidates:
+            _append_issue(
+                issues,
+                seen,
+                "dedupe_candidate_fk",
+                f"dedupe.json[{question_id}].candidate_duplicate_group",
+                "candidate duplicate group must reference corpus question IDs",
+            )
+        if question_id in candidates:
+            _append_issue(
+                issues,
+                seen,
+                "dedupe_candidate_fk",
+                f"dedupe.json[{question_id}].candidate_duplicate_group",
+                "candidate duplicate group must not include its own question ID",
+            )
+        if candidates:
+            decision = _value(dedupe, "decision")
+            near_decision = _value(dedupe, "near_duplicate_decision")
+            if decision in {"pending", "needs_review"} or near_decision in {"pending"}:
+                _append_issue(
+                    issues,
+                    seen,
+                    "dedupe_group_decision",
+                    f"dedupe.json[{question_id}].candidate_duplicate_group",
+                    "candidate duplicate groups require a completed decision",
+                )
+            for candidate in candidates:
+                candidate_dedupe = (
+                    dedupe_lookup.get(candidate)
+                    if isinstance(candidate, str)
+                    else None
+                )
+                if candidate_dedupe is None:
+                    continue
+                candidate_decision = _value(candidate_dedupe, "decision")
+                candidate_near_decision = _value(
+                    candidate_dedupe,
+                    "near_duplicate_decision",
+                )
+                if candidate_decision in {"pending", "needs_review"} or candidate_near_decision in {"pending"}:
+                    _append_issue(
+                        issues,
+                        seen,
+                        "dedupe_group_decision",
+                        f"dedupe.json[{question_id}].candidate_duplicate_group",
+                        "all candidate duplicate group decisions must be completed",
+                    )
+    for semantic_hash, question_ids in semantic_hash_groups.items():
+        if len(question_ids) < 2:
+            continue
+        if any(_is_active_record(record_by_id[question_id]) for question_id in question_ids if question_id in record_by_id):
+            _append_issue(
+                issues,
+                seen,
+                "active_duplicate_semantic_hash",
+                "dedupe.json",
+                "active questions must not share a semantic hash",
+            )
+    for canonical_record_hash, question_ids in canonical_hash_groups.items():
+        if len(question_ids) < 2:
+            continue
+        if any(_is_active_record(record_by_id[question_id]) for question_id in question_ids):
+            _append_issue(
+                issues,
+                seen,
+                "active_duplicate_semantic_hash",
+                "questions.json",
+                "active questions must not share a canonical semantic hash",
+            )
     fallback_questions: set[str] = set()
     near180_questions: set[str] = set()
     near365_questions: set[str] = set()
@@ -974,8 +1410,33 @@ def validate_question_corpus(
             if set(signal_ids).intersection(cross_ids):
                 _append_issue(issues, seen, "evidence_independence", f"review.json[{question_id}]", "signal and cross-validation evidence must be independent")
             decision = _value(review, "decision", _value(review, "review_status"))
-            if (_is_active_record(record) or _is_release(manifest, records)) and decision != "approved":
+            review_is_gated = _is_active_record(record) or _is_release(manifest, records)
+            if review_is_gated and decision != "approved":
                 _append_issue(issues, seen, "review_decision", f"review.json[{question_id}].decision", "active questions require an approved review")
+            if review_is_gated and decision == "approved" and not _has_human_approval(review, as_of):
+                _append_issue(
+                    issues,
+                    seen,
+                    "human_approval",
+                    f"review.json[{question_id}]",
+                    "approved active reviews require an explicit human approval actor and timestamp or record",
+                )
+            if review_is_gated and any(
+                not _non_blank_text(_value(review, field_name))
+                for field_name in (
+                    "capability_summary",
+                    "business_constraint_summary",
+                    "dimension_summary",
+                    "mode_rationale",
+                )
+            ):
+                _append_issue(
+                    issues,
+                    seen,
+                    "review_summary",
+                    f"review.json[{question_id}]",
+                    "active reviews require capability, business constraint, dimension, and mode summaries",
+                )
             reviewer_ids = _value(review, "reviewer_ids", _value(review, "reviewers", ())) or ()
             if isinstance(reviewer_ids, (str, bytes, bytearray)):
                 reviewer_ids = []
@@ -1008,14 +1469,41 @@ def validate_question_corpus(
                 _append_issue(issues, seen, "review_safety", f"review.json[{question_id}]", "approved active reviews require all safety checks")
             if _is_release(manifest, records) and decision == "pending_human":
                 _append_issue(issues, seen, "review_pending", f"review.json[{question_id}].decision", "pending_human is not an approval")
+            if decision in {"rejected", "needs_revision"} and not _non_blank_text(_value(review, "rejection_reason")):
+                _append_issue(
+                    issues,
+                    seen,
+                    "rejection_reason",
+                    f"review.json[{question_id}].rejection_reason",
+                    "rejected reviews require a rejection reason",
+                )
+            if (
+                decision == "retired"
+                or _value(record, "status") == "retired"
+            ) and not _non_blank_text(_value(review, "retirement_reason")):
+                _append_issue(
+                    issues,
+                    seen,
+                    "retirement_reason",
+                    f"review.json[{question_id}].retirement_reason",
+                    "retired questions require a retirement reason",
+                )
             reviewed_at = _date(_value(review, "reviewed_at"))
             if reviewed_at is None:
                 _append_issue(issues, seen, "review_date", f"review.json[{question_id}].reviewed_at", "reviewed_at is required")
             elif reviewed_at > as_of:
                 _append_issue(issues, seen, "review_date", f"review.json[{question_id}].reviewed_at", "reviewed_at must not be after the audit date")
             review_due_at = _date(_value(review, "review_due_at"))
-            if review_due_at is not None and review_due_at < as_of and _is_active_record(record):
-                _append_issue(issues, seen, "review_due", f"review.json[{question_id}].review_due_at", "active review is past due")
+            if _is_active_record(record) and review_due_at is None:
+                _append_issue(
+                    issues,
+                    seen,
+                    "review_due",
+                    f"review.json[{question_id}].review_due_at",
+                    "active reviews require review_due_at",
+                )
+            elif review_due_at is not None and review_due_at <= as_of and _is_active_record(record):
+                _append_issue(issues, seen, "review_due", f"review.json[{question_id}].review_due_at", "active review is due or past due")
 
         interview_dates: list[date] = []
         for source_id in signal_ids:
@@ -1089,9 +1577,16 @@ def validate_question_corpus(
                 _append_issue(issues, seen, "evidence_independence", f"review.json[{question_id}]", "signal and cross-validation URLs must be independent")
 
         if question_id in fallback_questions:
+            exception_reason_code = _value(review, "exception_reason_code") if review is not None else None
             exception_reason = _value(review, "exception_reason") if review is not None else None
-            if not isinstance(exception_reason, str) or not exception_reason.strip() or not _GAP_REASON_RE.search(exception_reason):
-                _append_issue(issues, seen, "fallback_exception", f"review.json[{question_id}].exception_reason", "fallback signals require a gap-only exception reason")
+            if (
+                exception_reason_code != "coverage_gap"
+                or not isinstance(exception_reason, str)
+                or not exception_reason.strip()
+                or not _GAP_REASON_RE.search(exception_reason)
+                or _FORBIDDEN_FALLBACK_REASON_RE.search(exception_reason)
+            ):
+                _append_issue(issues, seen, "fallback_exception", f"review.json[{question_id}].exception_reason", "fallback signals require a structured coverage_gap reason without negation or convenience wording")
             extra_recent = False
             for source in cross_sources:
                 if _source_type(source) not in {"official_technical_doc", "current_enterprise_jd"}:
@@ -1235,6 +1730,8 @@ def build_manifest_preview(
     mode_counts = _safe_counter(_primary_mode(record) for record in records)
     preview: dict[str, Any] = {
         "status": "valid" if not any(issue.severity == "error" for issue in issues) else "invalid",
+        "stage": "validation",
+        "structure_valid": True,
         "question_count": len(records),
         "question_ids": sorted(
             question_id for question_id in (_record_id(record) for record in records) if question_id is not None
@@ -1242,6 +1739,10 @@ def build_manifest_preview(
         "role": _value(manifest, "role"),
         "role_version": _value(manifest, "role_version"),
         "manifest_version": _value(manifest, "manifest_version"),
+        "schema_version": _value(manifest, "schema_version"),
+        "embedding_contract_version": _value(manifest, "embedding_contract_version"),
+        "question_set_hash": _value(manifest, "question_set_hash"),
+        "sidecar_set_hash": _value(manifest, "sidecar_set_hash"),
         "publication_status": _value(manifest, "publication_status"),
         "active_count": sum(1 for record in records if _is_active_record(record)),
         "dimension_counts": {key: dimension_counts.get(key, 0) for key in QUESTION_DIMENSIONS},
@@ -1266,10 +1767,14 @@ def build_manifest_preview(
 __all__ = [
     "ACTIVE_TRUST_LEVELS",
     "DEFAULT_CORPUS_DIR",
+    "EMBEDDING_CONTRACT_VERSION",
+    "MANIFEST_SCHEMA_VERSION",
     "CorpusIssue",
     "SOURCE_TYPES",
     "build_manifest_preview",
     "canonicalize_source_url",
+    "compute_question_set_hash",
+    "compute_sidecar_set_hash",
     "load_question_corpus_snapshot",
     "validate_question_corpus",
 ]

@@ -11,6 +11,8 @@ from profile_agent.services.question_bank_service import compute_question_conten
 from profile_agent.services.question_corpus_governance import (
     CorpusIssue,
     build_manifest_preview,
+    compute_question_set_hash,
+    compute_sidecar_set_hash,
     load_question_corpus_snapshot,
     validate_question_corpus,
 )
@@ -88,6 +90,7 @@ class QuestionCorpusGovernanceTests(unittest.TestCase):
                     "source_type": "public_interview_experience",
                     "published_at": date(2026, 7, 1),
                     "verified_at": date(2026, 8, 26),
+                    "valid_until": date(2027, 2, 22),
                     "status": "active",
                     "trust_level": "high",
                     "content_hash": "sha256:placeholder",
@@ -102,9 +105,16 @@ class QuestionCorpusGovernanceTests(unittest.TestCase):
                     question_id=question_id,
                     decision="approved",
                     reviewer_ids=["reviewer-1"],
+                    reviewer_type="human",
+                    approval_actor="human:reviewer-1",
+                    approval_timestamp=date(2026, 8, 27),
                     reviewed_at=date(2026, 8, 27),
                     signal_source_ids=[interview_id],
                     cross_validation_source_ids=[official_id],
+                    capability_summary="覆盖编排与失败恢复能力。",
+                    business_constraint_summary="必须满足幂等和延迟约束。",
+                    dimension_summary="验证对应 role dimension 的能力信号。",
+                    mode_rationale="场景题可验证约束下的决策。",
                     originality_confirmed=True,
                     pii_scan_passed=True,
                     rights_review_passed=True,
@@ -170,6 +180,7 @@ class QuestionCorpusGovernanceTests(unittest.TestCase):
                     lifecycle="active",
                     question_ids=question_ids,
                     review_class="dynamic",
+                    next_review_at=date(2027, 2, 22),
                     access_status="accessible",
                     rights_status="approved",
                 )
@@ -188,6 +199,7 @@ class QuestionCorpusGovernanceTests(unittest.TestCase):
                     lifecycle="active",
                     question_ids=question_ids,
                     review_class="evergreen",
+                    next_review_at=date(2027, 8, 26),
                     access_status="accessible",
                     rights_status="approved",
                 )
@@ -198,9 +210,10 @@ class QuestionCorpusGovernanceTests(unittest.TestCase):
                 "question_ids": [record.question_id for record in records],
                 "active_count": 30,
                 "publication_status": "published",
+                "published_at": CORPUS_AS_OF,
             }
         )
-        return QuestionCorpusSnapshot(
+        snapshot = QuestionCorpusSnapshot(
             records=records,
             manifest=QuestionBankManifest(**manifest_values),
             source_registry=QuestionSourceRegistry(entries=sources),
@@ -209,6 +222,13 @@ class QuestionCorpusGovernanceTests(unittest.TestCase):
             rights=QuestionRightsSidecar(records=rights),
             locator=QuestionLocatorSidecar(records=locators),
         )
+        manifest = snapshot.manifest.model_copy(
+            update={
+                "question_set_hash": compute_question_set_hash(snapshot.records),
+                "sidecar_set_hash": compute_sidecar_set_hash(snapshot),
+            }
+        )
+        return snapshot.model_copy(update={"manifest": manifest})
     def _write_snapshot(self, root: Path) -> None:
         records = []
         for question_id in QUESTION_IDS:
@@ -495,6 +515,215 @@ class QuestionCorpusGovernanceTests(unittest.TestCase):
         codes = {issue.code for issue in validate_question_corpus(malformed, role_pack, CORPUS_AS_OF)}
 
         self.assertIn("mode_invalid", codes)
+
+    def test_validator_rejects_luna_approval_even_with_approval_fields(self) -> None:
+        snapshot = self._complete_snapshot()
+        review = snapshot.review.records[0].model_copy(
+            update={
+                "reviewer_type": "luna",
+                "reviewer_ids": ["Luna-1", "Luna-2"],
+                "approval_actor": "Luna-1",
+                "approval_timestamp": CORPUS_AS_OF,
+            }
+        )
+        malformed = snapshot.model_copy(
+            update={
+                "review": snapshot.review.model_copy(update={"records": [review, *snapshot.review.records[1:]]})
+            }
+        )
+        role_pack = json.loads(
+            Path("profile_agent/knowledge/role_packs/ai_application_engineer_2026_h2.json").read_text(
+                encoding="utf-8"
+            )
+        )
+
+        codes = {issue.code for issue in validate_question_corpus(malformed, role_pack, CORPUS_AS_OF)}
+
+        self.assertIn("human_approval", codes)
+
+    def test_validator_requires_canonical_semantic_hash_and_duplicate_group_fk(self) -> None:
+        snapshot = self._complete_snapshot()
+        dedupe = snapshot.dedupe.records[0].model_copy(
+            update={
+                "semantic_hash": "sha256:" + "0" * 64,
+                "candidate_duplicate_group": ["q_missing"],
+            }
+        )
+        malformed = snapshot.model_copy(
+            update={
+                "dedupe": snapshot.dedupe.model_copy(update={"records": [dedupe, *snapshot.dedupe.records[1:]]})
+            }
+        )
+        role_pack = json.loads(
+            Path("profile_agent/knowledge/role_packs/ai_application_engineer_2026_h2.json").read_text(
+                encoding="utf-8"
+            )
+        )
+
+        codes = {issue.code for issue in validate_question_corpus(malformed, role_pack, CORPUS_AS_OF)}
+
+        self.assertIn("dedupe_semantic_hash", codes)
+        self.assertIn("dedupe_candidate_fk", codes)
+
+    def test_validator_rejects_active_duplicate_semantic_hash_and_unresolved_group(self) -> None:
+        snapshot = self._complete_snapshot()
+        first = snapshot.dedupe.records[0]
+        second = snapshot.dedupe.records[1].model_copy(
+            update={
+                "semantic_hash": first.semantic_hash,
+                "candidate_duplicate_group": [first.question_id],
+                "decision": "pending",
+                "near_duplicate_decision": "pending",
+            }
+        )
+        malformed = snapshot.model_copy(
+            update={
+                "dedupe": snapshot.dedupe.model_copy(update={"records": [first, second, *snapshot.dedupe.records[2:]]})
+            }
+        )
+        role_pack = json.loads(
+            Path("profile_agent/knowledge/role_packs/ai_application_engineer_2026_h2.json").read_text(
+                encoding="utf-8"
+            )
+        )
+
+        codes = {issue.code for issue in validate_question_corpus(malformed, role_pack, CORPUS_AS_OF)}
+
+        self.assertIn("dedupe_group_decision", codes)
+        self.assertIn("active_duplicate_semantic_hash", codes)
+
+    def test_validator_requires_source_review_deadlines_and_record_lifecycle_bound(self) -> None:
+        snapshot = self._complete_snapshot()
+        source = snapshot.source_registry.entries[0].model_copy(update={"next_review_at": None})
+        record = snapshot.records[0].model_copy(update={"valid_until": date(2028, 1, 1)})
+        malformed = snapshot.model_copy(
+            update={
+                "records": [record, *snapshot.records[1:]],
+                "source_registry": snapshot.source_registry.model_copy(
+                    update={"entries": [source, *snapshot.source_registry.entries[1:]]}
+                ),
+            }
+        )
+        role_pack = json.loads(
+            Path("profile_agent/knowledge/role_packs/ai_application_engineer_2026_h2.json").read_text(
+                encoding="utf-8"
+            )
+        )
+
+        codes = {issue.code for issue in validate_question_corpus(malformed, role_pack, CORPUS_AS_OF)}
+
+        self.assertIn("source_next_review", codes)
+        self.assertIn("record_source_lifecycle", codes)
+
+    def test_validator_requires_due_review_summaries_and_retirement_reason(self) -> None:
+        snapshot = self._complete_snapshot()
+        review = snapshot.review.records[0].model_copy(
+            update={
+                "review_due_at": CORPUS_AS_OF,
+                "capability_summary": "",
+                "business_constraint_summary": "",
+                "dimension_summary": "",
+                "mode_rationale": "",
+                "decision": "retired",
+            }
+        )
+        retired = snapshot.records[0].model_copy(update={"status": "active"})
+        malformed = snapshot.model_copy(
+            update={
+                "records": [retired, *snapshot.records[1:]],
+                "review": snapshot.review.model_copy(update={"records": [review, *snapshot.review.records[1:]]}),
+            }
+        )
+        role_pack = json.loads(
+            Path("profile_agent/knowledge/role_packs/ai_application_engineer_2026_h2.json").read_text(
+                encoding="utf-8"
+            )
+        )
+
+        codes = {issue.code for issue in validate_question_corpus(malformed, role_pack, CORPUS_AS_OF)}
+
+        self.assertIn("review_due", codes)
+        self.assertIn("review_summary", codes)
+        self.assertIn("retirement_reason", codes)
+
+    def test_validator_checks_fixed_manifest_contract_hashes_and_publication_dates(self) -> None:
+        snapshot = self._complete_snapshot()
+        manifest = snapshot.manifest.model_copy(
+            update={
+                "schema_version": "3",
+                "embedding_contract_version": "legacy",
+                "question_set_hash": "sha256:" + "0" * 64,
+                "sidecar_set_hash": "sha256:" + "1" * 64,
+                "generated_at": date(2026, 8, 28),
+                "reviewed_at": date(2026, 8, 27),
+                "published_at": date(2026, 8, 27),
+            }
+        )
+        malformed = snapshot.model_copy(update={"manifest": manifest})
+        role_pack = json.loads(
+            Path("profile_agent/knowledge/role_packs/ai_application_engineer_2026_h2.json").read_text(
+                encoding="utf-8"
+            )
+        )
+
+        codes = {issue.code for issue in validate_question_corpus(malformed, role_pack, CORPUS_AS_OF)}
+
+        self.assertIn("manifest_schema_version", codes)
+        self.assertIn("embedding_contract_version", codes)
+        self.assertIn("question_set_hash", codes)
+        self.assertIn("sidecar_set_hash", codes)
+        self.assertIn("manifest_dates", codes)
+
+    def test_validator_rejects_structured_non_gap_fallback_reason(self) -> None:
+        snapshot = self._complete_snapshot()
+        source = snapshot.source_registry.entries[0].model_copy(
+            update={"published_at": date(2025, 8, 1)}
+        )
+        review = snapshot.review.records[0].model_copy(
+            update={
+                "exception_reason_code": "coverage_gap",
+                "exception_reason": "convenience because no data was available",
+            }
+        )
+        malformed = snapshot.model_copy(
+            update={
+                "source_registry": snapshot.source_registry.model_copy(
+                    update={"entries": [source, *snapshot.source_registry.entries[1:]]}
+                ),
+                "review": snapshot.review.model_copy(update={"records": [review, *snapshot.review.records[1:]]}),
+            }
+        )
+        role_pack = json.loads(
+            Path("profile_agent/knowledge/role_packs/ai_application_engineer_2026_h2.json").read_text(
+                encoding="utf-8"
+            )
+        )
+
+        codes = {issue.code for issue in validate_question_corpus(malformed, role_pack, CORPUS_AS_OF)}
+
+        self.assertIn("fallback_exception", codes)
+
+    def test_validator_counts_source_registry_question_ids_for_url_cap(self) -> None:
+        snapshot = self._complete_snapshot()
+        source = snapshot.source_registry.entries[0].model_copy(
+            update={"question_ids": ["q_agent_001", "q_agent_002", "q_agent_003", "q_agent_004"]}
+        )
+        malformed = snapshot.model_copy(
+            update={
+                "source_registry": snapshot.source_registry.model_copy(
+                    update={"entries": [source, *snapshot.source_registry.entries[1:] ]}
+                )
+            }
+        )
+        role_pack = json.loads(
+            Path("profile_agent/knowledge/role_packs/ai_application_engineer_2026_h2.json").read_text(
+                encoding="utf-8"
+            )
+        )
+
+        codes = {issue.code for issue in validate_question_corpus(malformed, role_pack, CORPUS_AS_OF)}
+
+        self.assertIn("url_association_cap", codes)
 
 
 if __name__ == "__main__":

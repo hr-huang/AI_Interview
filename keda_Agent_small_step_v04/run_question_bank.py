@@ -1502,6 +1502,113 @@ def _write_corpus_artifact(path: Path, payload: Mapping[str, Any]) -> None:
         raise QuestionBankConfigurationError("question corpus artifact could not be written") from exc
 
 
+def _corpus_structure_failure_code(error: BaseException) -> str:
+    """Classify a loader failure without exposing malformed input details."""
+
+    details: list[str] = []
+    current: BaseException | None = error
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        details.append(str(current).casefold())
+        current = current.__cause__ or current.__context__
+    detail = " ".join(details)
+    if "missing" in detail or "unavailable" in detail:
+        return "sidecar_missing"
+    if "unknown" in detail or "extra" in detail:
+        return "structure_unknown_field"
+    if "json" in detail:
+        return "structure_invalid_json"
+    return "structure_invalid"
+
+
+def _run_corpus_structure_failure(
+    args: argparse.Namespace,
+    *,
+    as_of: date,
+    error: BaseException,
+    output: Callable[[str], None],
+    output_format: str,
+) -> int:
+    """Publish deterministic structure-stage artifacts even on loader failure."""
+
+    issue = CorpusIssue(
+        code=_corpus_structure_failure_code(error),
+        path="question_corpus",
+        message="question corpus structure could not be loaded",
+        severity="error",
+    )
+    issue_payload = [_safe_corpus_issue(issue)]
+    preview: dict[str, Any] = {
+        "status": "invalid",
+        "stage": "structure",
+        "structure_valid": False,
+        "question_count": 0,
+        "question_ids": [],
+        "role": None,
+        "role_version": None,
+        "manifest_version": None,
+        "publication_status": None,
+        "manifest_hash": None,
+        "error_count": 1,
+        "warning_count": 0,
+        "issue_count": 1,
+        "issues": issue_payload,
+    }
+    report: dict[str, Any] = {
+        "action": args.action,
+        "status": "invalid",
+        "stage": "structure",
+        "structure_valid": False,
+        "as_of": as_of.isoformat(),
+        "error_count": 1,
+        "warning_count": 0,
+        "issue_count": 1,
+        "issues": issue_payload,
+        "manifest_preview": preview,
+        "dry_run": True,
+    }
+    _write_corpus_artifact(
+        Path("artifacts/question_corpus/manifest_preview.json"),
+        preview,
+    )
+    _write_corpus_artifact(
+        Path("artifacts/question_corpus/validation_report.json"),
+        report,
+    )
+    rendered: Mapping[str, Any] = report
+    if args.action == "manifest":
+        rendered = {"action": "manifest", **preview, "issues": issue_payload}
+    elif args.action == "evaluate-local":
+        rendered = {
+            "action": "evaluate-local",
+            "status": "invalid",
+            "stage": "structure",
+            "question_count": 0,
+            "error_count": 1,
+            "warning_count": 0,
+            "issues": issue_payload,
+            "dry_run": True,
+        }
+    if output_format == "json":
+        output(json.dumps(rendered, ensure_ascii=False, sort_keys=True))
+    else:
+        output(
+            " ".join(
+                (
+                    f"{str(args.action).upper()} status=invalid",
+                    "stage=structure",
+                    f"as_of={as_of.isoformat()}",
+                    "questions=0",
+                    "errors=1",
+                    "warnings=0",
+                    "dry_run=true",
+                )
+            )
+        )
+    return EXIT_USAGE_ERROR
+
+
 def _run_corpus_read_only_action(
     args: argparse.Namespace,
     *,
@@ -1515,11 +1622,14 @@ def _run_corpus_read_only_action(
         snapshot = load_question_corpus_snapshot(args.corpus_dir, as_of)
         role_pack = _load_corpus_role_pack()
         issues = tuple(validate_question_corpus(snapshot, role_pack, as_of))
-    except QuestionBankValidationError:
-        raise
-    except (TypeError, ValueError, OSError) as exc:
-        # Keep malformed JSON/Pydantic input behind the safe CLI error boundary.
-        raise QuestionBankValidationError("question corpus validation failed") from exc
+    except (QuestionBankValidationError, TypeError, ValueError, OSError) as exc:
+        return _run_corpus_structure_failure(
+            args,
+            as_of=as_of,
+            error=exc,
+            output=output,
+            output_format=output_format,
+        )
 
     issue_payload = [_safe_corpus_issue(issue) for issue in issues]
     errors = sum(1 for issue in issues if issue.severity == "error")
@@ -1528,6 +1638,8 @@ def _run_corpus_read_only_action(
     report: dict[str, Any] = {
         "action": args.action,
         "status": "valid" if errors == 0 else "invalid",
+        "stage": "validation",
+        "structure_valid": True,
         "as_of": as_of.isoformat(),
         "error_count": errors,
         "warning_count": warnings,

@@ -28,6 +28,12 @@ LEGACY_V1_FIXTURE_PATH = (
 LEGACY_MANIFEST_FIXTURE_PATH = (
     Path(__file__).parent / "fixtures" / "question_rag" / "legacy_v1_manifest.json"
 )
+MALFORMED_CORPUS_JSON_FIXTURE_PATH = (
+    Path(__file__).parent
+    / "fixtures"
+    / "question_corpus_v2"
+    / "malformed_questions.json"
+)
 
 
 class FakeEmbedding:
@@ -362,6 +368,53 @@ class RunQuestionBankTests(unittest.TestCase):
                 "validation_report.json",
             ] * 3,
         )
+
+    def test_corpus_malformed_snapshot_writes_structured_failure_artifacts(self) -> None:
+        corpus_dir = Path(self.temp_dir.name) / "malformed-corpus"
+        corpus_dir.mkdir()
+        (corpus_dir / "questions.json").write_text(
+            MALFORMED_CORPUS_JSON_FIXTURE_PATH.read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        artifacts: dict[str, object] = {}
+
+        def capture_artifact(path: Path, payload: object) -> None:
+            artifacts[path.name] = payload
+
+        with patch.object(
+            run_question_bank,
+            "_write_corpus_artifact",
+            side_effect=capture_artifact,
+        ):
+            code, stdout, stderr = self._run(
+                [
+                    "audit-corpus",
+                    "--corpus-dir",
+                    str(corpus_dir),
+                    "--as-of",
+                    "2026-08-27",
+                    "--dry-run",
+                    "--format",
+                    "json",
+                ]
+            )
+
+        self.assertNotEqual(code, 0)
+        self.assertIn("audit-corpus", stdout)
+        self.assertEqual(stderr, "")
+        self.assertEqual(
+            set(artifacts),
+            {"manifest_preview.json", "validation_report.json"},
+        )
+        report = artifacts["validation_report.json"]
+        preview = artifacts["manifest_preview.json"]
+        self.assertIsInstance(report, dict)
+        self.assertIsInstance(preview, dict)
+        self.assertEqual(report["status"], "invalid")
+        self.assertEqual(report["stage"], "structure")
+        self.assertTrue(report["issues"])
+        self.assertEqual(preview["status"], "invalid")
+        self.assertFalse(preview["structure_valid"])
 
     def test_apply_embedding_spy_receives_canonical_six_section_projection(self) -> None:
         bank = self._write_bank()
