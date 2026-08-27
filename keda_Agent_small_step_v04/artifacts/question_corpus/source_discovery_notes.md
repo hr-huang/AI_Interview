@@ -6,7 +6,7 @@ Corpus as-of: 2026-08-27. Final registry is China-priority: 10 Chinese public in
 
 Each interview entry is a firsthand or explicitly secondary Chinese-language experience with visible publication date and structured `date_evidence_kind=visible_published_date`; official entries use `official_last_updated`; JD entries use `accessed_current_jd` and do not pretend to have a publication date. Query requirements and observed title/date/provenance are frozen in `task6_source_evidence_fixture.json`; all remain `draft` with empty `question_ids` for Task7.
 
-Interview dates: 10/10 fall in 2025-08-27..2026-08-27 and 10/10 fall in 2026-02-28..2026-08-27. Domestic share is 10/10 interviews and 10/10 official/JD. Dimensions collectively cover role_dim_01..role_dim_06. Each source has a non-empty date evidence locator and raw date checked against the model date.
+Interview dates: 10/10 fall in 2025-08-27..2026-08-27 and 10/10 fall in 2026-02-28..2026-08-27. Domestic share is 10/10 interviews and 10/10 official/JD. Dimensions collectively cover role_dim_01..role_dim_06. Each source has a non-empty date evidence locator and raw date checked against the model date. All five百度 JD entries now use `jd_page_posted_at` with page dates 2026-07-21 or 2026-08-10;访问日期仅作为复核辅助，不替代页面职位日期。
 
 ## Rejected: 4
 
@@ -18,3 +18,5 @@ Interview dates: 10/10 fall in 2025-08-27..2026-08-27 and 10/10 fall in 2026-02-
 | https://learn.microsoft.com/en-us/azure/search/agentic-retrieval-overview?utm_source=mail | tracking-only duplicate of canonical page |
 
 All prior foreign-source counts are historical and superseded by this China-priority registry. Task7 read-only audit must still fail honestly because no questions or sidecars are populated.
+
+旧百度职位 J78585 与 J85303 已移除；腾讯定位均改为中文 H1、章节语义及页面“最近更新时间”，不再保留英文旧定位短语。

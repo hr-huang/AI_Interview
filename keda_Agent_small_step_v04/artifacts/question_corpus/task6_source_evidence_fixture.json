@@ -108,7 +108,7 @@
       "observed_accessed": "2026-08-27",
       "provenance_kind": "unknown",
       "query_required": false,
-      "locator": "定位：Why use agentic retrieval。",
+      "locator": "页面H1“腾讯云智能体开发平台 Agentic RAG”；最近更新时间：2026-08-21；定位智能体检索与RAG配置。",
       "currentness": "official_last_updated"
     },
     {
@@ -118,7 +118,7 @@
       "observed_accessed": "2026-08-27",
       "provenance_kind": "unknown",
       "query_required": false,
-      "locator": "定位：When to use agentic RAG 与 Evaluate agentic RAG。",
+      "locator": "页面H1“混元调用指南”；最近更新时间：2026-08-22；定位模型调用、评测与安全参数。",
       "currentness": "official_last_updated"
     },
     {
@@ -128,7 +128,7 @@
       "observed_accessed": "2026-08-27",
       "provenance_kind": "unknown",
       "query_required": false,
-      "locator": "定位：What is agentic retrieval 与 Choose your path。",
+      "locator": "页面H1“知识引擎原子能力 RAG 操作指南”；最近更新时间：2026-04-16；定位知识库、检索与召回配置。",
       "currentness": "official_last_updated"
     },
     {
@@ -138,7 +138,7 @@
       "observed_accessed": "2026-08-27",
       "provenance_kind": "unknown",
       "query_required": false,
-      "locator": "定位：HTML canonical 页面；Security and privacy considerations；日期按页面 Last updated 语义记录。",
+      "locator": "页面H1“腾讯云智能体开发平台 Agent 节点”；最近更新时间：2026-02-12；定位节点编排、输入输出与安全设置。",
       "currentness": "official_last_updated"
     },
     {
@@ -148,58 +148,58 @@
       "observed_accessed": "2026-08-27",
       "provenance_kind": "unknown",
       "query_required": false,
-      "locator": "定位：页面 Last updated 语义与 Vector search concepts heading。",
+      "locator": "页面H1“云数据库 PostgreSQL tencentdb_ai RAG”；最近更新时间：2026-08-20；定位向量检索与数据库集成。",
       "currentness": "official_last_updated"
     },
     {
-      "source_id": "src_cn_jd_baidu_llm_2026",
-      "observed_title": "AI算法工程师（J78585）",
-      "observed_date": "",
+      "source_id": "src_cn_jd_baidu_agentic_2026",
+      "observed_title": "2027AIDU-智能体算法工程师（J99969）",
+      "observed_date": "2026-07-21",
       "observed_accessed": "2026-08-27",
       "provenance_kind": "unknown",
       "query_required": false,
-      "locator": "百度招聘页面当前职位 H1/职责；访问与核验日期 2026-08-27",
-      "currentness": "accessed_current_jd"
+      "locator": "百度招聘页面H1“2027AIDU-智能体算法工程师（J99969）”；职位日期：2026-07-21；访问核验：2026-08-27",
+      "currentness": "page_posted_at"
     },
     {
       "source_id": "src_cn_jd_baidu_agent_2026",
       "observed_title": "AI Agent算法工程师（J99071）",
-      "observed_date": "",
+      "observed_date": "2026-07-21",
       "observed_accessed": "2026-08-27",
       "provenance_kind": "unknown",
       "query_required": false,
-      "locator": "百度招聘页面当前职位 H1/职责；访问与核验日期 2026-08-27",
-      "currentness": "accessed_current_jd"
+      "locator": "百度招聘页面H1“AI Agent算法工程师（J99071）”；职位日期：2026-07-21；访问核验：2026-08-27",
+      "currentness": "page_posted_at"
     },
     {
-      "source_id": "src_cn_jd_baidu_multimodal_2026",
-      "observed_title": "应用AI产品研发-多模态理解算法工程师-2026AIDU（J85303）",
-      "observed_date": "",
+      "source_id": "src_cn_jd_baidu_base_2026",
+      "observed_title": "北京-大模型算法工程师（基座研发方向）（J101234）",
+      "observed_date": "2026-07-21",
       "observed_accessed": "2026-08-27",
       "provenance_kind": "unknown",
       "query_required": false,
-      "locator": "百度招聘页面当前职位 H1/职责；访问与核验日期 2026-08-27",
-      "currentness": "accessed_current_jd"
+      "locator": "百度招聘页面H1“北京-大模型算法工程师（基座研发方向）（J101234）”；职位日期：2026-07-21；访问核验：2026-08-27",
+      "currentness": "page_posted_at"
     },
     {
       "source_id": "src_cn_jd_baidu_agent_context_2026",
       "observed_title": "Agent工程师（J100994）",
-      "observed_date": "",
+      "observed_date": "2026-07-21",
       "observed_accessed": "2026-08-27",
       "provenance_kind": "unknown",
       "query_required": false,
-      "locator": "百度招聘页面H1“Agent工程师（J100994）”与职责；页面职位日期2026-07-21；访问核验2026-08-27",
-      "currentness": "accessed_current_jd"
+      "locator": "百度招聘页面H1“Agent工程师（J100994）”；职位日期：2026-07-21；访问核验：2026-08-27",
+      "currentness": "page_posted_at"
     },
     {
       "source_id": "src_cn_jd_baidu_app_platform_2026",
       "observed_title": "大模型应用研发工程师（J103341）",
-      "observed_date": "",
+      "observed_date": "2026-08-10",
       "observed_accessed": "2026-08-27",
       "provenance_kind": "unknown",
       "query_required": false,
-      "locator": "百度招聘页面H1“大模型应用研发工程师（J103341）”与职责；页面职位日期2026-08-10；访问核验2026-08-27",
-      "currentness": "accessed_current_jd"
+      "locator": "百度招聘页面H1“大模型应用研发工程师（J103341）”；职位日期：2026-08-10；访问核验：2026-08-27",
+      "currentness": "page_posted_at"
     }
   ]
 }

@@ -45,7 +45,7 @@ QuestionSourceType = Literal[
 ]
 QuestionDateEvidenceKind = Literal[
     "reddit_created_utc", "devto_published_at", "json_ld_date_published",
-    "visible_published_date", "official_last_updated", "accessed_current_jd",
+    "visible_published_date", "official_last_updated", "accessed_current_jd", "jd_page_posted_at",
 ]
 QuestionProvenanceKind = Literal["firsthand", "anonymous_submission", "secondary_summary", "unknown"]
 QuestionSourceLifecycle = Literal["draft", "active", "needs_review", "retired"]
@@ -1273,7 +1273,7 @@ class QuestionSourceRegistryEntry(BaseModel):
         allowed_kinds = {
             "public_interview_experience": {"reddit_created_utc", "devto_published_at", "json_ld_date_published", "visible_published_date"},
             "official_technical_doc": {"official_last_updated"},
-            "current_enterprise_jd": {"accessed_current_jd"},
+            "current_enterprise_jd": {"accessed_current_jd", "jd_page_posted_at"},
         }
         if self.date_evidence_kind not in allowed_kinds[self.source_type]:
             raise ValueError("date_evidence_kind is incompatible with source_type")
@@ -1293,7 +1293,11 @@ class QuestionSourceRegistryEntry(BaseModel):
                 evidence_date = date.fromisoformat(self.date_evidence_raw[:10])
         except (TypeError, ValueError, OverflowError) as exc:
             raise ValueError("date_evidence_raw is not parseable") from exc
-        expected_date = self.accessed_at if self.source_type == "current_enterprise_jd" else self.published_at
+        expected_date = (
+            self.accessed_at
+            if self.source_type == "current_enterprise_jd" and self.date_evidence_kind == "accessed_current_jd"
+            else self.published_at
+        )
         if evidence_date != expected_date:
             raise ValueError("date_evidence_raw does not match source date")
         return self
