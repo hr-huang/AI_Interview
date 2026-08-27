@@ -209,6 +209,35 @@ def valid_intent_kwargs() -> dict:
     }
 
 
+def valid_snapshot() -> QuestionCorpusSnapshot:
+    source = QuestionSourceRegistryEntry(**valid_source_kwargs())
+    registry = QuestionSourceRegistry(entries=[source])
+    review_sidecar = QuestionReviewSidecar(
+        records=[QuestionReviewRecord(**valid_review_kwargs())]
+    )
+    dedupe_sidecar = QuestionDedupeSidecar(
+        records=[QuestionDedupeRecord(**valid_dedupe_kwargs())]
+    )
+    rights_sidecar = QuestionRightsSidecar(
+        records=[QuestionRightsRecord(**valid_rights_kwargs())]
+    )
+    locator_sidecar = QuestionLocatorSidecar(
+        records=[QuestionLocatorRecord(**valid_locator_kwargs())]
+    )
+    return QuestionCorpusSnapshot(
+        records=[
+            InterviewQuestionRecord(**valid_record_kwargs(question_id))
+            for question_id in QUESTION_IDS
+        ],
+        manifest=QuestionBankManifest(**valid_manifest_kwargs()),
+        source_registry=registry,
+        review=review_sidecar,
+        dedupe=dedupe_sidecar,
+        rights=rights_sidecar,
+        locator=locator_sidecar,
+    )
+
+
 class QuestionCorpusSchemaTests(unittest.TestCase):
     def test_accepts_v2_record_and_keeps_v1_question_mode(self) -> None:
         record = InterviewQuestionRecord(**valid_record_kwargs())
@@ -232,7 +261,10 @@ class QuestionCorpusSchemaTests(unittest.TestCase):
         intent = LabeledQuestionIntent(**valid_intent_kwargs())
 
         snapshot = QuestionCorpusSnapshot(
-            records=[InterviewQuestionRecord(**valid_record_kwargs())],
+            records=[
+                InterviewQuestionRecord(**valid_record_kwargs(question_id))
+                for question_id in QUESTION_IDS
+            ],
             manifest=manifest,
             source_registry=registry,
             review=review_sidecar,
@@ -414,6 +446,145 @@ class QuestionCorpusSchemaTests(unittest.TestCase):
 
         with self.assertRaises(ValidationError):
             QuestionBankManifest(**values)
+
+    def test_record_and_intent_are_bound_to_the_corpus_role_version_and_dimensions(self) -> None:
+        for model, values in (
+            (InterviewQuestionRecord, valid_record_kwargs()),
+            (LabeledQuestionIntent, valid_intent_kwargs()),
+        ):
+            for field, bad_value in (
+                ("role_version", "2026-H1"),
+                ("dimension_id", "role_dim_07"),
+            ):
+                with self.subTest(model=model.__name__, field=field):
+                    invalid = deepcopy(values)
+                    invalid[field] = bad_value
+                    with self.assertRaises(ValidationError):
+                        model(**invalid)
+
+    def test_explicit_question_mode_and_primary_mode_mismatch_is_rejected(self) -> None:
+        values = valid_record_kwargs()
+        values["question_mode"] = "scenario"
+        values["primary_mode"] = "coding"
+        values.pop("business_constraint")
+        values.pop("dimension_terms")
+        values.pop("compatible_modes")
+        values.pop("source_ids")
+
+        with self.assertRaises(ValidationError):
+            InterviewQuestionRecord(**values)
+
+    def test_record_rejects_wrong_date_types(self) -> None:
+        values = valid_record_kwargs()
+        values["published_at"] = "not-a-date"
+
+        with self.assertRaises(ValidationError):
+            InterviewQuestionRecord(**values)
+
+    def test_source_dates_enforce_public_signal_window_and_access_order(self) -> None:
+        for field, bad_value in (
+            ("published_at", None),
+            ("published_at", date(2024, 12, 31)),
+            ("published_at", date(2026, 8, 28)),
+            ("accessed_at", date(2026, 6, 30)),
+            ("verified_at", date(2026, 6, 30)),
+        ):
+            with self.subTest(field=field, bad_value=bad_value):
+                values = valid_source_kwargs()
+                values[field] = bad_value
+                with self.assertRaises(ValidationError):
+                    QuestionSourceRegistryEntry(**values)
+
+        evergreen = valid_source_kwargs()
+        evergreen["source_type"] = "official_technical_doc"
+        evergreen["published_at"] = None
+        evergreen["date_basis"] = "retrieved_at"
+        self.assertIsNotNone(QuestionSourceRegistryEntry(**evergreen))
+
+    def test_snapshot_requires_exactly_thirty_unique_manifest_ids(self) -> None:
+        snapshot = valid_snapshot()
+
+        self.assertEqual(len(snapshot.records), 30)
+        self.assertEqual(
+            {record.question_id for record in snapshot.records},
+            set(snapshot.manifest.question_ids),
+        )
+
+        with self.assertRaises(ValidationError):
+            QuestionCorpusSnapshot(
+                **{
+                    **snapshot.model_dump(),
+                    "records": snapshot.records[:-1],
+                }
+            )
+
+        duplicate_records = [*snapshot.records]
+        duplicate_records[-1] = duplicate_records[0]
+        with self.assertRaises(ValidationError):
+            QuestionCorpusSnapshot(
+                **{
+                    **snapshot.model_dump(),
+                    "records": duplicate_records,
+                }
+            )
+
+        mismatched_records = [*snapshot.records]
+        mismatched_records[-1] = InterviewQuestionRecord(
+            **valid_record_kwargs("q_agent_other")
+        )
+        with self.assertRaises(ValidationError):
+            QuestionCorpusSnapshot(
+                **{
+                    **snapshot.model_dump(),
+                    "records": mismatched_records,
+                }
+            )
+
+    def test_policy_and_manifest_use_the_same_fixed_policy_version(self) -> None:
+        policy = QuestionModePolicy()
+        manifest = QuestionBankManifest(**valid_manifest_kwargs())
+        self.assertEqual(policy.mode_policy_version, manifest.mode_policy_version)
+
+        with self.assertRaises(ValidationError):
+            QuestionModePolicy(mode_policy_version="future-policy")
+        invalid_manifest = valid_manifest_kwargs()
+        invalid_manifest["mode_policy_version"] = "future-policy"
+        with self.assertRaises(ValidationError):
+            QuestionBankManifest(**invalid_manifest)
+
+    def test_approved_review_requires_evidence_and_all_safety_checks(self) -> None:
+        values = valid_review_kwargs()
+        values["decision"] = "approved"
+        for field, bad_value in (
+            ("reviewer_ids", []),
+            ("signal_source_ids", []),
+            ("cross_validation_source_ids", []),
+            ("originality_confirmed", False),
+            ("pii_scan_passed", False),
+            ("rights_review_passed", False),
+            ("difficulty_consistent", False),
+        ):
+            with self.subTest(field=field):
+                invalid = deepcopy(values)
+                invalid[field] = bad_value
+                with self.assertRaises(ValidationError):
+                    QuestionReviewRecord(**invalid)
+
+    def test_approved_rights_rejects_contradictory_access_and_safety_flags(self) -> None:
+        values = valid_rights_kwargs()
+        for field, bad_value in (
+            ("public_access", False),
+            ("paraphrase_only", False),
+            ("no_pii", False),
+            ("no_paid_content", False),
+            ("original_text_present", True),
+            ("answer_present", True),
+        ):
+            with self.subTest(field=field):
+                invalid = deepcopy(values)
+                invalid[field] = bad_value
+                with self.assertRaises(ValidationError):
+                    QuestionRightsRecord(**invalid)
 
 
 if __name__ == "__main__":

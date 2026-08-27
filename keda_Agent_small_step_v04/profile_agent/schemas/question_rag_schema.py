@@ -82,6 +82,14 @@ QUESTION_DIMENSIONS: tuple[str, ...] = (
     "role_dim_05",
     "role_dim_06",
 )
+QuestionDimensionId = Literal[
+    "role_dim_01",
+    "role_dim_02",
+    "role_dim_03",
+    "role_dim_04",
+    "role_dim_05",
+    "role_dim_06",
+]
 DEFAULT_DIMENSION_QUOTAS: dict[str, int] = {
     "role_dim_01": 6,
     "role_dim_02": 5,
@@ -100,6 +108,7 @@ DEFAULT_PRIMARY_MODE_QUOTAS: dict[QuestionMode, int] = {
 }
 CORPUS_ROLE = "ai_agent_engineer"
 CORPUS_ROLE_VERSION = "2026-H2"
+MODE_POLICY_VERSION = "2026-H2"
 CORPUS_AS_OF = date(2026, 8, 27)
 
 
@@ -123,8 +132,8 @@ class InterviewQuestionRecord(BaseModel):
     question_id: str = Field(min_length=1)
     question_text: str = Field(min_length=1)
     role: Literal["ai_agent_engineer"]
-    role_version: str = Field(min_length=1)
-    dimension_id: str = Field(min_length=1)
+    role_version: Literal["2026-H2"]
+    dimension_id: QuestionDimensionId
     skills: list[str] = Field(min_length=1)
     # ``question_mode`` remains the compatibility/wire field.  It is optional
     # only when a v2 caller supplies the additive ``primary_mode`` field.
@@ -194,26 +203,23 @@ class InterviewQuestionRecord(BaseModel):
             raise ValueError("record requires question_mode or primary_mode")
 
         # Keep both names materialized.  This makes the projection explicit
-        # while preserving the old field for existing consumers.
+        # while preserving the old field for existing consumers.  A mismatch
+        # is only tolerated when one side is a derived compatibility value;
+        # two explicitly supplied values must never be silently overwritten.
+        fields_set = self.model_fields_set
+        question_mode_explicit = "question_mode" in fields_set
+        primary_mode_explicit = "primary_mode" in fields_set
         if self.question_mode is None:
             object.__setattr__(self, "question_mode", self.primary_mode)
         if self.primary_mode is None:
             object.__setattr__(self, "primary_mode", self.question_mode)
         if self.question_mode != self.primary_mode:
-            # A v1 ``model_copy(update={"question_mode": ...})`` has no
-            # concept of the additive primary field.  Treat the legacy wire
-            # field as authoritative for that shape so old mutable test and
-            # checkpoint paths continue to validate.  Once a v2 semantic
-            # field is present, a disagreement is an invalid mapping.
-            legacy_shape = (
-                not self.business_constraint
-                and not self.dimension_terms
-                and not self.compatible_modes
-            )
-            if legacy_shape:
+            if question_mode_explicit and primary_mode_explicit:
+                raise ValueError("question_mode and primary_mode must match")
+            if question_mode_explicit:
                 object.__setattr__(self, "primary_mode", self.question_mode)
             else:
-                raise ValueError("question_mode and primary_mode must match")
+                object.__setattr__(self, "question_mode", self.primary_mode)
 
         if len(set(self.compatible_modes)) != len(self.compatible_modes):
             raise ValueError("compatible_modes must not contain duplicates")
@@ -234,6 +240,21 @@ class InterviewQuestionRecord(BaseModel):
         if not self.content_hash.removeprefix("sha256:").strip():
             raise ValueError("content_hash must contain a digest")
         return self
+
+    def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        """Keep derived v2 fields out of the legacy v1 wire projection.
+
+        ``primary_mode`` is materialized in memory for a v1 record, but it was
+        not explicitly supplied by that caller.  Omitting that derived value
+        on serialization lets old ``model_copy(update={"question_mode": ...})``
+        paths round-trip through a strict validation boundary without turning
+        the derived value into a conflicting explicit field.
+        """
+
+        payload = super().model_dump(*args, **kwargs)
+        if "primary_mode" not in self.model_fields_set:
+            payload.pop("primary_mode", None)
+        return payload
 
 
 class QuestionRetrievalIntent(BaseModel):
@@ -544,9 +565,8 @@ class QuestionModePolicy(BaseModel):
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    mode_policy_version: str = Field(
-        default="2026-H2",
-        min_length=1,
+    mode_policy_version: Literal["2026-H2"] = Field(
+        default=MODE_POLICY_VERSION,
         validation_alias=AliasChoices("mode_policy_version", "policy_version"),
     )
     modes: tuple[QuestionMode, ...] = Field(
@@ -756,7 +776,7 @@ class QuestionBankManifest(BaseModel):
         default_factory=lambda: dict(DEFAULT_PRIMARY_MODE_QUOTAS),
         validation_alias=AliasChoices("primary_mode_quotas", "mode_quotas"),
     )
-    mode_policy_version: str = Field(default="2026-H2", min_length=1)
+    mode_policy_version: Literal["2026-H2"] = MODE_POLICY_VERSION
     min_independent_urls: int = 12
     max_questions_per_url: int = 3
     corpus_as_of: date = CORPUS_AS_OF
@@ -867,8 +887,7 @@ class QuestionSourceRegistryEntry(BaseModel):
     publisher: str = ""
     published_at: date | None = None
     verified_at: date
-    accessed_at: date | None = Field(
-        default=None,
+    accessed_at: date = Field(
         validation_alias=AliasChoices("accessed_at", "retrieved_at"),
     )
     trust: QuestionTrustLevel = Field(
@@ -909,6 +928,22 @@ class QuestionSourceRegistryEntry(BaseModel):
             raise ValueError(
                 "date_basis=retrieved_at is required when published_at is missing"
             )
+        if self.source_type == "public_interview_experience":
+            if self.published_at is None:
+                raise ValueError(
+                    "public_interview_experience requires published_at"
+                )
+            if not date(2025, 1, 1) <= self.published_at <= CORPUS_AS_OF:
+                raise ValueError(
+                    "public interview published_at must be between "
+                    "2025-01-01 and 2026-08-27"
+                )
+        elif self.published_at is not None and self.published_at > CORPUS_AS_OF:
+            raise ValueError("published_at must not be after corpus_as_of")
+        if self.published_at is not None and self.published_at > self.accessed_at:
+            raise ValueError("published_at must not be after accessed_at")
+        if self.accessed_at > self.verified_at:
+            raise ValueError("accessed_at must not be after verified_at")
         return self
 
     @property
@@ -1015,6 +1050,47 @@ class QuestionReviewRecord(BaseModel):
         if value is not None and value:
             return _require_non_blank(value, info.field_name)
         return value
+
+    @model_validator(mode="after")
+    def validate_approved_review(self) -> "QuestionReviewRecord":
+        if self.decision != "approved":
+            return self
+        if not self.reviewer_ids and not (self.reviewer and self.reviewer.strip()):
+            raise ValueError("approved review requires reviewer identity")
+        if not self.signal_source_ids:
+            raise ValueError("approved review requires signal evidence")
+        if not self.cross_validation_source_ids:
+            raise ValueError("approved review requires cross-validation evidence")
+        pii_passed = self.pii_scan_passed or self.pii_scan == "passed"
+        if "pii_scan_passed" in self.model_fields_set and not self.pii_scan_passed:
+            pii_passed = False
+        if self.pii_scan in {False, "failed", "unknown"}:
+            pii_passed = False
+        rights_passed = self.rights_review_passed or self.rights_conclusion in {
+            "approved",
+            "clear",
+        }
+        if (
+            "rights_review_passed" in self.model_fields_set
+            and not self.rights_review_passed
+        ):
+            rights_passed = False
+        if self.rights_conclusion and self.rights_conclusion.lower() in {
+            "rejected",
+            "denied",
+            "failed",
+            "unknown",
+        }:
+            rights_passed = False
+        if not self.originality_confirmed:
+            raise ValueError("approved review requires originality confirmation")
+        if not pii_passed:
+            raise ValueError("approved review requires a passed PII check")
+        if not rights_passed:
+            raise ValueError("approved review requires a passed rights check")
+        if not self.difficulty_consistent:
+            raise ValueError("approved review requires difficulty consistency")
+        return self
 
 
 class QuestionReviewSidecar(BaseModel):
@@ -1151,6 +1227,31 @@ class QuestionRightsRecord(BaseModel):
     def validate_rights_notes(cls, value: str) -> str:
         return _require_non_blank(value, "notes") if value else value
 
+    @model_validator(mode="after")
+    def validate_approved_rights(self) -> "QuestionRightsRecord":
+        allow_state = self.public_access is True or self.public_access in {
+            "allowed",
+            "public",
+        }
+        if self.decision != "approved" and not allow_state:
+            return self
+        public_access_allowed = allow_state
+        if not public_access_allowed:
+            raise ValueError("approved rights require public access")
+        if not self.paraphrase_only:
+            raise ValueError("approved rights require paraphrase_only")
+        if self.original_text_present:
+            raise ValueError("approved rights must not contain original text")
+        if self.answer_present:
+            raise ValueError("approved rights must not contain an answer")
+        if not self.no_pii or self.contains_pii is True:
+            raise ValueError("approved rights require no PII")
+        if not self.no_paid_content or self.contains_paid_content is True:
+            raise ValueError("approved rights require no paid content")
+        if not self.originality_confirmed:
+            raise ValueError("approved rights require originality confirmation")
+        return self
+
 
 class QuestionRightsSidecar(BaseModel):
     """Rights sidecar with a unique (question_id, source_id) key."""
@@ -1244,7 +1345,7 @@ class LabeledQuestionIntent(BaseModel):
     intent_id: str = Field(min_length=1)
     role: Literal["ai_agent_engineer"] = CORPUS_ROLE
     role_version: Literal["2026-H2"] = CORPUS_ROLE_VERSION
-    dimension_id: str = Field(min_length=1)
+    dimension_id: QuestionDimensionId
     requested_mode: QuestionMode
     query_text: str = Field(min_length=1)
     gold_question_id: str = Field(min_length=1)
@@ -1284,3 +1385,16 @@ class QuestionCorpusSnapshot(BaseModel):
     dedupe: QuestionDedupeSidecar
     rights: QuestionRightsSidecar
     locator: QuestionLocatorSidecar
+
+    @model_validator(mode="after")
+    def validate_snapshot_records(self) -> "QuestionCorpusSnapshot":
+        if len(self.records) != 30:
+            raise ValueError("snapshot must contain exactly 30 records")
+        record_ids = [record.question_id for record in self.records]
+        if len(record_ids) != len(set(record_ids)):
+            raise ValueError("snapshot record question_id values must be unique")
+        if set(record_ids) != set(self.manifest.question_ids):
+            raise ValueError(
+                "snapshot record question_ids must equal manifest.question_ids"
+            )
+        return self
