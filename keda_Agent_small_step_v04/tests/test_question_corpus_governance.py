@@ -459,6 +459,27 @@ class QuestionCorpusGovernanceTests(unittest.TestCase):
 
         self.assertEqual(canonicalize_source_url(first), canonicalize_source_url(second))
 
+    def test_task6_registry_has_independent_source_capacity_and_date_windows(self) -> None:
+        registry_path = (
+            Path(__file__).parents[1]
+            / "profile_agent/knowledge/question_banks/ai_agent_engineer_2026_h2/QuestionSourceRegistry.json"
+        )
+        registry = QuestionSourceRegistry.model_validate(
+            json.loads(registry_path.read_text(encoding="utf-8"))
+        )
+        interviews = [
+            entry for entry in registry.entries
+            if entry.source_type == "public_interview_experience"
+        ]
+        independent = [entry for entry in registry.entries if entry.source_type != "public_interview_experience"]
+        self.assertGreaterEqual(len(interviews), 10)
+        self.assertGreaterEqual(len(independent), 10)
+        recent_180 = [entry for entry in interviews if entry.published_at and entry.published_at >= date(2026, 2, 28)]
+        recent_365 = [entry for entry in interviews if entry.published_at and entry.published_at >= date(2025, 8, 27)]
+        self.assertGreaterEqual(len(recent_180), 6)
+        self.assertGreaterEqual(len(recent_365), 9)
+        self.assertEqual(len({entry.canonical_url for entry in registry.entries}), len(registry.entries))
+
     def test_validator_rejects_source_taxonomy_and_unsafe_source_page(self) -> None:
         snapshot = self._complete_snapshot()
         source = snapshot.source_registry.entries[0].model_copy(
