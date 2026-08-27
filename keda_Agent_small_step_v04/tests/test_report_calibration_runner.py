@@ -12,7 +12,7 @@ from profile_agent.schemas.report_schema import (
     RubricQuality,
     ScoringBlueprint,
 )
-from profile_agent.services.report_writer_service import fallback_report_narrative
+from profile_agent.services.report_writer_service import fallback_enterprise_copy
 
 
 def _blueprint_for(case) -> ScoringBlueprint:
@@ -90,9 +90,20 @@ class FakeSemanticServices:
         self.calls.append("rubric")
         return self.rubric_matches
 
-    def narrative_writer(self, snapshot, evidences, role_profile):
+    def narrative_writer(
+        self,
+        snapshot,
+        role_profile,
+        evidences,
+        selected_dimension_ids,
+    ):
         self.calls.append("writer")
-        return fallback_report_narrative(snapshot, evidences, role_profile)
+        return fallback_enterprise_copy(
+            snapshot,
+            role_profile,
+            selected_dimension_ids,
+            evidence=evidences,
+        )
 
 
 class ReportCalibrationRunnerTest(unittest.TestCase):

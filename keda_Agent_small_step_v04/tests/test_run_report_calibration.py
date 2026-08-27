@@ -52,7 +52,7 @@ class RunReportCalibrationCliTest(unittest.TestCase):
             artifact_calls.append((root, case.id, len(runs)))
             return root / case.id
 
-        with patch.dict(os.environ, {"MIMO_API_KEY": "test-key"}, clear=False):
+        with patch.dict(os.environ, {"QWEN_API_KEY": "test-key"}, clear=False):
             code = main(
                 ["--case", "C04", "--runs", "3", "--artifact-root", "tmp-artifacts"],
                 runner=fake_runner,
@@ -85,7 +85,7 @@ class RunReportCalibrationCliTest(unittest.TestCase):
             return [FakeRun(case.id, run_number) for run_number in range(1, runs + 1)]
 
         with (
-            patch.dict(os.environ, {"MIMO_API_KEY": "test-key"}, clear=False),
+            patch.dict(os.environ, {"QWEN_API_KEY": "test-key"}, clear=False),
             patch(
                 "run_report_calibration.write_report_calibration_artifacts",
                 return_value=Path("tmp-artifacts"),
@@ -114,7 +114,7 @@ class RunReportCalibrationCliTest(unittest.TestCase):
 
         for value in ("0", "-1"):
             with self.subTest(runs=value):
-                with patch.dict(os.environ, {"MIMO_API_KEY": "test-key"}, clear=False):
+                with patch.dict(os.environ, {"QWEN_API_KEY": "test-key"}, clear=False):
                     code = main(["--case", "C04", "--runs", value], runner=fake_runner)
                 self.assertEqual(code, 2)
 
@@ -124,7 +124,7 @@ class RunReportCalibrationCliTest(unittest.TestCase):
         from run_report_calibration import main
 
         runner = Mock()
-        with patch.dict(os.environ, {"MIMO_API_KEY": "test-key"}, clear=False):
+        with patch.dict(os.environ, {"QWEN_API_KEY": "test-key"}, clear=False):
             code = main(["--case", "C99"], runner=runner)
 
         self.assertEqual(code, 2)
@@ -138,7 +138,7 @@ class RunReportCalibrationCliTest(unittest.TestCase):
 
         output = io.StringIO()
         with (
-            patch.dict(os.environ, {"MIMO_API_KEY": "secret-key"}, clear=False),
+            patch.dict(os.environ, {"QWEN_API_KEY": "secret-key"}, clear=False),
             patch(
                 "run_report_calibration.write_report_calibration_artifacts",
                 return_value=Path("tmp-artifacts"),
@@ -163,7 +163,7 @@ class RunReportCalibrationCliTest(unittest.TestCase):
         runner = Mock()
         output = io.StringIO()
         with (
-            patch.dict(os.environ, {"MIMO_API_KEY": ""}, clear=False),
+            patch.dict(os.environ, {"QWEN_API_KEY": ""}, clear=False),
             patch(
                 "profile_agent.llm.LLM._build_model",
                 side_effect=AssertionError("network access is forbidden in CLI unit tests"),
@@ -175,7 +175,7 @@ class RunReportCalibrationCliTest(unittest.TestCase):
 
         self.assertEqual(code, 2)
         runner.assert_not_called()
-        self.assertIn("MIMO_API_KEY", output.getvalue())
+        self.assertIn("QWEN_API_KEY", output.getvalue())
 
     def test_provider_errors_return_one_without_leaking_api_key(self) -> None:
         from run_report_calibration import main
@@ -193,7 +193,7 @@ class RunReportCalibrationCliTest(unittest.TestCase):
 
                 output = io.StringIO()
                 with (
-                    patch.dict(os.environ, {"MIMO_API_KEY": secret}, clear=False),
+                    patch.dict(os.environ, {"QWEN_API_KEY": secret}, clear=False),
                     patch(
                         "profile_agent.llm.LLM._build_model",
                         side_effect=AssertionError("network access is forbidden in CLI unit tests"),

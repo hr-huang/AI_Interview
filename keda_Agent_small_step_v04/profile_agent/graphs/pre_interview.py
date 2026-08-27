@@ -7,9 +7,13 @@ from profile_agent.nodes.resume_understanding import resume_understanding
 from profile_agent.nodes.job_understanding import job_understanding
 from profile_agent.nodes.competency_modeling import competency_modeling
 from profile_agent.nodes.interview_planner import interview_planner
+from profile_agent.nodes.scoring_blueprint import scoring_blueprint
 
 
-def build_pre_interview_graph():
+def build_pre_interview_graph(
+    *,
+    include_scoring_blueprint: bool = True,
+):
 
     builder = StateGraph(MainState)
 
@@ -71,12 +75,29 @@ def build_pre_interview_graph():
         "interview_planner",
     )
 
-    builder.add_edge(
-        "interview_planner",
-        END,
-    )
+    if include_scoring_blueprint:
+        builder.add_node(
+            "scoring_blueprint",
+            scoring_blueprint,
+        )
+        builder.add_edge(
+            "interview_planner",
+            "scoring_blueprint",
+        )
+        builder.add_edge(
+            "scoring_blueprint",
+            END,
+        )
+    else:
+        builder.add_edge(
+            "interview_planner",
+            END,
+        )
 
     return builder.compile()
 
 
 pre_interview_graph = build_pre_interview_graph()
+pre_interview_draft_graph = build_pre_interview_graph(
+    include_scoring_blueprint=False,
+)

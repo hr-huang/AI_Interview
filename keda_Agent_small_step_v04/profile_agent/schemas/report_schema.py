@@ -8,7 +8,7 @@ snapshot and stores numeric results in ``RequirementScore`` only.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 import math
 from typing import Literal
 
@@ -26,6 +26,12 @@ FitLevel = Literal[
     "有条件匹配",
     "当前匹配度较低",
     "存在明显岗位风险",
+]
+HiringDecisionCode = Literal[
+    "PROCEED",
+    "CONDITIONAL_PROCEED",
+    "INSUFFICIENT_EVIDENCE",
+    "NOT_RECOMMENDED",
 ]
 
 
@@ -278,7 +284,11 @@ class ReportNarrativeDraft(_ReportModel):
     risks: list[NarrativeItem] = Field(default_factory=list)
     unverified_areas: list[NarrativeItem] = Field(default_factory=list)
     fit_contexts: list[NarrativeItem] = Field(default_factory=list)
-    development_actions: list[DevelopmentAction] = Field(default_factory=list)
+    development_actions: list[DevelopmentAction] = Field(
+        default_factory=list,
+        deprecated=True,
+        description="Legacy compatibility projection; use enterprise_assessment instead.",
+    )
 
 
 class InterviewPathStep(_ReportModel):
@@ -289,9 +299,71 @@ class InterviewPathStep(_ReportModel):
     evidence_ids: list[str] = Field(default_factory=list)
 
 
+class CandidateOverview(_ReportModel):
+    candidate_id: str
+    candidate_name: str | None = None
+    target_role: str
+    education_summary: str | None = None
+    experience_summary: str | None = None
+    jd_focus: list[str] = Field(default_factory=list, max_length=5)
+    interview_rounds: int = Field(ge=0)
+    generated_at: datetime
+
+
+class DecisionSignal(_ReportModel):
+    title: str
+    text: str
+    dimension_ids: list[str] = Field(default_factory=list)
+    evidence_ids: list[str] = Field(default_factory=list)
+    confidence: ConfidenceLevel
+
+
+class EvidenceExcerpt(_ReportModel):
+    evidence_id: str
+    turn_id: str
+    conclusion: str
+    quote: str
+    interpretation: str
+    limitation: str
+
+
+class ReinterviewFocus(_ReportModel):
+    priority: int = Field(ge=1, le=3)
+    dimension_id: str
+    dimension_name: str
+    reason: str
+    question: str
+    follow_ups: list[str] = Field(min_length=1, max_length=2)
+    positive_signals: list[str] = Field(min_length=1, max_length=3)
+    risk_signals: list[str] = Field(min_length=1, max_length=3)
+    pass_criteria: list[str] = Field(min_length=1, max_length=3)
+    suggested_minutes: int = Field(ge=3, le=15)
+    related_evidence_ids: list[str] = Field(default_factory=list)
+
+
+class EnterpriseAssessment(_ReportModel):
+    decision: HiringDecisionCode
+    decision_label: str
+    provisional_score: float | None = Field(default=None, ge=0, le=100)
+    confidence: ConfidenceLevel
+    conditions: list[str] = Field(default_factory=list, max_length=3)
+    decision_reasons: list[str] = Field(min_length=1, max_length=3)
+    overall_assessment: str
+    strengths: list[DecisionSignal] = Field(default_factory=list, max_length=3)
+    risks: list[DecisionSignal] = Field(default_factory=list, max_length=3)
+    unknowns: list[DecisionSignal] = Field(default_factory=list, max_length=2)
+    reinterview_plan: list[ReinterviewFocus] = Field(
+        default_factory=list,
+        max_length=3,
+    )
+    evidence_excerpts: list[EvidenceExcerpt] = Field(default_factory=list)
+
+
 class AssessmentReport(_ReportModel):
     target_role: str
     score_snapshot: ScoreSnapshot
     narrative: ReportNarrativeDraft
+    candidate_overview: CandidateOverview
+    enterprise_assessment: EnterpriseAssessment
     interview_path: list[InterviewPathStep] = Field(default_factory=list)
     assessment_limitations: list[str] = Field(default_factory=list)

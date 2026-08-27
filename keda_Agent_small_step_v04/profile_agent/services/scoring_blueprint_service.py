@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from profile_agent.llm import llm
 from profile_agent.schemas.interview_schema import InterviewPlan
 from profile_agent.schemas.report_schema import (
+    RequirementBindingDraft,
     RoleCompetencyProfile,
     ScoringBlueprint,
     ScoringBlueprintDraft,
@@ -30,6 +31,10 @@ Role Dimension，并返回 ScoringBlueprintDraft。你只负责语义绑定，�
 - 每个 Requirement 恰好绑定一次；不能遗漏、重复或新增 Requirement。
 - primary_dimension_id 只能使用输入 Role Profile 中的维度 ID。
 - v1 中 rubric_id 必须严格等于 primary_dimension_id。
+- 选择主要维度时，安全关键约束优先于通用架构表述：Requirement 或所属
+  Target objective 一旦明确考察高风险操作、授权、审批、人工确认或失败恢复，
+  应优先绑定含对应安全/可靠性 rubric 的维度，不能仅因同时出现状态、节点、
+  Agent 架构等泛化词而绑定到通用编排维度。
 - 只输出 ScoringBlueprintDraft；不要输出 ScoringBlueprint、权重、分数、等级、
   覆盖率、置信度或岗位匹配度。
 - 不得评分，不得生成任何数值评分字段。
@@ -129,6 +134,43 @@ def _plan_requirements(plan: InterviewPlan):
     return requirements
 
 
+def _draft_from_planned_dimensions(
+    plan: InterviewPlan,
+    role_profile: RoleCompetencyProfile,
+) -> ScoringBlueprintDraft | None:
+    """Build a draft from Planner metadata when every requirement is annotated."""
+
+    requirements = _plan_requirements(plan)
+    dimension_ids = {dimension.id for dimension in role_profile.dimensions}
+
+    for requirement in requirements:
+        planned_dimension_id = requirement.planned_role_dimension_id
+        if (
+            planned_dimension_id is not None
+            and planned_dimension_id not in dimension_ids
+        ):
+            raise BlueprintValidationError(
+                "不存在的 Role Dimension ID: " + planned_dimension_id
+            )
+
+    if any(
+        requirement.planned_role_dimension_id is None
+        for requirement in requirements
+    ):
+        return None
+
+    return ScoringBlueprintDraft(
+        bindings=[
+            RequirementBindingDraft(
+                requirement_id=requirement.id,
+                primary_dimension_id=requirement.planned_role_dimension_id,
+                rubric_id=requirement.planned_role_dimension_id,
+            )
+            for requirement in requirements
+        ]
+    )
+
+
 def _validate_draft(
     draft: ScoringBlueprintDraft,
     plan: InterviewPlan,
@@ -182,16 +224,18 @@ def build_scoring_blueprint(
 ) -> ScoringBlueprint:
     """Bind every plan Requirement once and normalize weights in Python."""
 
-    response = llm_client.structured(
-        _messages(plan, role_profile),
-        ScoringBlueprintDraft,
-    )
-    try:
-        draft = ScoringBlueprintDraft.model_validate(response)
-    except ValidationError as exc:
-        raise BlueprintValidationError(
-            "LLM 返回的 ScoringBlueprintDraft 无效"
-        ) from exc
+    draft = _draft_from_planned_dimensions(plan, role_profile)
+    if draft is None:
+        response = llm_client.structured(
+            _messages(plan, role_profile),
+            ScoringBlueprintDraft,
+        )
+        try:
+            draft = ScoringBlueprintDraft.model_validate(response)
+        except ValidationError as exc:
+            raise BlueprintValidationError(
+                "LLM 返回的 ScoringBlueprintDraft 无效"
+            ) from exc
 
     _validate_draft(draft, plan, role_profile)
 

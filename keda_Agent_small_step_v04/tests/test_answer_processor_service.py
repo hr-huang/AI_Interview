@@ -33,6 +33,16 @@ class FakeLLM:
         return self.assessment
 
 
+class SequencedFakeLLM:
+    def __init__(self, assessments: list[TurnAssessment]) -> None:
+        self.assessments = iter(assessments)
+        self.calls: list[tuple[list[tuple[str, str]], type[object]]] = []
+
+    def structured(self, messages, schema):
+        self.calls.append((messages, schema))
+        return next(self.assessments)
+
+
 class AnswerProcessorServiceTest(unittest.TestCase):
     def setUp(self) -> None:
         self.plan = InterviewPlan(
@@ -113,7 +123,7 @@ class AnswerProcessorServiceTest(unittest.TestCase):
             polarity=polarity,
             strength=strength,
             observation="回答给出了可核验的设计事实。",
-            source_excerpt="我会先定义状态，再处理并行节点。",
+            source_excerpt="我会先定义状态",
         )
 
     def requirement(
@@ -151,6 +161,33 @@ class AnswerProcessorServiceTest(unittest.TestCase):
         progress = result.runtime_state.requirement_progress[REQ_01]
         self.assertEqual(progress.status, "sufficient")
         self.assertEqual(progress.supporting_evidence_ids, ["evidence_001"])
+
+    def test_prompt_pins_turn_assessment_field_names_and_enums(self) -> None:
+        fake_llm = FakeLLM(
+            self.assessment(
+                drafts=[self.draft(requirements=[REQ_01])],
+                requirements=[self.requirement(REQ_01)],
+            )
+        )
+
+        process_answer(
+            self.plan,
+            self.runtime,
+            self.turn,
+            [],
+            llm_client=fake_llm,
+        )
+
+        prompt = "\n".join(content for _, content in fake_llm.calls[0][0])
+        self.assertIn('根对象必须严格包含 answer_relevance、evidence_drafts、requirement_assessments', prompt)
+        self.assertIn('EvidenceDraft 字段只能是 requirement_ids、related_claim_ids、polarity、strength、observation、source_excerpt', prompt)
+        self.assertIn('RequirementAssessment 字段只能是 requirement_id、recommended_status、rationale', prompt)
+        self.assertIn('strength 只能是 weak、medium、strong', prompt)
+        self.assertIn('不要生成 evidence_id、content、status、coverage_notes、overall_notes', prompt)
+        self.assertIn('无法归属到任何 requirement 时，evidence_drafts 和 requirement_assessments 都返回空数组', prompt)
+        self.assertIn('recommended_status 必须使用 contradictory，绝不能使用 contradicting', prompt)
+        self.assertIn('source_excerpt 必须逐字复制回答中的一段连续原文', prompt)
+        self.assertIn('禁止使用省略号、改写或拼接', prompt)
 
     def test_one_evidence_can_update_multiple_requirements(self) -> None:
         fake_llm = FakeLLM(
@@ -225,7 +262,7 @@ class AnswerProcessorServiceTest(unittest.TestCase):
                 llm_client=fake_llm,
             )
 
-        self.assertEqual(len(fake_llm.calls), 1)
+        self.assertEqual(len(fake_llm.calls), 2)
 
     def test_unknown_claim_reference_is_rejected(self) -> None:
         fake_llm = FakeLLM(
@@ -278,6 +315,109 @@ class AnswerProcessorServiceTest(unittest.TestCase):
                 [],
                 llm_client=fake_llm,
             )
+
+    def test_semantic_validation_failure_is_retried_once_with_exact_reason(self) -> None:
+        invalid = self.assessment(
+            drafts=[self.draft(requirements=[REQ_01])],
+            requirements=[self.requirement(REQ_02)],
+        )
+        valid = self.assessment(
+            drafts=[self.draft(requirements=[REQ_01])],
+            requirements=[self.requirement(REQ_01)],
+        )
+        fake_llm = SequencedFakeLLM([invalid, valid])
+
+        result = process_answer(
+            self.plan,
+            self.runtime,
+            self.turn,
+            [],
+            llm_client=fake_llm,
+        )
+
+        self.assertEqual(len(fake_llm.calls), 2)
+        correction_prompt = fake_llm.calls[1][0][-1][1]
+        self.assertIn("上一轮 TurnAssessment 未通过业务校验", correction_prompt)
+        self.assertIn("RequirementAssessment 没有本轮 linked evidence", correction_prompt)
+        self.assertEqual(result.new_evidences[0].requirement_ids, [REQ_01])
+
+    def test_cross_target_evidence_is_retried_before_persistence(self) -> None:
+        other_requirement_id = "target_02_req_01"
+        plan = self.plan.model_copy(
+            update={
+                "targets": [
+                    *self.plan.targets,
+                    AssessmentTarget(
+                        id="target_02",
+                        objective="验证可靠性设计能力",
+                        target_type="debugging",
+                        competency_ids=["competency_02"],
+                        evidence_requirements=[
+                            EvidenceRequirement(
+                                id=other_requirement_id,
+                                description="能够解释失败恢复",
+                            )
+                        ],
+                        related_claim_ids=[],
+                        priority="medium",
+                        must_cover=False,
+                        time_budget_minutes=5,
+                        preferred_modes=["scenario"],
+                    ),
+                ]
+            }
+        )
+        invalid = self.assessment(
+            drafts=[self.draft(requirements=[other_requirement_id])],
+            requirements=[self.requirement(other_requirement_id)],
+        )
+        valid = self.assessment(
+            drafts=[self.draft(requirements=[REQ_01])],
+            requirements=[self.requirement(REQ_01)],
+        )
+        fake_llm = SequencedFakeLLM([invalid, valid])
+
+        result = process_answer(
+            plan,
+            initialize_runtime_state(plan),
+            self.turn,
+            [],
+            llm_client=fake_llm,
+        )
+
+        self.assertEqual(len(fake_llm.calls), 2)
+        self.assertIn("不属于当前 turn target", fake_llm.calls[1][0][-1][1])
+        self.assertEqual(result.new_evidences[0].requirement_ids, [REQ_01])
+
+    def test_non_verbatim_excerpt_is_retried_before_evidence_is_persisted(self) -> None:
+        invalid_draft = self.draft(requirements=[REQ_01]).model_copy(
+            update={"source_excerpt": "我会先定义状态...再处理节点"}
+        )
+        valid_draft = self.draft(requirements=[REQ_01])
+        fake_llm = SequencedFakeLLM(
+            [
+                self.assessment(
+                    drafts=[invalid_draft],
+                    requirements=[self.requirement(REQ_01)],
+                ),
+                self.assessment(
+                    drafts=[valid_draft],
+                    requirements=[self.requirement(REQ_01)],
+                ),
+            ]
+        )
+
+        result = process_answer(
+            self.plan,
+            self.runtime,
+            self.turn,
+            [],
+            llm_client=fake_llm,
+        )
+
+        self.assertEqual(len(fake_llm.calls), 2)
+        self.assertIn("source_excerpt 不是回答中的连续原文", fake_llm.calls[1][0][-1][1])
+        self.assertEqual(result.new_evidences[0].source_excerpt, "我会先定义状态")
 
     def test_empty_or_unanswered_turn_is_rejected_before_model_call(self) -> None:
         for answer in (None, "   "):

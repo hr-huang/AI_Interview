@@ -33,26 +33,26 @@ def _validate_provider_config() -> None:
 
     load_dotenv()
 
-    api_key = os.getenv("MIMO_API_KEY", "").strip()
+    api_key = os.getenv("QWEN_API_KEY", "").strip()
     if not api_key:
         raise ValueError(
-            "未配置 MIMO_API_KEY；请在现有环境或项目根目录 .env 中配置。"
+            "未配置 QWEN_API_KEY；请在现有环境或项目根目录 .env 中配置。"
         )
 
-    model = os.getenv("MIMO_MODEL", "mimo-v2.5").strip()
-    base_url = os.getenv(
-        "MIMO_BASE_URL", "https://api.xiaomimimo.com/v1"
-    ).strip()
+    model = os.getenv("QWEN_MODEL", "").strip() or "qwen3.8-max"
+    base_url = os.getenv("QWEN_BASE_URL", "").strip() or (
+        "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    )
     if not model:
-        raise ValueError("MIMO_MODEL 不能为空。")
+        raise ValueError("QWEN_MODEL 不能为空。")
     if not base_url:
-        raise ValueError("MIMO_BASE_URL 不能为空。")
+        raise ValueError("QWEN_BASE_URL 不能为空。")
 
     numeric_defaults = {
         "LLM_TEMPERATURE": "0.2",
         "LLM_MAX_TOKENS": "8192",
         "LLM_TOP_P": "0.95",
-        "LLM_TIMEOUT": "120",
+        "QWEN_TIMEOUT": "600",
     }
     for name, default in numeric_defaults.items():
         raw_value = os.getenv(name, default).strip()
@@ -69,14 +69,15 @@ def _safe_error_message(error: BaseException) -> str:
     """Return actionable error text with the configured key redacted."""
 
     detail = str(error).strip()
-    configured_key = os.getenv("MIMO_API_KEY", "").strip()
-    if configured_key:
-        detail = detail.replace(configured_key, "[REDACTED]")
+    for variable in ("QWEN_API_KEY", "MIMO_API_KEY", "DEEPSEEK_API_KEY"):
+        configured_key = os.getenv(variable, "").strip()
+        if configured_key:
+            detail = detail.replace(configured_key, "[REDACTED]")
     return detail or type(error).__name__
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="运行真实 MiMo 报告校准")
+    parser = argparse.ArgumentParser(description="运行真实 Qwen3.8 Max 报告校准")
     parser.add_argument(
         "--case",
         choices=CASE_CHOICES,

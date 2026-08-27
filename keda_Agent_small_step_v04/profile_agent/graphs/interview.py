@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import datetime, timezone
+import inspect
 from typing import Any
 
 from langgraph.checkpoint.memory import InMemorySaver
@@ -22,6 +23,9 @@ from profile_agent.schemas.interview_schema import (
     GeneratedQuestion,
 )
 from profile_agent.schemas.report_schema import AssessmentReport
+from profile_agent.schemas.question_rag_schema import (
+    QuestionRetrievalResult,
+)
 from profile_agent.schemas.runtime_schema import (
     AnswerProcessingResult,
     InterviewTurn,
@@ -31,6 +35,9 @@ from profile_agent.services.assessment_report_service import (
     generate_assessment_report,
 )
 from profile_agent.services.question_generator_service import generate_question
+from profile_agent.services.question_retrieval_service import (
+    build_question_retrieval_intent,
+)
 from profile_agent.services.runtime_state_service import (
     initialize_runtime_state,
     record_question_asked,
@@ -40,10 +47,15 @@ from profile_agent.services.supervisor_service import (
     build_supervisor_context,
     decide_next_action,
 )
+from profile_agent.state.checkpoint_serialization import (
+    InterviewCheckpointSerializer,
+    install_interview_checkpoint_serializer,
+)
 from profile_agent.state.main_state import MainState
 
 
 QuestionGenerator = Callable[..., GeneratedQuestion]
+QuestionRetrieverCallable = Callable[..., QuestionRetrievalResult]
 AnswerProcessor = Callable[..., AnswerProcessingResult]
 ReportGenerator = Callable[..., AssessmentReport]
 NowProvider = Callable[[], datetime]
@@ -67,6 +79,47 @@ def _as_answer_processing_result(
     return AnswerProcessingResult.model_validate(value)
 
 
+def _as_question_retrieval_result(
+    value: QuestionRetrievalResult | Any,
+) -> QuestionRetrievalResult:
+    if isinstance(value, QuestionRetrievalResult):
+        return value
+    return QuestionRetrievalResult.model_validate(value)
+
+
+def _call_question_generator(
+    question_generator: QuestionGenerator,
+    *,
+    action: AskAction,
+    plan: Any,
+    claim_registry: Any,
+    recent_turns: list[InterviewTurn],
+    retrieval_result: QuestionRetrievalResult,
+) -> GeneratedQuestion | Any:
+    """Call injected generators without breaking legacy narrow test doubles."""
+
+    kwargs: dict[str, Any] = {
+        "action": action,
+        "plan": plan,
+        "claim_registry": claim_registry,
+        "recent_turns": recent_turns,
+    }
+    try:
+        parameters = inspect.signature(question_generator).parameters
+    except (TypeError, ValueError):
+        parameters = {}
+
+    if "retrieval_result" in parameters or any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters.values()
+    ):
+        kwargs["retrieval_result"] = retrieval_result
+    elif "question_retrieval_result" in parameters:
+        kwargs["question_retrieval_result"] = retrieval_result
+
+    return question_generator(**kwargs)
+
+
 def _turn_by_id(turns: list[InterviewTurn], turn_id: str) -> tuple[int, InterviewTurn]:
     for index, turn in enumerate(turns):
         if turn.id == turn_id:
@@ -80,6 +133,8 @@ def build_interview_graph(
     checkpointer: Any | None = None,
     now_provider: NowProvider | None = None,
     report_generator: ReportGenerator | None = None,
+    *,
+    question_retriever: QuestionRetrieverCallable | Any | None = None,
 ):
     """Build the interruptible interview graph.
 
@@ -102,7 +157,77 @@ def build_interview_graph(
         else report_generator
     )
     now_provider = _utc_now if now_provider is None else now_provider
-    checkpointer = InMemorySaver() if checkpointer is None else checkpointer
+    if checkpointer is None:
+        checkpointer = InMemorySaver(serde=InterviewCheckpointSerializer())
+    else:
+        checkpointer = install_interview_checkpoint_serializer(checkpointer)
+
+    def retrieve_question_node(state: MainState) -> dict[str, Any]:
+        """Resolve and execute exactly one retrieval attempt for an AskAction."""
+
+        action = state.get("next_action")
+        if not isinstance(action, AskAction):
+            raise ValueError("retrieve_question 节点需要 AskAction")
+
+        # Missing provider/index configuration is an intentional lazy no-op.
+        # No client construction happens while building or starting the graph.
+        if question_retriever is None:
+            return {
+                "question_retrieval_result": QuestionRetrievalResult(
+                    status="unavailable"
+                )
+            }
+
+        turns = list(state.get("interview_turns") or [])
+        evidence_summaries: list[str] = []
+        for evidence in list(state.get("evidences") or []):
+            observation = getattr(evidence, "observation", None)
+            source_excerpt = getattr(evidence, "source_excerpt", None)
+            if observation:
+                evidence_summaries.append(str(observation))
+            if source_excerpt and source_excerpt != observation:
+                evidence_summaries.append(str(source_excerpt))
+
+        excluded_question_ids: list[str] = []
+        for turn in turns:
+            trace = getattr(turn, "retrieval_trace", None)
+            question_id = getattr(trace, "question_id", None)
+            if question_id:
+                excluded_question_ids.append(str(question_id))
+
+        # Intent construction is deliberately outside the provider/store
+        # failure boundary: malformed Plan/Action data remains a programming
+        # error instead of being silently treated as a retrieval miss.
+        intent = build_question_retrieval_intent(
+            action=action,
+            plan=state["interview_plan"],
+            resume_profile=state.get("resume_profile"),
+            job_profile=state.get("job_profile"),
+            recent_turns=turns,
+            evidence_summaries=evidence_summaries,
+            excluded_question_ids=excluded_question_ids,
+        )
+
+        try:
+            retrieve = getattr(question_retriever, "retrieve", None)
+            if not callable(retrieve):
+                if not callable(question_retriever):
+                    raise TypeError("question retriever must provide retrieve")
+                retrieve = question_retriever
+
+            result = retrieve(intent)
+            return {
+                "question_retrieval_result": _as_question_retrieval_result(result)
+            }
+        except Exception:
+            # Provider/index failures are non-fatal to the candidate interview;
+            # the generator receives the honest unavailable status and keeps
+            # its legacy prompt.
+            return {
+                "question_retrieval_result": QuestionRetrievalResult(
+                    status="unavailable"
+                )
+            }
 
     def initialize_interview(state: MainState) -> dict[str, Any]:
         runtime_state = state.get("runtime_state")
@@ -154,12 +279,18 @@ def build_interview_graph(
         plan = state["interview_plan"]
         runtime_state = state["runtime_state"]
         now = now_provider()
+        retrieval_result = _as_question_retrieval_result(
+            state.get("question_retrieval_result")
+            or QuestionRetrievalResult(status="unavailable")
+        )
         question = _as_generated_question(
-            question_generator(
+            _call_question_generator(
+                question_generator,
                 action=action,
                 plan=plan,
                 claim_registry=state.get("claim_registry"),
                 recent_turns=list(state.get("interview_turns") or []),
+                retrieval_result=retrieval_result,
             )
         )
         question_text = question.text.strip()
@@ -176,6 +307,7 @@ def build_interview_graph(
             question=question_text,
             answer=None,
             asked_at=now,
+            retrieval_trace=retrieval_result.retrieval_trace,
         )
         # The runtime update is made in the same node as the persisted
         # unanswered turn, before control reaches the interrupt node.
@@ -194,6 +326,10 @@ def build_interview_graph(
             "interview_turns": turns,
             "current_question": GeneratedQuestion(text=question_text),
             "current_turn_id": turn.id,
+            # The selected record and ranking metadata are needed only for this
+            # generator invocation; the private trace on InterviewTurn is the
+            # durable provenance boundary.
+            "question_retrieval_result": None,
         }
 
     def wait_for_answer(state: MainState) -> dict[str, Any]:
@@ -254,6 +390,10 @@ def build_interview_graph(
             evidences=list(state.get("evidences") or []),
             claim_registry=state.get("claim_registry"),
             target_role=state.get("target_role"),
+            scoring_blueprint=state.get("scoring_blueprint"),
+            candidate_id=state.get("assessment_id", "未提供"),
+            resume_profile=state.get("resume_profile"),
+            job_profile=state.get("job_profile"),
         )
         return {"assessment_report": AssessmentReport.model_validate(report)}
 
@@ -268,6 +408,7 @@ def build_interview_graph(
     builder = StateGraph(MainState)
     builder.add_node("initialize_interview", initialize_interview)
     builder.add_node("supervisor", supervisor)
+    builder.add_node("retrieve_question", retrieve_question_node)
     builder.add_node("generate_question", generate_question_node)
     builder.add_node("wait_for_answer", wait_for_answer)
     builder.add_node("process_answer", process_answer_node)
@@ -279,10 +420,11 @@ def build_interview_graph(
         "supervisor",
         route_after_supervisor,
         {
-            "ask": "generate_question",
+            "ask": "retrieve_question",
             "finish": "generate_report",
         },
     )
+    builder.add_edge("retrieve_question", "generate_question")
     builder.add_edge("generate_question", "wait_for_answer")
     builder.add_edge("wait_for_answer", "process_answer")
     builder.add_edge("process_answer", "supervisor")

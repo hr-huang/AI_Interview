@@ -45,6 +45,15 @@ def _plan_claim_ids(plan: InterviewPlan) -> set[str]:
     }
 
 
+def _target_requirement_ids(plan: InterviewPlan, target_id: str) -> set[str]:
+    for target in plan.targets:
+        if target.id == target_id:
+            return {
+                requirement.id for requirement in target.evidence_requirements
+            }
+    raise ValueError(f"InterviewTurn 引用了不存在的 target_id: {target_id}")
+
+
 def _known_claim_ids(
     plan: InterviewPlan,
     claim_registry: ClaimRegistry | None,
@@ -93,9 +102,22 @@ def _build_messages(
 请只根据本轮候选人回答提取结构化 Evidence，并评估本轮实际覆盖的
 Evidence Requirement。evidence_drafts 中的一个 Evidence 可以同时关联多个
 requirement_id。只能引用输入中存在的 requirement_id 和 claim_id；不要编造 ID。
+只能关联 Current InterviewTurn.target_id 所属 target 下的 requirement_id，
+不能把本轮 Evidence 关联到其他 target。
 每个 requirement_assessment 都必须能被本轮至少一个 evidence_draft 的
 requirement_ids 直接关联。recommended_status 只能使用 in_progress、sufficient、
 contradictory；即使强反向证据存在，也可以根据整体评估返回 sufficient。
+
+输出 JSON 契约：
+- 根对象必须严格包含 answer_relevance、evidence_drafts、requirement_assessments；
+- answer_relevance 只能是 low、medium、high；
+- EvidenceDraft 字段只能是 requirement_ids、related_claim_ids、polarity、strength、observation、source_excerpt；
+- source_excerpt 必须逐字复制回答中的一段连续原文；禁止使用省略号、改写或拼接不同片段；
+- polarity 只能是 supporting、contradicting；strength 只能是 weak、medium、strong；
+- RequirementAssessment 字段只能是 requirement_id、recommended_status、rationale；
+- 注意两个相近枚举不要混淆：EvidenceDraft.polarity 使用 contradicting；recommended_status 必须使用 contradictory，绝不能使用 contradicting；
+- 无法归属到任何 requirement 时，evidence_drafts 和 requirement_assessments 都返回空数组；这也适用于只重复与当前要求无关经历的回答。绝不能生成 requirement_ids 为空的 EvidenceDraft，也不要用 not_started 作为 recommended_status；
+- 不要生成 evidence_id、content、status、coverage_notes、overall_notes，也不要增加外层包装。
 """.strip(),
         ),
         (
@@ -117,13 +139,28 @@ contradictory；即使强反向证据存在，也可以根据整体评估返回 
 def _validate_assessment(
     assessment: TurnAssessment,
     requirement_ids: set[str],
+    allowed_requirement_ids: set[str],
     known_claim_ids: set[str],
+    answer_text: str,
 ) -> None:
     for draft in assessment.evidence_drafts:
+        if draft.source_excerpt not in answer_text:
+            raise ValueError(
+                "Evidence source_excerpt 不是回答中的连续原文: "
+                f"{draft.source_excerpt}"
+            )
         unknown_requirements = set(draft.requirement_ids) - requirement_ids
         if unknown_requirements:
             unknown = ", ".join(sorted(unknown_requirements))
             raise ValueError(f"Evidence 引用了不存在的 requirement_id: {unknown}")
+        cross_target_requirements = (
+            set(draft.requirement_ids) - allowed_requirement_ids
+        )
+        if cross_target_requirements:
+            invalid = ", ".join(sorted(cross_target_requirements))
+            raise ValueError(
+                "Evidence requirement 不属于当前 turn target: " + invalid
+            )
 
         unknown_claims = set(draft.related_claim_ids) - known_claim_ids
         if unknown_claims:
@@ -175,6 +212,7 @@ def process_answer(
         raise ValueError("InterviewTurn 的回答不能为空或未回答")
 
     requirement_ids = _plan_requirement_ids(plan)
+    allowed_requirement_ids = _target_requirement_ids(plan, turn.target_id)
     if turn.primary_requirement_id not in requirement_ids:
         raise ValueError(
             "InterviewTurn 引用了不存在的 requirement_id: "
@@ -188,14 +226,36 @@ def process_answer(
         existing_evidences=existing_evidences,
         claim_registry=claim_registry,
     )
-    raw_assessment = llm_client.structured(messages, TurnAssessment)
-    assessment = TurnAssessment.model_validate(raw_assessment)
-
-    _validate_assessment(
-        assessment=assessment,
-        requirement_ids=requirement_ids,
-        known_claim_ids=_known_claim_ids(plan, claim_registry),
-    )
+    known_claim_ids = _known_claim_ids(plan, claim_registry)
+    correction: ValueError | None = None
+    for semantic_attempt in range(2):
+        attempt_messages = messages
+        if correction is not None:
+            attempt_messages = messages + [
+                (
+                    "human",
+                    "上一轮 TurnAssessment 未通过业务校验："
+                    f"{correction}。请修正后重新生成；每个 "
+                    "requirement_assessment 必须由本轮 evidence_drafts 中至少一个 "
+                    "Evidence 的 requirement_ids 直接关联。只返回 JSON。",
+                )
+            ]
+        raw_assessment = llm_client.structured(attempt_messages, TurnAssessment)
+        assessment = TurnAssessment.model_validate(raw_assessment)
+        try:
+            _validate_assessment(
+                assessment=assessment,
+                requirement_ids=requirement_ids,
+                allowed_requirement_ids=allowed_requirement_ids,
+                known_claim_ids=known_claim_ids,
+                answer_text=turn.answer,
+            )
+        except ValueError as error:
+            if semantic_attempt == 1:
+                raise
+            correction = error
+        else:
+            break
 
     next_number = _next_evidence_number(existing_evidences)
     new_evidences: list[Evidence] = []

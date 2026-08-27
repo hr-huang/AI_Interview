@@ -23,16 +23,18 @@ from profile_agent.schemas.interview_schema import (
 )
 from profile_agent.schemas.job_schema import JobProfile
 from profile_agent.schemas.resume_schema import ResumeProfile
-from profile_agent.schemas.report_schema import AssessmentReport
+from profile_agent.schemas.report_schema import AssessmentReport, ScoringBlueprint
 from profile_agent.schemas.runtime_schema import (
     Evidence,
     InterviewRuntimeState,
     InterviewTurn,
 )
+from profile_agent.schemas.question_rag_schema import QuestionRetrievalResult
 
 
 class MainState(TypedDict, total=False):
     # 1) API/前端传入的原始输入
+    assessment_id: str
     resume_text: str
     jd_text: str | None
     target_role: str
@@ -56,6 +58,7 @@ class MainState(TypedDict, total=False):
     # 没有则 Node 默认 30.
 
     interview_plan: InterviewPlan
+    scoring_blueprint: ScoringBlueprint
 
     # 6) 动态面试运行状态
     # 在候选人真正开始面试时初始化，不在 Pre-Interview Graph 中启动计时。
@@ -65,6 +68,9 @@ class MainState(TypedDict, total=False):
     next_action: InterviewAction
     current_question: GeneratedQuestion | None
     current_turn_id: str | None
+    # Transient hand-off between retrieve_question and generate_question.  The
+    # selected result is copied into the private turn trace, then cleared.
+    question_retrieval_result: QuestionRetrievalResult | None
 
     # 7) 面试结束后的最终评估报告
     assessment_report: AssessmentReport

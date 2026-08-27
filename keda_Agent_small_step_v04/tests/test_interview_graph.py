@@ -14,6 +14,9 @@ from profile_agent.schemas.interview_schema import (
     GeneratedQuestion,
     InterviewPlan,
 )
+from profile_agent.schemas.job_schema import JobProfile, JobRequirement
+from profile_agent.schemas.report_schema import ScoringBlueprint
+from profile_agent.schemas.resume_schema import ResumeProfile
 from profile_agent.schemas.runtime_schema import (
     AnswerProcessingResult,
     Evidence,
@@ -31,6 +34,7 @@ class InterviewGraphTest(unittest.TestCase):
         self.question_calls: list[AskAction] = []
         self.answer_calls: list[InterviewTurn] = []
         self.events: list[str] = []
+        self.report_calls: list[dict] = []
 
     def make_plan(self) -> InterviewPlan:
         return InterviewPlan(
@@ -77,8 +81,16 @@ class InterviewGraphTest(unittest.TestCase):
 
     def make_initial_state(self) -> dict:
         return {
+            "assessment_id": "ast_001",
             "interview_plan": self.make_plan(),
             "claim_registry": ClaimRegistry(),
+            "resume_profile": ResumeProfile(education=["本科：计算机科学与技术"]),
+            "job_profile": JobProfile(
+                role="AI 应用工程师",
+                requirements=[
+                    JobRequirement(name="Agent Workflow", description="状态与工具边界")
+                ],
+            ),
         }
 
     def question_generator(
@@ -135,7 +147,41 @@ class InterviewGraphTest(unittest.TestCase):
         )
 
     def report_generator(self, **kwargs):
+        self.report_calls.append(kwargs)
         return make_test_report(kwargs.get("target_role") or "测试岗位")
+
+    def test_report_generator_receives_frozen_blueprint_from_initial_state(self) -> None:
+        blueprint = ScoringBlueprint(
+            role_family="ai_application_engineering",
+            role_profile_version="2026-H2",
+            bindings=[],
+        )
+        initial_state = self.make_initial_state()
+        initial_state["scoring_blueprint"] = blueprint
+        graph = self.build_graph()
+        config = self.config("report-blueprint")
+
+        graph.invoke(initial_state, config)
+        graph.invoke(Command(resume="strong answer"), config)
+
+        self.assertEqual(len(self.report_calls), 1)
+        self.assertIn("scoring_blueprint", self.report_calls[0])
+        self.assertEqual(
+            self.report_calls[0]["scoring_blueprint"].model_dump(),
+            blueprint.model_dump(),
+        )
+
+    def test_report_generator_receives_assessment_and_candidate_context(self) -> None:
+        graph = self.build_graph()
+        config = self.config("report-context")
+
+        graph.invoke(self.make_initial_state(), config)
+        graph.invoke(Command(resume="strong answer"), config)
+
+        call = self.report_calls[0]
+        self.assertEqual(call["candidate_id"], "ast_001")
+        self.assertIn("本科", call["resume_profile"].education[0])
+        self.assertTrue(call["job_profile"].requirements)
 
     @staticmethod
     def config(thread_id: str) -> dict:
@@ -165,6 +211,23 @@ class InterviewGraphTest(unittest.TestCase):
         self.assertIsNone(state["interview_turns"][0].answer)
         self.assertEqual(len(self.question_calls), 1)
         self.assertEqual(len(self.answer_calls), 0)
+
+    def test_default_retrieval_degrades_without_provider_and_keeps_trace_private(self) -> None:
+        graph = self.build_graph()
+        config = self.config("default-retrieval-unavailable")
+
+        result = graph.invoke(self.make_initial_state(), config)
+        payload = self.interrupt_payload(result)
+        state = graph.get_state(config).values
+        edges = {(edge.source, edge.target) for edge in graph.get_graph().edges}
+
+        self.assertIn(("supervisor", "retrieve_question"), edges)
+        self.assertIn(("retrieve_question", "generate_question"), edges)
+        self.assertEqual(
+            state["interview_turns"][0].retrieval_trace.status,
+            "unavailable",
+        )
+        self.assertNotIn("retrieval_trace", payload)
 
     def test_resume_answers_same_turn_and_processes_before_next_decision(self) -> None:
         graph = self.build_graph()

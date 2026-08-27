@@ -33,6 +33,16 @@ class FakeLLM:
         return self.response
 
 
+class SequencedFakeLLM:
+    def __init__(self, responses: list[RubricMatchBatch]) -> None:
+        self.responses = iter(responses)
+        self.calls: list[tuple[list[tuple[str, str]], type[object]]] = []
+
+    def structured(self, messages, schema):
+        self.calls.append((messages, schema))
+        return next(self.responses)
+
+
 def make_plan() -> InterviewPlan:
     return InterviewPlan(
         duration_minutes=30,
@@ -281,6 +291,30 @@ class RubricMatcherServiceTest(unittest.TestCase):
             self.call_service(
                 RubricMatchBatch(matches=[make_match(evidence_id="ev_missing")])
             )
+
+    def test_invalid_match_ids_are_retried_once_with_exact_reason(self) -> None:
+        plan, blueprint, role_profile, turns, evidence = make_inputs()
+        fake_llm = SequencedFakeLLM(
+            [
+                RubricMatchBatch(
+                    matches=[make_match(evidence_id="turn_01")]
+                ),
+                RubricMatchBatch(matches=[make_match()]),
+            ]
+        )
+
+        result = match_evidence_to_rubric(
+            plan,
+            blueprint,
+            role_profile,
+            turns,
+            evidence,
+            fake_llm,
+        )
+
+        self.assertEqual(len(fake_llm.calls), 2)
+        self.assertIn("不存在的 evidence_id", fake_llm.calls[1][0][-1][1])
+        self.assertEqual(result.matches[0].evidence_id, "ev_01")
 
     def test_unknown_requirement_id_is_rejected(self) -> None:
         with self.assertRaises(RubricMatchValidationError):

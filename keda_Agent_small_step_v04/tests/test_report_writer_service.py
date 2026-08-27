@@ -10,6 +10,7 @@ from profile_agent.schemas.report_schema import (
     ReportNarrativeDraft,
     RequirementEvidenceAssessment,
     RequirementScore,
+    ReinterviewFocus,
     RoleCompetencyProfile,
     RubricCriterion,
     RubricQuality,
@@ -18,10 +19,14 @@ from profile_agent.schemas.report_schema import (
 )
 from profile_agent.schemas.runtime_schema import Evidence
 from profile_agent.services.report_writer_service import (
+    EnterpriseCopyDraft,
     GroundingValidationError,
     fallback_report_narrative,
+    fallback_enterprise_copy,
+    write_enterprise_copy,
     write_report_narrative,
 )
+from profile_agent.services.role_profile_service import load_role_profile
 
 
 class FakeLLM:
@@ -265,6 +270,40 @@ def make_draft(
     )
 
 
+def make_enterprise_copy_draft() -> EnterpriseCopyDraft:
+    return EnterpriseCopyDraft(
+        overall_assessment="当前已有可核验片段，复试需要补充两个独立场景。",
+        reinterview_plan=[
+            ReinterviewFocus(
+                priority=1,
+                dimension_id="role_dim_01",
+                dimension_name="AI应用与Agent编排",
+                reason="需要核验边界设计。",
+                question="请说明一次状态与工具边界的设计取舍。",
+                follow_ups=["当工具失败时如何处理？"],
+                positive_signals=["能明确状态边界。"],
+                risk_signals=["只描述流程而没有边界。"],
+                pass_criteria=["能说明输入、边界和验证方式。"],
+                suggested_minutes=8,
+                related_evidence_ids=["ev_support"],
+            ),
+            ReinterviewFocus(
+                priority=2,
+                dimension_id="role_dim_02",
+                dimension_name="业务理解与任务建模",
+                reason="需要核验任务建模。",
+                question="请把一个业务目标拆成可验收任务。",
+                follow_ups=["如何定义成功？"],
+                positive_signals=["能给出验收标准。"],
+                risk_signals=["目标与输出无法对应。"],
+                pass_criteria=["能说清输入、输出和边界。"],
+                suggested_minutes=7,
+                related_evidence_ids=["ev_support"],
+            ),
+        ],
+    )
+
+
 class ReportWriterServiceTest(unittest.TestCase):
     def setUp(self) -> None:
         self.snapshot = make_snapshot()
@@ -281,6 +320,207 @@ class ReportWriterServiceTest(unittest.TestCase):
         self.assertEqual(len(fake_llm.calls), 1)
         self.assertIs(fake_llm.calls[0][1], ReportNarrativeDraft)
         self.assertEqual(result.model_dump(), make_draft().model_dump())
+
+    def test_enterprise_writer_calls_structured_llm_once_with_copy_contract(self) -> None:
+        fake_llm = FakeLLM(make_enterprise_copy_draft())
+
+        result = write_enterprise_copy(
+            self.snapshot,
+            self.role_profile,
+            self.evidence,
+            ["role_dim_01", "role_dim_02"],
+            llm_client=fake_llm,
+        )
+
+        self.assertEqual(len(fake_llm.calls), 1)
+        self.assertIs(fake_llm.calls[0][1], EnterpriseCopyDraft)
+        self.assertEqual(
+            result.reinterview_plan,
+            make_enterprise_copy_draft().reinterview_plan,
+        )
+        self.assertIn("复试", result.overall_assessment)
+
+        prompt = "\n".join(text for _, text in fake_llm.calls[0][0])
+        self.assertIn("req_", prompt)
+        self.assertIn("d003_", prompt)
+        self.assertIn("ev_", prompt)
+        self.assertIn("Requirement", prompt)
+        self.assertIn("RubricMatch", prompt)
+        self.assertIn("成长", prompt)
+
+    def test_enterprise_writer_requires_one_focus_per_selected_dimension(self) -> None:
+        draft = make_enterprise_copy_draft()
+        draft.reinterview_plan = draft.reinterview_plan[:1]
+
+        with self.assertRaises(GroundingValidationError):
+            write_enterprise_copy(
+                self.snapshot,
+                self.role_profile,
+                self.evidence,
+                ["role_dim_01", "role_dim_02"],
+                llm_client=FakeLLM(draft),
+            )
+
+    def test_enterprise_writer_rejects_internal_ids_in_public_copy(self) -> None:
+        draft = make_enterprise_copy_draft()
+        draft.reinterview_plan[0].reason = "请继续核验 req_01 的边界。"
+
+        with self.assertRaises(GroundingValidationError):
+            write_enterprise_copy(
+                self.snapshot,
+                self.role_profile,
+                self.evidence,
+                ["role_dim_01", "role_dim_02"],
+                llm_client=FakeLLM(draft),
+            )
+
+    def test_enterprise_writer_rejects_real_rubric_ids_in_public_copy(self) -> None:
+        for field_name, value in (
+            ("reason", "需要核验 d01_min_01 的边界。"),
+            ("pass_criteria", ["不能触发 d03_err_01。"]),
+        ):
+            with self.subTest(field_name=field_name):
+                draft = make_enterprise_copy_draft()
+                setattr(draft.reinterview_plan[0], field_name, value)
+                with self.assertRaises(GroundingValidationError):
+                    write_enterprise_copy(
+                        self.snapshot,
+                        self.role_profile,
+                        self.evidence,
+                        ["role_dim_01", "role_dim_02"],
+                        llm_client=FakeLLM(draft),
+                    )
+
+    def test_enterprise_writer_projects_overall_assessment_deterministically(
+        self,
+    ) -> None:
+        draft = make_enterprise_copy_draft()
+        draft.overall_assessment = "建议进入下一轮并继续推进。"
+
+        result = write_enterprise_copy(
+            self.snapshot,
+            self.role_profile,
+            self.evidence,
+            ["role_dim_01", "role_dim_02"],
+            llm_client=FakeLLM(draft),
+        )
+
+        self.assertNotIn("进入下一轮", result.overall_assessment)
+        self.assertNotIn("继续推进", result.overall_assessment)
+        self.assertIn("复试", result.overall_assessment)
+
+    def test_enterprise_writer_allows_learning_domain_words_but_rejects_growth_advice(
+        self,
+    ) -> None:
+        domain_draft = make_enterprise_copy_draft()
+        domain_draft.reinterview_plan[0].question = (
+            "请说明机器学习系统如何验证数据漂移。"
+        )
+        result = write_enterprise_copy(
+            self.snapshot,
+            self.role_profile,
+            self.evidence,
+            ["role_dim_01", "role_dim_02"],
+            llm_client=FakeLLM(domain_draft),
+        )
+        self.assertIn("机器学习系统", result.reinterview_plan[0].question)
+
+        for text in ("后续补足能力短板。", "建议候选人提升相关能力。"):
+            with self.subTest(text=text):
+                advice_draft = make_enterprise_copy_draft()
+                advice_draft.reinterview_plan[0].reason = text
+                with self.assertRaises(GroundingValidationError):
+                    write_enterprise_copy(
+                        self.snapshot,
+                        self.role_profile,
+                        self.evidence,
+                        ["role_dim_01", "role_dim_02"],
+                        llm_client=FakeLLM(advice_draft),
+                    )
+
+    def test_enterprise_writer_falls_back_on_hiring_decision_in_any_focus_field(
+        self,
+    ) -> None:
+        malicious_fields = (
+            ("reason", "建议进入下一轮并继续推进。"),
+            ("question", "推荐录用该候选人。"),
+            ("follow_ups", ["建议淘汰该候选人。"]),
+            ("positive_signals", ["通过面试。"]),
+            ("risk_signals", ["通过筛选。"]),
+            ("pass_criteria", ["候选人继续推进。"]),
+            ("dimension_name", "推荐录用"),
+        )
+        for field_name, value in malicious_fields:
+            with self.subTest(field_name=field_name):
+                draft = make_enterprise_copy_draft()
+                setattr(draft.reinterview_plan[0], field_name, value)
+
+                result = write_enterprise_copy(
+                    self.snapshot,
+                    self.role_profile,
+                    self.evidence,
+                    ["role_dim_01", "role_dim_02"],
+                    llm_client=FakeLLM(draft),
+                )
+
+                rendered = repr(result.model_dump())
+                self.assertNotIn("下一轮", rendered)
+                self.assertNotIn("录用", rendered)
+                self.assertNotIn("淘汰", rendered)
+                self.assertNotIn("通过面试", rendered)
+                self.assertNotIn("通过筛选", rendered)
+
+    def test_enterprise_writer_allows_normal_task_progress_words(self) -> None:
+        draft = make_enterprise_copy_draft()
+        draft.reinterview_plan[0].reason = "需要说明如何推进任务和推进项目。"
+
+        result = write_enterprise_copy(
+            self.snapshot,
+            self.role_profile,
+            self.evidence,
+            ["role_dim_01", "role_dim_02"],
+            llm_client=FakeLLM(draft),
+        )
+
+        self.assertEqual(
+            result.reinterview_plan[0].reason,
+            "需要说明如何推进任务和推进项目。",
+        )
+
+    def test_fallback_questions_are_dimension_specific(self) -> None:
+        profile = load_role_profile("ai_application_engineering", "2026-H2")
+        draft = fallback_enterprise_copy(
+            self.snapshot,
+            profile,
+            ["role_dim_03", "role_dim_06"],
+        )
+        questions = [item.question for item in draft.reinterview_plan]
+
+        self.assertEqual(len(set(questions)), 2)
+        self.assertIn("记忆", questions[0])
+        self.assertIn("成本", questions[1])
+        self.assertIn("工具", questions[0])
+        self.assertIn("优化", questions[1])
+
+    def test_fallback_shares_online_role_and_evidence_validation(self) -> None:
+        mismatched_profile = self.role_profile.model_copy(
+            update={"version": "2025-H1"}
+        )
+        with self.assertRaises(GroundingValidationError):
+            fallback_enterprise_copy(
+                self.snapshot,
+                mismatched_profile,
+                ["role_dim_01"],
+                evidence=self.evidence,
+            )
+
+        with self.assertRaises(GroundingValidationError):
+            fallback_enterprise_copy(
+                self.snapshot,
+                self.role_profile,
+                ["role_dim_01"],
+                evidence=[self.evidence[1]],
+            )
 
     def test_strength_requires_supporting_evidence(self) -> None:
         with self.assertRaises(GroundingValidationError):

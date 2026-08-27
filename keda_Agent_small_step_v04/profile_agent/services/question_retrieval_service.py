@@ -1,0 +1,1019 @@
+"""Deterministic intent building and safe question retrieval.
+
+The Supervisor decides which requirement to ask about.  This module turns
+that decision into a small, reproducible retrieval intent and ranks only the
+already-filtered records returned by the disposable question store.  No LLM,
+network call, or free-form Supervisor query is used here.
+
+The canonical public result is :class:`QuestionRetrievalResult` from Task 1.
+The per-candidate score decomposition is kept on ``QuestionRetriever`` (and
+attached as a non-serialised diagnostic attribute on the result) so callers
+can audit ranking without widening the strict Task 1 wire contract.
+"""
+
+from __future__ import annotations
+
+from collections import defaultdict
+from collections.abc import Sequence
+from datetime import date, datetime
+import math
+import re
+from typing import Any, Protocol
+
+from profile_agent.schemas.interview_schema import (
+    AskAction,
+    AssessmentTarget,
+    InterviewPlan,
+    QuestionMode,
+)
+from profile_agent.schemas.job_schema import JobProfile
+from profile_agent.schemas.question_rag_schema import (
+    InterviewQuestionRecord,
+    QuestionRetrievalIntent,
+    QuestionRetrievalResult,
+    QuestionRetrievalTrace,
+    RetrievedQuestion,
+)
+from profile_agent.schemas.resume_schema import ResumeProfile
+from profile_agent.schemas.runtime_schema import InterviewTurn
+
+
+MAX_QUERY_CHARS = 512
+MAX_CANDIDATES = 3
+_ROLE = "ai_agent_engineer"
+
+# The vector score remains the main signal, while the other components are
+# deliberately bounded tie-breakers.  Keeping these constants explicit makes
+# the selection rule explainable and easy to calibrate without changing the
+# surrounding contracts.
+VECTOR_WEIGHT = 0.72
+TRUST_WEIGHT = 0.08
+FRESHNESS_WEIGHT = 0.08
+COVERAGE_WEIGHT = 0.08
+MODE_WEIGHT = 0.04
+DUPLICATE_PENALTY_WEIGHT = 0.06
+ASKED_PENALTY_WEIGHT = 0.04
+
+_MODE_DIFFICULTY: dict[QuestionMode, str] = {
+    "foundation": "foundation",
+    "project_deep_dive": "intermediate",
+    "scenario": "intermediate",
+    "system_design": "advanced",
+    "coding": "intermediate",
+    "follow_up": "intermediate",
+}
+_TRUST_SCORE = {"high": 1.0, "medium": 0.66, "low": 0.33}
+# Query construction is an allowlist operation.  These are the only
+# free-text terms that can be emitted from JD/resume/answer/evidence fields;
+# every emitted value is the canonical spelling below, never an input span.
+# The role-pack (ai_application_engineer_2026_h2) supplies the role/dimension
+# IDs and the competency labels represented here.  Authentication phrases are
+# deliberately explicit so ordinary words such as ``token`` or ``authorization``
+# cannot accidentally become credential-bearing query text.
+_ROLE_PACK_DIMENSION_IDS = frozenset(
+    {
+        "role_dim_01",
+        "role_dim_02",
+        "role_dim_03",
+        "role_dim_04",
+        "role_dim_05",
+        "role_dim_06",
+    }
+)
+_CANONICAL_QUERY_TERMS: tuple[str, ...] = (
+    # Role-pack skill/signal/requirement labels.
+    "Agent",
+    "多Agent",
+    "单Agent",
+    "Workflow",
+    "任务",
+    "任务建模",
+    "任务编排",
+    "状态",
+    "路由",
+    "人工介入",
+    "失败恢复",
+    "失败恢复边界",
+    "重试",
+    "RAG",
+    "Context",
+    "上下文",
+    "上下文预算",
+    "Memory",
+    "记忆",
+    "生命周期",
+    "记忆污染",
+    "过期知识",
+    "检索",
+    "引用",
+    "工具",
+    "工具工程",
+    "工具调用",
+    "工具 token 调用和上下文",
+    "参数校验",
+    "权限",
+    "返回结果",
+    "副作用",
+    "评测",
+    "可观测性",
+    "安全",
+    "安全边界",
+    "安全治理",
+    "超时",
+    "降级",
+    "告警",
+    "恢复",
+    "幂等性",
+    "补偿",
+    "输入",
+    "输出",
+    "约束",
+    "用户",
+    "成功标准",
+    "验收",
+    "测试",
+    "日志",
+    "可复现",
+    "规格",
+    "代码审查",
+    "依赖",
+    "回滚",
+    "成本",
+    "性能",
+    "延迟",
+    "复杂度",
+    "扩展性",
+    "反馈",
+    "基线",
+    "指标",
+    "效果",
+    "追踪",
+    # Deliberately allowlisted authentication/security semantics.
+    "tokenization strategy",
+    "token 生命周期",
+    "token budget",
+    "OAuth authorization code flow",
+    "authorization policy",
+    "password rotation policy",
+    "credential store",
+    "JWT validation",
+    "Bearer authentication",
+    "Basic auth flow",
+    "Bearer token flow",
+)
+_CANONICAL_QUERY_TERM_SET = frozenset(_CANONICAL_QUERY_TERMS)
+_EMAIL_RE = re.compile(
+    r"(?i)(?<![A-Za-z0-9._%+-])[A-Za-z0-9][A-Za-z0-9._%+-]*"
+    r"@[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?![A-Za-z0-9.-])"
+)
+_URL_RE = re.compile(
+    r"(?i)(?<![A-Za-z0-9])(?:https?://|www\.)[^\s,，。；;|]+"
+)
+# Boundaries are ASCII-aware: Chinese text adjacent to a PII value must not
+# prevent the value from being recognized by the fallback cleaner.
+_PHONE_RE = re.compile(r"(?<![0-9])(?:\+?[0-9][0-9 ().-]{6,}[0-9])(?![0-9])")
+_WORD_RE = re.compile(r"[A-Za-z0-9_]+|[\u3400-\u4dbf\u4e00-\u9fff]")
+_QUERY_SECTION_BUDGETS = {
+    "dimension": 32,
+    "mode": 32,
+    "depth": 32,
+    "objective": 68,
+    "requirement": 80,
+    "coverage_gap": 60,
+    "jd": 60,
+    "resume": 60,
+    "recent": 60,
+}
+
+
+class EmbeddingClient(Protocol):
+    def embed(self, texts: Sequence[str]) -> list[list[float]]:
+        """Embed the supplied texts in input order."""
+
+
+class RetrievalScoreBreakdown:
+    """Immutable-ish diagnostic representation for one ranked candidate."""
+
+    __slots__ = (
+        "question_id",
+        "source_id",
+        "index_version",
+        "rank",
+        "selected",
+        "vector_similarity",
+        "trust",
+        "freshness",
+        "coverage",
+        "mode",
+        "duplicate_penalty",
+        "asked_penalty",
+        "total_score",
+    )
+
+    def __init__(
+        self,
+        *,
+        question_id: str,
+        source_id: str,
+        index_version: str,
+        rank: int,
+        selected: bool,
+        vector_similarity: float,
+        trust: float,
+        freshness: float,
+        coverage: float,
+        mode: float,
+        duplicate_penalty: float,
+        asked_penalty: float,
+        total_score: float,
+    ) -> None:
+        self.question_id = question_id
+        self.source_id = source_id
+        self.index_version = index_version
+        self.rank = rank
+        self.selected = selected
+        self.vector_similarity = vector_similarity
+        self.trust = trust
+        self.freshness = freshness
+        self.coverage = coverage
+        self.mode = mode
+        self.duplicate_penalty = duplicate_penalty
+        self.asked_penalty = asked_penalty
+        self.total_score = total_score
+
+    @property
+    def score(self) -> float:
+        return self.total_score
+
+    @property
+    def components(self) -> dict[str, float]:
+        return {
+            "vector_similarity": self.vector_similarity,
+            "trust": self.trust,
+            "freshness": self.freshness,
+            "coverage": self.coverage,
+            "mode": self.mode,
+            "duplicate_penalty": self.duplicate_penalty,
+            "asked_penalty": self.asked_penalty,
+            "total_score": self.total_score,
+        }
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "question_id": self.question_id,
+            "source_id": self.source_id,
+            "index_version": self.index_version,
+            "rank": self.rank,
+            "selected": self.selected,
+            "score": self.total_score,
+            "components": dict(self.components),
+        }
+
+
+def _clean_text(value: Any, *, limit: int | None = None) -> str:
+    """Normalize PII for non-query fields.
+
+    Query anchors do not use this helper: they are selected by
+    :func:`_extract_canonical_terms` below.  Keeping this small cleaner for
+    exclusions and other diagnostics is useful, but it is deliberately not a
+    credential blacklist on which query safety depends.
+    """
+
+    if value is None:
+        return ""
+    text = re.sub(r"\s+", " ", str(value)).strip()
+    text = _EMAIL_RE.sub("[redacted-email]", text)
+    text = _URL_RE.sub("[redacted-url]", text)
+    text = _PHONE_RE.sub("[redacted-phone]", text)
+    if limit is not None:
+        if len(text) > limit and limit > 1:
+            tail_budget = max(1, limit // 3)
+            head_budget = limit - tail_budget - 1
+            text = (
+                text[:head_budget].rstrip()
+                + "…"
+                + text[-tail_budget:].lstrip()
+            )
+        else:
+            text = text[:limit].rstrip()
+    return text
+
+
+def _normalise_match_text(value: Any) -> str:
+    """Return a stable matching representation without exposing the value."""
+
+    if value is None:
+        return ""
+    return re.sub(r"\s+", " ", str(value)).strip()
+
+
+def _contains_canonical_term(text: str, term: str) -> bool:
+    """Match a safe phrase without treating an ASCII word as a substring."""
+
+    # ASCII-aware boundaries intentionally regard adjacent Chinese characters
+    # as boundaries.  The matched source span is discarded; only ``term`` from
+    # the centralized allowlist is ever returned to the query builder.
+    return re.search(
+        rf"(?<![A-Za-z0-9]){re.escape(term)}(?![A-Za-z0-9])",
+        text,
+        flags=re.IGNORECASE,
+    ) is not None
+
+
+def _extract_canonical_terms(values: Sequence[Any]) -> list[str]:
+    """Extract only canonical allowlist terms from untrusted source fields.
+
+    This is intentionally a one-way projection.  No source substring,
+    punctuation, identifier, credential, or PII can be returned unless it is
+    already an exact, audited entry in ``_CANONICAL_QUERY_TERMS``.
+    """
+
+    texts = [_normalise_match_text(value) for value in values]
+    texts = [text for text in texts if text]
+    if not texts:
+        return []
+    return [
+        term
+        for term in _CANONICAL_QUERY_TERMS
+        if any(_contains_canonical_term(text, term) for text in texts)
+    ]
+
+
+def _controlled_terms_value(terms: Sequence[str]) -> str:
+    """Join already-validated canonical terms, or use a fixed empty marker."""
+
+    return ",".join(term for term in terms if term in _CANONICAL_QUERY_TERM_SET) or "none"
+
+
+def _bounded_section(label: str, value: str, budget: int) -> str:
+    """Keep a labelled, already-controlled value within its own budget.
+
+    Section budgets are applied before joining the query.  This prevents a
+    long objective or answer from starving later JD/resume/recent anchors.
+    """
+
+    prefix = f"{label}="
+    controlled = _normalise_match_text(value)
+    if not controlled:
+        return ""
+    value_budget = max(0, budget - len(prefix))
+    if len(controlled) <= value_budget:
+        return prefix + controlled
+    if value_budget <= 1:
+        return prefix + controlled[:value_budget]
+
+    # Canonical term sections are comma separated.  Trim at term boundaries so
+    # a length budget can never turn a safe phrase into an arbitrary partial
+    # source span.  Keep the first terms (the role-pack ordering is stable) and
+    # the final term as a deterministic low-cost tail preference.
+    terms = [part.strip() for part in controlled.split(",") if part.strip()]
+    if len(terms) <= 1:
+        # Static fields (dimension/mode/depth) are already bounded by their
+        # enums/IDs.  This fallback also keeps the helper total for callers
+        # supplying a single controlled value.
+        return prefix + controlled[:value_budget]
+
+    selected: list[str] = []
+    used = 0
+    for term in terms:
+        extra = len(term) if not selected else len(term) + 1
+        if used + extra > value_budget:
+            break
+        selected.append(term)
+        used += extra
+
+    if len(selected) < len(terms) and terms[-1] not in selected:
+        tail = terms[-1]
+        while selected:
+            extra = len(tail) if not selected else len(tail) + 1
+            removed_cost = len(selected[-1]) + (1 if len(selected) > 1 else 0)
+            if used - removed_cost + extra <= value_budget:
+                break
+            removed = selected.pop()
+            used -= len(removed) + (1 if selected else 0)
+        extra = len(tail) if not selected else len(tail) + 1
+        if used + extra <= value_budget:
+            selected.append(tail)
+
+    return prefix + ",".join(selected)
+
+
+def _clip_query(parts: Sequence[str]) -> str:
+    query = " | ".join(part for part in parts if part)
+    if len(query) > MAX_QUERY_CHARS:
+        # All normal inputs are bounded by _QUERY_SECTION_BUDGETS.  Raising
+        # here protects the invariant from future additions instead of
+        # silently dropping an entire trailing section.
+        raise ValueError("retrieval intent query exceeds its length budget")
+    return query.rstrip()
+
+
+def _resume_anchors(profile: ResumeProfile | None) -> list[str]:
+    if profile is None:
+        return []
+
+    values: list[Any] = [profile.summary, *profile.skills]
+
+    # One compact project anchor is enough to personalize retrieval.  Taking
+    # the first project is intentional: the query must not become a copy of a
+    # complete resume, and the source model already provides stable ordering.
+    if profile.projects:
+        project = profile.projects[0]
+        values.extend(
+            [
+                project.name,
+                project.description,
+                *project.responsibilities,
+                *project.achievements,
+                *project.technologies,
+            ]
+        )
+
+    return _extract_canonical_terms(values)
+
+
+def _job_anchors(profile: JobProfile | None) -> list[str]:
+    if profile is None:
+        return []
+
+    values: list[Any] = [profile.role, *profile.responsibilities]
+    for requirement in profile.requirements[:4]:
+        values.extend([requirement.name, requirement.description])
+    return _extract_canonical_terms(values)
+
+
+def _recent_answer_anchors(turns: Sequence[InterviewTurn]) -> list[str]:
+    answered = [turn for turn in turns if (turn.answer or "").strip()]
+    answered.sort(key=lambda turn: (turn.sequence_number, turn.id))
+    values: list[Any] = []
+    for turn in answered[-2:]:
+        values.extend([turn.question, turn.answer])
+    return _extract_canonical_terms(values)
+
+
+def build_question_retrieval_intent(
+    *,
+    action: AskAction,
+    plan: InterviewPlan,
+    resume_profile: ResumeProfile | None = None,
+    job_profile: JobProfile | None = None,
+    recent_turns: Sequence[InterviewTurn] = (),
+    evidence_summaries: Sequence[str] = (),
+    excluded_question_ids: Sequence[str] = (),
+) -> QuestionRetrievalIntent:
+    """Build a stable, bounded retrieval intent from resolved runtime facts.
+
+    The lookup dimension comes from the exact requirement selected by
+    Supervisor.  Guessing a dimension when a plan omitted it would silently
+    retrieve the wrong competency, so legacy/incomplete plans fail explicitly.
+    """
+
+    if not isinstance(action, AskAction):
+        raise TypeError("action must be AskAction")
+    if not isinstance(plan, InterviewPlan):
+        raise TypeError("plan must be InterviewPlan")
+
+    matching_targets = [
+        candidate for candidate in plan.targets if candidate.id == action.target_id
+    ]
+    if len(matching_targets) > 1:
+        raise ValueError(f"duplicate target_id: {action.target_id}")
+    target: AssessmentTarget | None = matching_targets[0] if matching_targets else None
+    if target is None:
+        raise ValueError(f"unknown target_id: {action.target_id}")
+
+    matching_requirements = [
+        candidate
+        for candidate in target.evidence_requirements
+        if candidate.id == action.primary_requirement_id
+    ]
+    if len(matching_requirements) > 1:
+        raise ValueError(
+            f"duplicate requirement_id: {action.primary_requirement_id}"
+        )
+    requirement = matching_requirements[0] if matching_requirements else None
+    if requirement is None:
+        raise ValueError(
+            "primary_requirement_id does not belong to target_id: "
+            f"{action.primary_requirement_id}"
+        )
+
+    dimension_id = (requirement.planned_role_dimension_id or "").strip()
+    if not dimension_id:
+        raise ValueError(
+            f"requirement {requirement.id} is missing planned dimension_id"
+        )
+    if dimension_id not in _ROLE_PACK_DIMENSION_IDS:
+        raise ValueError(f"unsupported role dimension_id: {dimension_id}")
+
+    difficulty = _MODE_DIFFICULTY[action.question_mode]
+    exclusions = sorted(
+        {
+            cleaned
+            for cleaned in (_clean_text(value) for value in excluded_question_ids)
+            if cleaned
+        }
+    )
+
+    # Keep sections explicit so future audits can explain exactly which
+    # bounded fact contributed to a query.  Do not include action.reason: it
+    # is free-form and may contain candidate or provider data.  Source fields
+    # are projected through the centralized allowlist; raw spans never reach
+    # _bounded_section or the embedding client.
+    objective = _controlled_terms_value(
+        _extract_canonical_terms([target.objective])
+    )
+    requirement_terms = _controlled_terms_value(
+        _extract_canonical_terms([requirement.description])
+    )
+    evidence = _controlled_terms_value(
+        _extract_canonical_terms(evidence_summaries)
+    )
+    parts = [
+        _bounded_section(
+            "dimension",
+            dimension_id,
+            _QUERY_SECTION_BUDGETS["dimension"],
+        ),
+        _bounded_section(
+            "mode",
+            action.question_mode,
+            _QUERY_SECTION_BUDGETS["mode"],
+        ),
+        _bounded_section("depth", difficulty, _QUERY_SECTION_BUDGETS["depth"]),
+        _bounded_section(
+            "objective",
+            objective,
+            _QUERY_SECTION_BUDGETS["objective"],
+        ),
+        _bounded_section(
+            "requirement",
+            requirement_terms,
+            _QUERY_SECTION_BUDGETS["requirement"],
+        ),
+        _bounded_section(
+            "coverage_gap",
+            evidence,
+            _QUERY_SECTION_BUDGETS["coverage_gap"],
+        ),
+    ]
+
+    job = _job_anchors(job_profile)
+    parts.append(
+        _bounded_section(
+            "jd",
+            _controlled_terms_value(job),
+            _QUERY_SECTION_BUDGETS["jd"],
+        )
+    )
+
+    resume = _resume_anchors(resume_profile)
+    parts.append(
+        _bounded_section(
+            "resume",
+            _controlled_terms_value(resume),
+            _QUERY_SECTION_BUDGETS["resume"],
+        )
+    )
+
+    recent = _recent_answer_anchors(recent_turns)
+    parts.append(
+        _bounded_section(
+            "recent",
+            _controlled_terms_value(recent),
+            _QUERY_SECTION_BUDGETS["recent"],
+        )
+    )
+
+    query_text = _clip_query(parts)
+    # The static fields above should always leave a non-empty query.  Keep an
+    # explicit guard because QuestionRetrievalIntent has a strict contract.
+    if not query_text:
+        raise ValueError("retrieval intent query_text must not be blank")
+
+    return QuestionRetrievalIntent(
+        query_text=query_text,
+        role=_ROLE,
+        dimension_id=dimension_id,
+        question_mode=action.question_mode,
+        difficulty=difficulty,
+        excluded_question_ids=exclusions,
+    )
+
+
+def _tokens(value: str) -> set[str]:
+    return {token.lower() for token in _WORD_RE.findall(value) if token.strip()}
+
+
+def _normalised_question_text(record: InterviewQuestionRecord) -> str:
+    return re.sub(r"\s+", " ", record.question_text).strip().lower()
+
+
+def _coverage_score(intent: QuestionRetrievalIntent, record: InterviewQuestionRecord) -> float:
+    query_tokens = _tokens(intent.query_text)
+    candidate_tokens = _tokens(" ".join([record.question_text, *record.skills]))
+    if not query_tokens or not candidate_tokens:
+        return 0.0
+    return round(len(query_tokens & candidate_tokens) / len(query_tokens), 6)
+
+
+def _freshness_score(record: InterviewQuestionRecord, today: date) -> float:
+    age_days = max(0, (today - record.verified_at).days)
+    # One year is a bounded freshness horizon.  Validity is hard-filtered by
+    # the store and again by the service, so this component is only a gentle
+    # preference among otherwise current records.
+    return round(max(0.0, min(1.0, 1.0 - age_days / 365.0)), 6)
+
+
+def _finite_score(value: Any) -> float | None:
+    if value is None or isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    try:
+        score = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if not math.isfinite(score):
+        return None
+    return score
+
+
+def _vector_score(value: Any) -> float:
+    score = _finite_score(value)
+    if score is None:
+        raise ValueError("retrieved question score must be finite")
+    return round(max(-1.0, min(1.0, score)), 6)
+
+
+def _coerce_hit(value: Any, *, index_version: str | None) -> RetrievedQuestion | None:
+    # The store boundary must return the Task 1 hit model.  Accepting a bare
+    # record (or reconstructing one from arbitrary mappings) would make a
+    # non-vector source look like a retrieval hit.
+    if not isinstance(value, RetrievedQuestion):
+        return None
+    # ``model_copy(update=...)`` skips validation, including for the nested
+    # record.  Re-dump the typed object to plain Python data and validate the
+    # complete envelope again so malformed hash/date/role/mode values cannot
+    # reach ranking or leak a raw TypeError to callers.  Suppress serializer
+    # warnings because the whole point of this boundary is to reject malformed
+    # values immediately and return the safe unavailable result below.
+    try:
+        dumped = value.model_dump(mode="python", warnings=False)
+        raw_score = dumped.get("score")
+        if raw_score is not None and (
+            isinstance(raw_score, bool) or not isinstance(raw_score, (int, float))
+        ):
+            return None
+        validated = RetrievedQuestion.model_validate(dumped)
+    except Exception:
+        return None
+    if not isinstance(validated.record, InterviewQuestionRecord):
+        return None
+    if _finite_score(validated.score) is None:
+        return None
+    if not isinstance(validated.index_version, str) or not validated.index_version.strip():
+        return None
+    if not isinstance(validated.record.source_id, str) or not validated.record.source_id.strip():
+        return None
+    return validated
+
+
+def _store_status_and_hits(value: Any) -> tuple[str, list[Any], str | None]:
+    if value is None:
+        return "unavailable", [], None
+    status = getattr(value, "status", None)
+    hits = getattr(value, "hits", None)
+    if hits is None:
+        hits = getattr(value, "results", None)
+    index_version = getattr(value, "index_version", None)
+    if not isinstance(status, str):
+        return "unavailable", [], None
+    if hits is None:
+        hits = []
+    try:
+        hit_list = list(hits)
+    except TypeError:
+        return "unavailable", [], index_version if isinstance(index_version, str) else None
+    return status, hit_list, index_version if isinstance(index_version, str) else None
+
+
+class QuestionRetriever:
+    """Embed one intent, apply safe store results, and select one question."""
+
+    def __init__(
+        self,
+        embedding_client: EmbeddingClient | Any | None = None,
+        store: Any | None = None,
+        *,
+        embedding: EmbeddingClient | Any | None = None,
+        question_store: Any | None = None,
+        today: date | None = None,
+        as_of: date | None = None,
+        max_candidates: int = MAX_CANDIDATES,
+        owns_embedding_client: bool = False,
+        owns_store: bool = False,
+    ) -> None:
+        if embedding_client is not None and embedding is not None:
+            raise ValueError("pass only one of embedding_client and embedding")
+        if store is not None and question_store is not None:
+            raise ValueError("pass only one of store and question_store")
+        if today is not None and as_of is not None:
+            raise ValueError("pass only one of today and as_of")
+        if not isinstance(owns_embedding_client, bool):
+            raise TypeError("owns_embedding_client must be a bool")
+        if not isinstance(owns_store, bool):
+            raise TypeError("owns_store must be a bool")
+        configured_date = today if today is not None else as_of
+        if configured_date is not None and (
+            isinstance(configured_date, datetime)
+            or not isinstance(configured_date, date)
+        ):
+            raise TypeError("today must be a date")
+        if isinstance(max_candidates, bool) or not isinstance(max_candidates, int) or max_candidates < 1:
+            raise ValueError("max_candidates must be a positive integer")
+        self.embedding_client = (
+            embedding_client if embedding_client is not None else embedding
+        )
+        self.store = store if store is not None else question_store
+        self._owns_embedding_client = owns_embedding_client
+        self._owns_store = owns_store
+        self._closed = False
+        self.today = today if today is not None else as_of
+        self.max_candidates = min(MAX_CANDIDATES, max_candidates)
+        self.last_rank_trace: list[dict[str, Any]] = []
+        # Compatibility aliases for diagnostics used by callers that name the
+        # same internal audit data differently.
+        self.last_ranking_trace = self.last_rank_trace
+        self.last_trace = self.last_rank_trace
+
+    def close(self) -> None:
+        """Close owned provider/index resources exactly once."""
+
+        if self._closed:
+            return
+        self._closed = True
+
+        resources: list[Any] = []
+        if self._owns_embedding_client and self.embedding_client is not None:
+            resources.append(self.embedding_client)
+        if self._owns_store and self.store is not None:
+            resources.append(self.store)
+
+        closed_ids: set[int] = set()
+        for resource in resources:
+            resource_id = id(resource)
+            if resource_id in closed_ids:
+                continue
+            closed_ids.add(resource_id)
+            close = getattr(resource, "close", None)
+            if not callable(close):
+                continue
+            try:
+                close()
+            except Exception:
+                # Closing one optional resource must not prevent the other
+                # owned handle from being released.
+                continue
+
+    def retrieve(
+        self,
+        intent: QuestionRetrievalIntent,
+        *,
+        today: date | None = None,
+        limit: int | None = None,
+    ) -> QuestionRetrievalResult:
+        if not isinstance(intent, QuestionRetrievalIntent):
+            raise TypeError("intent must be QuestionRetrievalIntent")
+        as_of = today if today is not None else (self.today or date.today())
+        if isinstance(as_of, datetime) or not isinstance(as_of, date):
+            raise TypeError("today must be a date")
+        if self._closed:
+            return self._result("unavailable", as_of=as_of)
+        self.last_rank_trace.clear()
+
+        if self.embedding_client is None or self.store is None:
+            return self._result("unavailable", as_of=as_of)
+
+        try:
+            query_vector = self._embed(intent.query_text)
+        except Exception:
+            return self._result("unavailable", as_of=as_of)
+
+        requested_limit = self.max_candidates if limit is None else limit
+        if isinstance(requested_limit, bool) or not isinstance(requested_limit, int) or requested_limit < 1:
+            raise ValueError("limit must be a positive integer")
+        requested_limit = min(MAX_CANDIDATES, requested_limit)
+
+        try:
+            raw_store_result = self.store.search(
+                intent=intent,
+                query_vector=query_vector,
+                today=as_of,
+                limit=requested_limit,
+            )
+        except Exception:
+            return self._result("unavailable", as_of=as_of)
+
+        status, raw_hits, store_index_version = _store_status_and_hits(raw_store_result)
+        if status in {"unavailable", "index_mismatch", "no_match"}:
+            return self._result(status, as_of=as_of)
+        if status != "hit":
+            return self._result("unavailable", as_of=as_of)
+
+        candidates: list[RetrievedQuestion] = []
+        malformed_hit = False
+        excluded_ids = set(intent.excluded_question_ids)
+        for raw_hit in raw_hits:
+            hit = _coerce_hit(raw_hit, index_version=store_index_version)
+            if hit is None:
+                malformed_hit = True
+                continue
+            if (
+                store_index_version is not None
+                and hit.index_version != store_index_version
+            ):
+                malformed_hit = True
+                continue
+            record = hit.record
+            # Store filters are authoritative for efficiency, but this second
+            # boundary keeps an injected/faulty store from bypassing lifecycle,
+            # role, dimension, mode, or asked-question rules.
+            if record.role != intent.role:
+                continue
+            if record.dimension_id != intent.dimension_id:
+                continue
+            if record.question_mode != intent.question_mode:
+                continue
+            if record.status != "active" or record.valid_until < as_of:
+                continue
+            if record.question_id in excluded_ids:
+                continue
+            candidates.append(hit)
+
+        if not candidates:
+            if malformed_hit:
+                return self._result("unavailable", as_of=as_of)
+            return self._result("no_match", as_of=as_of)
+
+        ranked = self._rank(
+            candidates,
+            intent=intent,
+            today=as_of,
+            limit=requested_limit,
+        )
+        selected, selected_breakdown = ranked[0]
+        selected_question = selected.model_copy(update={"score": selected_breakdown.total_score})
+        index_version = selected_question.index_version or store_index_version
+        if index_version is not None:
+            selected_question = selected_question.model_copy(
+                update={"index_version": index_version}
+            )
+
+        result = QuestionRetrievalResult(
+            status="hit",
+            as_of=as_of,
+            selected_question=selected_question,
+            trace=QuestionRetrievalTrace(
+                status="hit",
+                question_id=selected_question.question_id,
+                source_id=selected_question.source_id,
+                score=selected_question.score,
+                index_version=selected_question.index_version,
+            ),
+        )
+        self._attach_trace(result)
+        return result
+
+    def _embed(self, query_text: str) -> list[float]:
+        embed = getattr(self.embedding_client, "embed", None)
+        if callable(embed):
+            raw = embed([query_text])
+        elif callable(self.embedding_client):
+            raw = self.embedding_client([query_text])
+        else:
+            raise TypeError("embedding client must provide embed")
+
+        if isinstance(raw, Sequence) and not isinstance(raw, (str, bytes)):
+            values = list(raw)
+        else:
+            raise ValueError("embedding result must be a sequence")
+        # Accept a direct one-vector fake for test adapters while preserving
+        # the normal EmbeddingClient list-of-vectors contract.
+        if values and all(isinstance(value, (int, float)) and not isinstance(value, bool) for value in values):
+            values = [values]
+        if len(values) != 1:
+            raise ValueError("embedding result must contain exactly one vector")
+        vector = values[0]
+        if not isinstance(vector, Sequence) or isinstance(vector, (str, bytes)) or not vector:
+            raise ValueError("embedding vector must be non-empty")
+        normalized: list[float] = []
+        for value in vector:
+            if isinstance(value, bool):
+                raise ValueError("embedding vector must contain finite numbers")
+            numeric = float(value)
+            if not math.isfinite(numeric):
+                raise ValueError("embedding vector must contain finite numbers")
+            normalized.append(numeric)
+        return normalized
+
+    def _rank(
+        self,
+        candidates: Sequence[RetrievedQuestion],
+        *,
+        intent: QuestionRetrievalIntent,
+        today: date,
+        limit: int = MAX_CANDIDATES,
+    ) -> list[tuple[RetrievedQuestion, RetrievalScoreBreakdown]]:
+        by_text: dict[str, list[RetrievedQuestion]] = defaultdict(list)
+        for candidate in candidates:
+            by_text[_normalised_question_text(candidate.record)].append(candidate)
+        duplicate_owner: dict[str, str] = {}
+        for text, group in by_text.items():
+            duplicate_owner[text] = min(item.question_id for item in group)
+
+        scored: list[tuple[RetrievedQuestion, RetrievalScoreBreakdown]] = []
+        excluded = set(intent.excluded_question_ids)
+        for candidate in candidates:
+            record = candidate.record
+            vector_similarity = _vector_score(candidate.score)
+            trust = _TRUST_SCORE.get(record.trust_level, 0.0)
+            freshness = _freshness_score(record, today)
+            coverage = _coverage_score(intent, record)
+            mode = 1.0 if record.question_mode == intent.question_mode else 0.0
+            text = _normalised_question_text(record)
+            duplicate_penalty = float(
+                bool(text and duplicate_owner.get(text) != record.question_id)
+            )
+            asked_penalty = float(record.question_id in excluded)
+            total = (
+                VECTOR_WEIGHT * max(0.0, vector_similarity)
+                + TRUST_WEIGHT * trust
+                + FRESHNESS_WEIGHT * freshness
+                + COVERAGE_WEIGHT * coverage
+                + MODE_WEIGHT * mode
+                - DUPLICATE_PENALTY_WEIGHT * duplicate_penalty
+                - ASKED_PENALTY_WEIGHT * asked_penalty
+            )
+            breakdown = RetrievalScoreBreakdown(
+                question_id=record.question_id,
+                source_id=record.source_id,
+                index_version=candidate.index_version,
+                rank=0,
+                selected=False,
+                vector_similarity=vector_similarity,
+                trust=trust,
+                freshness=freshness,
+                coverage=coverage,
+                mode=mode,
+                duplicate_penalty=duplicate_penalty,
+                asked_penalty=asked_penalty,
+                total_score=round(total, 9),
+            )
+            scored.append((candidate, breakdown))
+
+        scored.sort(
+            key=lambda item: (
+                -item[1].total_score,
+                -item[1].vector_similarity,
+                -item[1].trust,
+                -item[1].freshness,
+                item[0].question_id,
+                item[0].source_id,
+            )
+        )
+
+        traces: list[dict[str, Any]] = []
+        final: list[tuple[RetrievedQuestion, RetrievalScoreBreakdown]] = []
+        for index, (candidate, breakdown) in enumerate(scored[:limit], start=1):
+            breakdown.rank = index
+            breakdown.selected = index == 1
+            final.append((candidate, breakdown))
+            traces.append(breakdown.as_dict())
+        self.last_rank_trace.extend(traces)
+        return final
+
+    def _attach_trace(self, result: QuestionRetrievalResult) -> None:
+        # Task 1 intentionally forbids extra serialized fields.  ``object``
+        # assignment gives local diagnostics access without changing that
+        # contract or leaking scores to the public report layer.
+        object.__setattr__(result, "rank_trace", [dict(item) for item in self.last_rank_trace])
+        object.__setattr__(result, "ranking_trace", result.rank_trace)
+
+    @staticmethod
+    def _result(status: str, *, as_of: date) -> QuestionRetrievalResult:
+        return QuestionRetrievalResult(status=status, as_of=as_of)  # type: ignore[arg-type]
+
+
+__all__ = [
+    "ASKED_PENALTY_WEIGHT",
+    "COVERAGE_WEIGHT",
+    "DUPLICATE_PENALTY_WEIGHT",
+    "EmbeddingClient",
+    "FRESHNESS_WEIGHT",
+    "MAX_QUERY_CHARS",
+    "MODE_WEIGHT",
+    "QuestionRetriever",
+    "RetrievalScoreBreakdown",
+    "TRUST_WEIGHT",
+    "VECTOR_WEIGHT",
+    "build_question_retrieval_intent",
+]

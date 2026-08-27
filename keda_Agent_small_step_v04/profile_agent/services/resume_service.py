@@ -33,6 +33,7 @@ def parse_resume(clean_resume: str) -> ResumeProfile:
    - responsibilities: list[str]
    - achievements: list[str] (没有时用空列表 [], 不能用 null)
    - technologies: list[str]
+   - company 和 role 未知时必须使用空字符串 ""，不能使用 null；period 未知时才允许 null.
 5. projects: 逐个结构化项目, list[object], 每个对象包含:
    - name: str
    - description: str

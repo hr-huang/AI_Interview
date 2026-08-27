@@ -193,6 +193,52 @@ def evaluate_report_calibration(
     """Return all hard-boundary checks without calling an LLM or mutating data."""
 
     assertions = evaluate_report_invariants(case.evidences, report)
+    modes_by_requirement: dict[str, set[str]] = {}
+    for turn in case.turns:
+        modes_by_requirement.setdefault(
+            turn.primary_requirement_id,
+            set(),
+        ).add(turn.question_mode)
+    for requirement_id, required_modes in (
+        case.expectation.required_question_modes.items()
+    ):
+        actual_modes = modes_by_requirement.get(requirement_id, set())
+        for required_mode in required_modes:
+            passed = required_mode in actual_modes
+            assertions.append(
+                _assertion(
+                    f"question_mode:{requirement_id}:{required_mode}",
+                    passed,
+                    f"{requirement_id} 已使用 {required_mode} 验证。"
+                    if passed
+                    else f"{requirement_id} 缺少 {required_mode} 验证。",
+                )
+            )
+
+    for requirement_id, expected_evidence_ids in (
+        case.expectation.required_limiting_evidence_ids.items()
+    ):
+        assessment, error = _assessment_for_requirement(
+            report,
+            requirement_id,
+        )
+        actual_ids = (
+            set(assessment.limiting_evidence_ids)
+            if assessment is not None
+            else set()
+        )
+        missing_ids = sorted(set(expected_evidence_ids) - actual_ids)
+        assertions.append(
+            _assertion(
+                f"limiting_evidence:{requirement_id}",
+                error is None and not missing_ids,
+                f"{requirement_id} 包含必需的限制证据。"
+                if error is None and not missing_ids
+                else f"{requirement_id} 缺少限制证据: "
+                + ", ".join(missing_ids),
+            )
+        )
+
     expected_requirement_ids = _requirement_ids(case)
     bound_requirement_ids = [
         binding.requirement_id for binding in blueprint.bindings

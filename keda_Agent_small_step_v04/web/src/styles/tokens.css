@@ -1,0 +1,26 @@
+:root {
+  color-scheme: light;
+
+  --ink-950: #14253b;
+  --ink-900: #1c3048;
+  --ink-800: #263c54;
+  --ink-700: #3e5367;
+  --paper-50: #f8f8f4;
+  --paper-100: #f0f1ed;
+  --paper-200: #e4e7e2;
+  --line-300: #cbd1ce;
+  --line-400: #aeb8b5;
+  --muted-600: #687378;
+  --muted-500: #7e898c;
+  --accent-600: #c96a35;
+  --accent-500: #d78652;
+  --accent-100: #f2dfd3;
+  --positive-600: #507d70;
+  --danger-600: #b84e36;
+  --font-display: Georgia, 'Noto Serif SC', 'Songti SC', serif;
+  --font-body: 'Noto Sans SC', 'Microsoft YaHei', 'PingFang SC', sans-serif;
+  --radius-sm: 2px;
+  --radius-md: 6px;
+  --shadow-paper: 0 18px 40px rgba(20, 37, 59, 0.08);
+  --content-width: 1120px;
+}

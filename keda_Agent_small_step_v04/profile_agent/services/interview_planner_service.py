@@ -15,6 +15,7 @@ from profile_agent.schemas.interview_schema import (
     AssessmentTarget,
     EvidenceRequirement,
 )
+from profile_agent.schemas.report_schema import RoleCompetencyProfile
 
 
 # ============================================================
@@ -148,6 +149,138 @@ def validate_target_count(
             f"最大允许: {policy.max_targets}"
         )
 
+
+def validate_core_coverage(
+    draft: InterviewPlanDraft,
+    competency_model: CompetencyModel,
+) -> None:
+    """Ensure every core competency is reachable before optional targets."""
+
+    core_ids = {
+        competency.id
+        for competency in competency_model.competencies
+        if competency.importance == "core"
+    }
+    prioritized_ids = {
+        competency_id
+        for target in draft.targets
+        if target.priority == "high" and target.must_cover
+        for competency_id in target.competency_ids
+    }
+    missing_ids = sorted(core_ids - prioritized_ids)
+    if missing_ids:
+        raise ValueError(
+            "core Competency 必须由 high、must_cover Target 覆盖: "
+            + ", ".join(missing_ids)
+        )
+
+
+def validate_question_capacity(
+    draft: InterviewPlanDraft,
+    max_questions: int,
+) -> None:
+    """Reserve two questions for evidence-driven follow-ups."""
+
+    planned_requirements = sum(
+        len(target.evidence_requirements)
+        for target in draft.targets
+        if target.priority == "high" or target.must_cover
+    )
+    requirement_limit = max(1, max_questions - 2)
+    if planned_requirements > requirement_limit:
+        raise ValueError(
+            "high/must_cover Evidence Requirement 过多，无法为动态追问预留 2 题。"
+            f"当前: {planned_requirements}, 最大允许: {requirement_limit}."
+        )
+
+
+def validate_role_dimension_coverage(
+    draft: InterviewPlanDraft,
+    role_profile: RoleCompetencyProfile,
+) -> None:
+    """Ensure declared Role Pack references are valid and gating dimensions reachable."""
+
+    valid_dimension_ids = {
+        dimension.id for dimension in role_profile.dimensions
+    }
+    for target in draft.targets:
+        for requirement in target.evidence_requirements:
+            dimension_id = requirement.planned_role_dimension_id
+            if dimension_id is None:
+                raise ValueError(
+                    "每个 Evidence Requirement 必须声明 "
+                    "planned_role_dimension_id"
+                )
+            if dimension_id not in valid_dimension_ids:
+                raise ValueError(
+                    "Planner 返回了不存在的 Role Dimension ID: "
+                    f"{dimension_id}"
+                )
+
+    gating_ids = {
+        dimension.id
+        for dimension in role_profile.dimensions
+        if dimension.is_gating
+    }
+    prioritized_ids = {
+        requirement.planned_role_dimension_id
+        for target in draft.targets
+        if target.priority == "high" and target.must_cover
+        for requirement in target.evidence_requirements
+    }
+    missing_ids = sorted(gating_ids - prioritized_ids)
+    if missing_ids:
+        raise ValueError(
+            "gating Role Dimension 必须由 high、must_cover Target 的 "
+            "Evidence Requirement 覆盖: " + ", ".join(missing_ids)
+        )
+
+
+def validate_transfer_coverage(
+    draft: InterviewPlanDraft,
+    policy: InterviewPolicy,
+) -> None:
+    """Reserve an explicit new-scenario probe, especially for core project claims."""
+
+    if not policy.require_independent_problem_solving:
+        return
+
+    prioritized_transfer_targets = [
+        target
+        for target in draft.targets
+        if target.priority == "high"
+        and target.must_cover
+        and any(
+            requirement.requires_transfer_validation
+            for requirement in target.evidence_requirements
+        )
+    ]
+    if not prioritized_transfer_targets:
+        raise ValueError(
+            "必须在 high、must_cover Target 中安排至少一条新场景迁移验证"
+        )
+
+    for target in prioritized_transfer_targets:
+        if "scenario" not in target.preferred_modes:
+            raise ValueError("迁移验证 Target 的 preferred_modes 必须包含 scenario")
+
+    project_claim_targets = [
+        target
+        for target in draft.targets
+        if target.priority == "high"
+        and target.must_cover
+        and target.related_claim_ids
+        and "project_deep_dive" in target.preferred_modes
+    ]
+    for target in project_claim_targets:
+        if not any(
+            requirement.requires_transfer_validation
+            for requirement in target.evidence_requirements
+        ):
+            raise ValueError(
+                "high、must_cover 项目 Claim Target 必须包含新场景迁移验证"
+            )
+
 # ============================================================
 # 检查 LLM 给出的 Target 时间预算是否超出总时间
 # ============================================================
@@ -236,6 +369,12 @@ def finalize_interview_plan(
             requirement = EvidenceRequirement(
                 id=requirement_id,
                 description=req_draft.description,
+                planned_role_dimension_id=(
+                    req_draft.planned_role_dimension_id
+                ),
+                requires_transfer_validation=(
+                    req_draft.requires_transfer_validation
+                ),
             )
 
             final_requirements.append(
@@ -305,6 +444,7 @@ def build_interview_plan(
     competency_model: CompetencyModel,
     claim_registry: ClaimRegistry,
     duration_minutes: int,
+    role_profile: RoleCompetencyProfile,
     policy: InterviewPolicy = DEFAULT_INTERVIEW_POLICY,
 ) -> InterviewPlan:
 
@@ -348,6 +488,8 @@ def build_interview_plan(
         policy.model_dump_json()
     )
 
+    role_profile_json = role_profile.model_dump_json()
+
     # --------------------------------------------------------
     # 4. 构造 Prompt
     #
@@ -371,6 +513,8 @@ def build_interview_plan(
 3. InterviewPolicy
 4. 本次可用面试时间
 
+硬约束: targets 数量绝不能超过 InterviewPolicy.max_targets。必须读取输入中的具体数值，合并相近目标后再输出。
+
 
 你的输出是 InterviewPlanDraft, JSON 字段必须严格使用以下定义:
 
@@ -381,7 +525,11 @@ def build_interview_plan(
       "target_type": "knowledge/implementation/debugging/system_design/problem_solving/experience_verification 之一",
       "competency_ids": ["competency_01"],
       "evidence_requirements": [
-        {"description": "字符串"}
+        {
+          "description": "字符串",
+          "planned_role_dimension_id": "role_dim_01",
+          "requires_transfer_validation": false
+        }
       ],
       "related_claim_ids": ["claim_01"],
       "priority": "high/medium/low 之一",
@@ -392,7 +540,22 @@ def build_interview_plan(
   ]
 }
 
-重要: evidence_requirements 必须是对象数组, 每个对象包含 description 字段, 不能是字符串数组!
+重要: evidence_requirements 必须是对象数组, 每个对象必须包含 description、
+planned_role_dimension_id 和 requires_transfer_validation，不能是字符串数组!
+
+重要: TargetType 与 QuestionMode 是两套完全不同的枚举:
+
+- target_type 只能是 knowledge、implementation、debugging、system_design、problem_solving、experience_verification。
+- target_type 严禁使用任何 QuestionMode。
+- foundation、project_deep_dive、scenario、coding、follow_up 都只能出现在 preferred_modes。
+- project_deep_dive 只能出现在 preferred_modes，不能写入 target_type。
+- scenario 只能出现在 preferred_modes，不能写入 target_type。
+
+字段对照示例（同一个场景题验证问题解决能力）:
+- 正确示例: "target_type": "problem_solving", "preferred_modes": ["scenario"]
+- 错误示例: "target_type": "scenario"
+
+输出前逐个检查每个 target，若 target_type 不属于上述六个 TargetType，必须自行修正后再输出。
 
 
 ==================================================
@@ -407,6 +570,9 @@ CompetencyModel 描述:
 - 目前还缺哪些 Evidence
 
 应优先保证 core competency 得到充分验证.
+
+任何关联 core competency 的 Target 都必须设为 high 且 must_cover；高度相关的
+core competency 应合并进同一 Target，不能把可靠性、安全等核心能力放到可选尾部。
 
 
 ==================================================
@@ -497,6 +663,13 @@ Debugging / Problem Solving
 
 能够解释 fan-out 与 fan-in 的执行关系.
 
+planned_role_dimension_id 必须是输入 RoleCompetencyProfile 中真实存在的维度 ID。
+每个 is_gating=true 的维度都必须至少有一条 Requirement 位于
+high、must_cover Target 中。
+
+requires_transfer_validation=true 只能用于脱离简历原项目的新场景；
+不能把“再解释一遍原项目”标成迁移验证。
+
 
 ==================================================
 五、题型
@@ -563,6 +736,14 @@ require_independent_problem_solving=True
 应该保留能够验证候选人面对新问题时
 分析、调试、设计能力的 Target.
 
+至少一个 Evidence Requirement 必须验证新场景迁移或适配，
+并且该场景不能只是重复候选人简历中的原项目；
+应验证候选人能否把既有方法迁移到陌生、约束不同或受监管的场景。
+迁移 Requirement 必须放在 high、must_cover 的核心 Target，
+不要放进低优先级或 optional 的尾部 Target，以确保有限题数内能够实际验证。
+如果 high、must_cover Target 通过 project_deep_dive 验证重要项目 Claim，
+迁移 Requirement 必须直接放在该 Target 内，且 preferred_modes 必须包含 scenario。
+
 
 ==================================================
 八、相关项目 / 实习
@@ -624,6 +805,15 @@ time_budget_minutes 是初始软预算.
 {available_minutes} 分钟
 
 
+本次最大问题数:
+
+{calculate_max_questions(duration_minutes)} 题
+
+
+所有 high 或 must_cover Target 的 Evidence Requirement 总数不得超过
+{max(1, calculate_max_questions(duration_minutes) - 2)} 个，必须为基于回答的动态追问预留 2 题。
+
+
 CompetencyModel:
 
 {competency_json}
@@ -639,48 +829,60 @@ InterviewPolicy:
 {policy_json}
 
 
+RoleCompetencyProfile:
+
+{role_profile_json}
+
+
 请生成 InterviewPlanDraft.
 """
         ),
     ]
 
     # --------------------------------------------------------
-    # 5. 让 LLM 负责语义规划
+    # 5-8. 让 LLM 规划，并对 Schema 之外的业务约束纠正一次
     # --------------------------------------------------------
 
-    draft: InterviewPlanDraft = (
-        llm.structured(
-            messages,
+    correction: ValueError | None = None
+    for business_attempt in range(2):
+        attempt_messages = messages
+        if correction is not None:
+            attempt_messages = messages + [
+                (
+                    "human",
+                    "上一轮 InterviewPlanDraft 未通过业务校验："
+                    f"{correction}。请按该错误修正后重新生成完整 Draft，"
+                    "不要解释，只返回 JSON。",
+                )
+            ]
+        draft: InterviewPlanDraft = llm.structured(
+            attempt_messages,
             InterviewPlanDraft,
         )
-    )
-
-    # --------------------------------------------------------
-    # 6. Python 检查 Target 数量是否超过 Policy 上限
-    # --------------------------------------------------------
-
-    validate_target_count(
-        draft=draft,
-        policy=policy,
-    )
-
-    # 7. Python 检查 LLM 有没有乱引用不存在的 ID
-    # --------------------------------------------------------
-
-    validate_references(
-        draft=draft,
-        competency_model=competency_model,
-        claim_registry=claim_registry,
-    )
-
-    # --------------------------------------------------------
-    # 8. Python 检查时间预算
-    # --------------------------------------------------------
-
-    validate_time_budget(
-        draft=draft,
-        available_minutes=available_minutes,
-    )
+        try:
+            validate_target_count(draft=draft, policy=policy)
+            validate_core_coverage(draft, competency_model)
+            validate_role_dimension_coverage(draft, role_profile)
+            validate_transfer_coverage(draft, policy)
+            validate_question_capacity(
+                draft,
+                max_questions=calculate_max_questions(duration_minutes),
+            )
+            validate_references(
+                draft=draft,
+                competency_model=competency_model,
+                claim_registry=claim_registry,
+            )
+            validate_time_budget(
+                draft=draft,
+                available_minutes=available_minutes,
+            )
+        except ValueError as error:
+            if business_attempt == 1:
+                raise
+            correction = error
+        else:
+            break
 
     # --------------------------------------------------------
     # 9. Python 负责最终编号和硬规则

@@ -31,7 +31,15 @@ class FakeLLM:
         return self.response
 
 
-def make_plan() -> InterviewPlan:
+class FailIfCalledLLM:
+    def structured(self, messages, schema):
+        raise AssertionError("complete planned bindings must not call LLM")
+
+
+def make_plan(
+    planned_dimensions: list[str | None] | None = None,
+) -> InterviewPlan:
+    planned_dimensions = planned_dimensions or [None, None, None]
     return InterviewPlan(
         duration_minutes=30,
         max_questions=10,
@@ -46,14 +54,17 @@ def make_plan() -> InterviewPlan:
                     EvidenceRequirement(
                         id="req_01",
                         description="能够拆分状态、节点和工具边界",
+                        planned_role_dimension_id=planned_dimensions[0],
                     ),
                     EvidenceRequirement(
                         id="req_02",
                         description="能够解释失败恢复和人工介入",
+                        planned_role_dimension_id=planned_dimensions[1],
                     ),
                     EvidenceRequirement(
                         id="req_03",
                         description="能够设计可验证的业务成功标准",
+                        planned_role_dimension_id=planned_dimensions[2],
                     ),
                 ],
                 related_claim_ids=[],
@@ -141,7 +152,7 @@ def make_draft(
 
 
 class ScoringBlueprintServiceTest(unittest.TestCase):
-    def test_calls_structured_llm_once(self) -> None:
+    def test_fully_unannotated_legacy_plan_calls_structured_llm_once(self) -> None:
         fake_llm = FakeLLM(make_draft())
 
         result = build_scoring_blueprint(
@@ -162,6 +173,55 @@ class ScoringBlueprintServiceTest(unittest.TestCase):
         self.assertIn("拆分节点、状态和工具边界", prompt)
         self.assertIn("每个 Requirement 恰好绑定一次", prompt)
         self.assertIn("不得评分", prompt)
+        self.assertIn("安全关键约束优先于通用架构表述", prompt)
+        self.assertIn("高风险操作、授权、审批、人工确认或失败恢复", prompt)
+
+    def test_complete_planned_bindings_skip_llm_and_preserve_order_and_weights(self) -> None:
+        result = build_scoring_blueprint(
+            make_plan(
+                ["role_dim_01", "role_dim_01", "role_dim_02"]
+            ),
+            make_role_profile(),
+            llm_client=FailIfCalledLLM(),
+        )
+
+        self.assertEqual(
+            [
+                (binding.requirement_id, binding.primary_dimension_id)
+                for binding in result.bindings
+            ],
+            [
+                ("req_01", "role_dim_01"),
+                ("req_02", "role_dim_01"),
+                ("req_03", "role_dim_02"),
+            ],
+        )
+        self.assertEqual(
+            [binding.weight_within_dimension for binding in result.bindings],
+            [0.5, 0.5, 1.0],
+        )
+
+    def test_unknown_planned_dimension_is_rejected_without_calling_llm(self) -> None:
+        with self.assertRaisesRegex(BlueprintValidationError, "role_dim_missing"):
+            build_scoring_blueprint(
+                make_plan(
+                    ["role_dim_01", "role_dim_missing", "role_dim_02"]
+                ),
+                make_role_profile(),
+                llm_client=FailIfCalledLLM(),
+            )
+
+    def test_partially_annotated_legacy_plan_calls_llm_once(self) -> None:
+        fake_llm = FakeLLM(make_draft())
+
+        result = build_scoring_blueprint(
+            make_plan(["role_dim_01", None, "role_dim_02"]),
+            make_role_profile(),
+            llm_client=fake_llm,
+        )
+
+        self.assertIsInstance(result, ScoringBlueprint)
+        self.assertEqual(len(fake_llm.calls), 1)
 
     def test_prompt_pins_exact_root_json_shape_for_mimo(self) -> None:
         fake_llm = FakeLLM(make_draft())

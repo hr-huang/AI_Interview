@@ -10,14 +10,21 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
 from profile_agent.schemas.claim_schema import ClaimRegistry
 from profile_agent.schemas.interview_schema import InterviewPlan
+from profile_agent.schemas.job_schema import JobProfile
 from profile_agent.schemas.report_schema import (
     AssessmentReport,
+    CandidateOverview,
     ClaimVerification,
+    DecisionSignal,
+    DevelopmentAction,
+    EnterpriseAssessment,
     InterviewPathStep,
+    NarrativeItem,
     RequirementEvidenceAssessment,
     ReportNarrativeDraft,
     RoleCompetencyProfile,
@@ -25,6 +32,7 @@ from profile_agent.schemas.report_schema import (
     ScoreSnapshot,
     ScoringBlueprint,
 )
+from profile_agent.schemas.resume_schema import ResumeProfile
 from profile_agent.schemas.runtime_schema import (
     Evidence,
     InterviewRuntimeState,
@@ -37,8 +45,17 @@ from profile_agent.services.requirement_evidence_assessment_service import (
     build_requirement_evidence_assessments,
 )
 from profile_agent.services.report_writer_service import (
-    fallback_report_narrative,
-    write_report_narrative,
+    EnterpriseCopyDraft,
+    fallback_enterprise_copy,
+    write_enterprise_copy,
+)
+from profile_agent.services.enterprise_report_service import (
+    ReportConsistencyError,
+    build_decision_signals,
+    build_evidence_excerpts,
+    derive_hiring_decision,
+    select_reinterview_dimensions,
+    validate_enterprise_assessment,
 )
 from profile_agent.services.role_profile_service import load_role_profile
 from profile_agent.services.rubric_matcher_service import (
@@ -68,7 +85,10 @@ class AssessmentReportSemanticServices:
         build_requirement_evidence_assessments
     )
     score_engine: Callable[..., Any] = calculate_score_snapshot
-    narrative_writer: Callable[..., Any] = write_report_narrative
+    # Keep the old injection name for offline callers; its contract is now
+    # EnterpriseCopyDraft rather than the legacy narrative shape.
+    narrative_writer: Callable[..., Any] = write_enterprise_copy
+    enterprise_copy_writer: Callable[..., Any] | None = None
 
 
 def _resolve_service(
@@ -108,6 +128,8 @@ def _resolve_service(
         ),
         "narrative_writer": (
             "narrative_writer",
+            "enterprise_copy_writer",
+            "write_enterprise_copy",
             "write_report_narrative",
             "writer",
         ),
@@ -321,6 +343,118 @@ def build_limitations(
     return limitations
 
 
+def _normalise_resume_profile(
+    value: ResumeProfile | Mapping[str, Any] | None,
+) -> ResumeProfile | None:
+    if value is None:
+        return None
+    return ResumeProfile.model_validate(value)
+
+
+def _normalise_job_profile(
+    value: JobProfile | Mapping[str, Any] | None,
+) -> JobProfile | None:
+    if value is None:
+        return None
+    return JobProfile.model_validate(value)
+
+
+def _candidate_experience_summary(profile: ResumeProfile | None) -> str | None:
+    if profile is None:
+        return None
+
+    entries: list[str] = []
+    for experience in profile.work_experiences:
+        label = " / ".join(
+            part.strip()
+            for part in (experience.company, experience.role, experience.period or "")
+            if part and part.strip()
+        )
+        if label:
+            entries.append(label)
+    for project in profile.projects:
+        if project.name.strip():
+            entries.append(project.name.strip())
+    entries.extend(item.strip() for item in profile.other_experiences if item.strip())
+    return "；".join(dict.fromkeys(entries)) or None
+
+
+def build_candidate_overview(
+    *,
+    candidate_id: str | None,
+    target_role: str | None,
+    turns: Iterable[InterviewTurn],
+    role_profile: RoleCompetencyProfile,
+    resume_profile: ResumeProfile | Mapping[str, Any] | None = None,
+    job_profile: JobProfile | Mapping[str, Any] | None = None,
+) -> CandidateOverview:
+    """Build the report header from typed, optional pre-interview context."""
+
+    resume = _normalise_resume_profile(resume_profile)
+    job = _normalise_job_profile(job_profile)
+    resolved_target_role = (
+        (target_role or "").strip()
+        or (job.role.strip() if job is not None else "")
+        or role_profile.display_name
+    )
+    education_summary = None
+    if resume is not None:
+        education = [item.strip() for item in resume.education if item.strip()]
+        education_summary = "；".join(dict.fromkeys(education)) or None
+
+    jd_focus: list[str] = []
+    if job is not None:
+        jd_focus = [
+            requirement.name.strip()
+            for requirement in job.requirements
+            if requirement.name.strip()
+        ]
+        if not jd_focus:
+            jd_focus = [item.strip() for item in job.responsibilities if item.strip()]
+        jd_focus = list(dict.fromkeys(jd_focus))[:5]
+
+    return CandidateOverview(
+        candidate_id=(candidate_id or "未提供").strip() or "未提供",
+        target_role=resolved_target_role,
+        education_summary=education_summary,
+        experience_summary=_candidate_experience_summary(resume),
+        jd_focus=jd_focus,
+        interview_rounds=len(list(turns)),
+        generated_at=datetime.now(timezone.utc),
+    )
+
+
+def _project_legacy_narrative(
+    enterprise: EnterpriseAssessment,
+) -> ReportNarrativeDraft:
+    """Project enterprise fields into the temporary legacy narrative shape."""
+
+    def signal_item(signal: DecisionSignal) -> NarrativeItem:
+        return NarrativeItem(
+            text=signal.text,
+            dimension_ids=list(signal.dimension_ids),
+            evidence_ids=list(signal.evidence_ids),
+        )
+
+    development_actions = [
+        DevelopmentAction(
+            dimension_id=focus.dimension_id,
+            current_gap=focus.reason,
+            actions=[focus.question],
+            acceptance_criteria=list(focus.pass_criteria),
+        )
+        for focus in enterprise.reinterview_plan
+    ]
+    return ReportNarrativeDraft(
+        executive_summary=enterprise.overall_assessment,
+        strengths=[signal_item(signal) for signal in enterprise.strengths],
+        risks=[signal_item(signal) for signal in enterprise.risks],
+        unverified_areas=[signal_item(signal) for signal in enterprise.unknowns],
+        fit_contexts=[],
+        development_actions=development_actions,
+    )
+
+
 def _normalise_inputs(
     plan: InterviewPlan,
     runtime_state: InterviewRuntimeState,
@@ -356,6 +490,10 @@ def generate_assessment_report(
     evidence: list[Evidence] | None = None,
     target_role: str | None = None,
     role_version: str | None = None,
+    scoring_blueprint: ScoringBlueprint | None = None,
+    candidate_id: str = "未提供",
+    resume_profile: ResumeProfile | Mapping[str, Any] | None = None,
+    job_profile: JobProfile | Mapping[str, Any] | None = None,
     blueprint_builder: Callable[..., Any] | None = None,
     rubric_matcher: Callable[..., Any] | None = None,
     assessment_builder: Callable[..., Any] | None = None,
@@ -364,9 +502,9 @@ def generate_assessment_report(
 ) -> AssessmentReport:
     """Run the complete report stage with one deterministic score snapshot.
 
-    Only the narrative call is inside the fallback boundary.  Role Pack,
-    provenance, assessment and score failures therefore remain visible to the
-    caller instead of being rewritten as a prose fallback.
+    Only the EnterpriseCopyDraft writer call is inside the fallback boundary.
+    Role Pack, provenance, assessment, score and report-consistency failures
+    therefore remain visible to the caller instead of being rewritten as prose.
     """
 
     if evidences is None:
@@ -426,16 +564,19 @@ def generate_assessment_report(
         "score_engine",
         calculate_score_snapshot,
     )
-    narrative_writer = _resolve_service(
+    enterprise_copy_writer = _resolve_service(
         semantic_services,
         narrative_writer,
         "narrative_writer",
-        write_report_narrative,
+        write_enterprise_copy,
     )
 
-    blueprint = ScoringBlueprint.model_validate(
-        blueprint_builder(plan, profile)
-    )
+    if scoring_blueprint is None:
+        blueprint = ScoringBlueprint.model_validate(
+            blueprint_builder(plan, profile)
+        )
+    else:
+        blueprint = ScoringBlueprint.model_validate(scoring_blueprint)
     _validate_blueprint(plan, profile, blueprint)
 
     matches = RubricMatchBatch.model_validate(
@@ -471,17 +612,67 @@ def generate_assessment_report(
     interview_path = build_interview_path(plan, turns, evidences)
     limitations = build_limitations(snapshot)
 
+    # Everything below is a deterministic projection over the immutable
+    # snapshot, except for one bounded EnterpriseCopyDraft writer call.
+    decision = derive_hiring_decision(snapshot)
+    candidate_overview = build_candidate_overview(
+        candidate_id=candidate_id,
+        target_role=target_role,
+        turns=turns,
+        role_profile=profile,
+        resume_profile=resume_profile,
+        job_profile=job_profile,
+    )
+    strengths, risks, unknowns = build_decision_signals(snapshot, profile)
+    evidence_excerpts = build_evidence_excerpts(snapshot, evidences, turns)
+    selected_dimension_ids = select_reinterview_dimensions(snapshot, profile)
+
     try:
-        narrative = ReportNarrativeDraft.model_validate(
-            narrative_writer(snapshot, evidences, profile)
+        enterprise_copy = EnterpriseCopyDraft.model_validate(
+            enterprise_copy_writer(
+                snapshot,
+                profile,
+                evidences,
+                selected_dimension_ids,
+            )
         )
+    except ReportConsistencyError:
+        raise
     except Exception:
-        narrative = fallback_report_narrative(snapshot, evidences, profile)
+        # A writer outage or malformed draft is recovered by the
+        # dimension-specific deterministic copy.
+        enterprise_copy = fallback_enterprise_copy(
+            snapshot,
+            profile,
+            selected_dimension_ids,
+            evidence=evidences,
+        )
+
+    enterprise_assessment = EnterpriseAssessment(
+        decision=decision.code,
+        decision_label=decision.decision_label,
+        provisional_score=decision.provisional_score,
+        confidence=decision.confidence,
+        conditions=list(decision.conditions),
+        decision_reasons=list(decision.decision_reasons),
+        overall_assessment=enterprise_copy.overall_assessment,
+        strengths=strengths,
+        risks=risks,
+        unknowns=unknowns,
+        reinterview_plan=list(enterprise_copy.reinterview_plan),
+        evidence_excerpts=evidence_excerpts,
+    )
+    # Keep consistency failures visible to the reporting stage.  In
+    # particular, do not turn a contradictory enterprise result into prose.
+    validate_enterprise_assessment(enterprise_assessment, snapshot, turns)
+    narrative = _project_legacy_narrative(enterprise_assessment)
 
     return AssessmentReport(
         target_role=target_role or profile.display_name,
         score_snapshot=snapshot,
         narrative=narrative,
+        candidate_overview=candidate_overview,
+        enterprise_assessment=enterprise_assessment,
         interview_path=interview_path,
         assessment_limitations=limitations,
     )
@@ -490,6 +681,7 @@ def generate_assessment_report(
 __all__ = [
     "AssessmentReportSemanticServices",
     "AssessmentReportStateError",
+    "build_candidate_overview",
     "build_interview_path",
     "build_limitations",
     "generate_assessment_report",

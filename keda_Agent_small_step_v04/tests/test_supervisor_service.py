@@ -35,7 +35,9 @@ def make_target(
     must_cover: bool = False,
     related_claim_ids: list[str] | None = None,
     preferred_modes: list[str] | None = None,
+    transfer_requirement_ids: set[str] | None = None,
 ) -> AssessmentTarget:
+    transfer_requirement_ids = transfer_requirement_ids or set()
     return AssessmentTarget(
         id=target_id,
         objective=f"验证 {target_id}",
@@ -45,6 +47,9 @@ def make_target(
             EvidenceRequirement(
                 id=requirement_id,
                 description=f"描述 {requirement_id}",
+                requires_transfer_validation=(
+                    requirement_id in transfer_requirement_ids
+                ),
             )
             for requirement_id in requirement_ids
         ],
@@ -206,6 +211,7 @@ class SupervisorContextTest(unittest.TestCase):
                 "preferred_modes",
                 "related_claims",
                 "evidence_summaries",
+                "requires_transfer_validation",
             },
         )
         self.assertIn("candidates", context.model_dump())
@@ -290,6 +296,31 @@ class SupervisorContextTest(unittest.TestCase):
 
 
 class CandidateSelectionTest(unittest.TestCase):
+    def test_transfer_requirement_precedes_same_tier_project_requirement(self) -> None:
+        plan = make_plan(
+            targets=[
+                make_target(
+                    "target_01",
+                    ["req_project", "req_transfer"],
+                    priority="high",
+                    must_cover=True,
+                    related_claim_ids=["claim_01"],
+                    preferred_modes=["project_deep_dive", "scenario"],
+                    transfer_requirement_ids={"req_transfer"},
+                )
+            ]
+        )
+        context = build_supervisor_context(
+            plan,
+            make_runtime(plan),
+            [],
+            [],
+            claim_registry=make_claim_registry(),
+            now=STARTED_AT,
+        )
+
+        self.assertEqual(context.candidates[0].requirement_id, "req_transfer")
+
     def test_candidates_exclude_sufficient_skipped_and_attempt_limited_requirements(self) -> None:
         targets = [
             make_target("target_01", ["req_sufficient", "req_skipped"]),
@@ -368,6 +399,34 @@ class CandidateSelectionTest(unittest.TestCase):
 
 
 class SupervisorDecisionTest(unittest.TestCase):
+    def test_transfer_requirement_uses_scenario_despite_linked_project_claim(self) -> None:
+        plan = make_plan(
+            targets=[
+                make_target(
+                    "target_01",
+                    ["req_transfer"],
+                    priority="high",
+                    must_cover=True,
+                    related_claim_ids=["claim_01"],
+                    preferred_modes=["project_deep_dive", "scenario"],
+                    transfer_requirement_ids={"req_transfer"},
+                )
+            ]
+        )
+        context = build_supervisor_context(
+            plan,
+            make_runtime(plan),
+            [],
+            [],
+            claim_registry=make_claim_registry(),
+            now=STARTED_AT,
+        )
+
+        action = decide_next_action(context)
+
+        self.assertIsInstance(action, AskAction)
+        self.assertEqual(action.question_mode, "scenario")
+
     def test_stop_requested_has_highest_hard_stop_priority(self) -> None:
         plan = make_plan()
         runtime = make_runtime(

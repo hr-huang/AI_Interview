@@ -11,6 +11,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 
 from profile_agent.schemas.interview_schema import QuestionMode
+from profile_agent.schemas.question_rag_schema import QuestionRetrievalTrace
 
 
 RequirementStatus = Literal[
@@ -32,6 +33,13 @@ class InterviewTurn(BaseModel):
     answer: str | None = None
     asked_at: datetime
     answered_at: datetime | None = None
+    # Retrieval provenance is checkpoint-private.  Candidate-facing adapters
+    # project the turn down to id/question/answer and never serialize this
+    # field.
+    retrieval_trace: QuestionRetrievalTrace | None = Field(
+        default=None,
+        exclude=True,
+    )
 
 
 class Evidence(BaseModel):

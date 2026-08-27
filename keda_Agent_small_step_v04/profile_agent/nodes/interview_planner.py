@@ -5,6 +5,7 @@ from profile_agent.state.main_state import (
 from profile_agent.services.interview_planner_service import (
     build_interview_plan,
 )
+from profile_agent.services.role_profile_service import load_role_profile
 
 
 def interview_planner(
@@ -66,6 +67,10 @@ def interview_planner(
         competency_model=competency_model,
         claim_registry=claim_registry,
         duration_minutes=duration_minutes,
+        role_profile=load_role_profile(
+            "ai_application_engineering",
+            "2026-H2",
+        ),
     )
 
     # --------------------------------------------------------
