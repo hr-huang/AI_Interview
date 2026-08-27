@@ -1,5 +1,6 @@
 from datetime import date, datetime, timezone
 import unittest
+from datetime import date
 
 from profile_agent.schemas.claim_schema import ClaimItem, ClaimRegistry
 from profile_agent.schemas.interview_schema import (
@@ -16,7 +17,7 @@ from profile_agent.schemas.question_rag_schema import (
     QuestionRetrievalTrace,
     RetrievedQuestion,
 )
-from profile_agent.services.question_generator_service import generate_question
+from profile_agent.services.question_generator_service import generate_question, _retrieval_grounding_text
 
 
 class FakeLLM:
@@ -33,6 +34,33 @@ class FakeLLM:
     ) -> GeneratedQuestion:
         self.calls.append((messages, schema))
         return self.response
+
+
+class CandidateSafeProjectionTests(unittest.TestCase):
+    def test_grounding_contains_only_candidate_safe_projection(self) -> None:
+        record = InterviewQuestionRecord(
+            question_id="q-safe",
+            question_text="如何验证检索失败恢复？",
+            role="ai_agent_engineer", role_version="2026-H2", dimension_id="role_dim_03",
+            skills=["检索"], question_mode="scenario", business_constraint="延迟受限",
+            difficulty="intermediate",
+            expected_signals=["DO NOT LEAK"], critical_errors=["SECRET RUBRIC"],
+            follow_up_seeds=["PRIVATE FOLLOWUP"], company_tags=["ACME"],
+            source_id="source-private", source_url="https://private.invalid", source_title="PRIVATE TITLE",
+            source_type="PRIVATE TYPE", published_at=date(2026, 1, 1), verified_at=date(2026, 2, 1),
+            valid_until=date(2027, 1, 1), trust_level="high", status="active", version=1,
+            content_hash="sha256:private",
+        )
+        result = QuestionRetrievalResult(
+            status="hit", as_of=date(2026, 2, 1),
+            selected_question=RetrievedQuestion(record=record, score=0.9, index_version="v2"),
+            trace=QuestionRetrievalTrace(status="hit", question_id="q-safe", source_id="source-private", score=0.9, index_version="v2"),
+        )
+        text = _retrieval_grounding_text(result, business_constraint="业务约束")
+        self.assertIn("Original question", text)
+        self.assertIn("Dimension", text)
+        for forbidden in ("source-private", "private.invalid", "PRIVATE TITLE", "PRIVATE TYPE", "DO NOT LEAK", "SECRET RUBRIC", "PRIVATE FOLLOWUP", "ACME", "0.9", "v2"):
+            self.assertNotIn(forbidden, text)
 
 
 def make_plan() -> InterviewPlan:
@@ -185,8 +213,8 @@ class QuestionGeneratorServiceTest(unittest.TestCase):
         self.assertIn("能够说明并发状态更新中的一致性保证", prompt)
         self.assertIn("SKILL_ONE", prompt)
         self.assertIn("SKILL_TWO", prompt)
-        self.assertIn("SOURCE_TYPE", prompt)
-        self.assertIn("2026-07-01", prompt)
+        self.assertIn("Dimension:", prompt)
+        self.assertIn("Question mode:", prompt)
         for forbidden in (
             "NEVER_LEAK_EXPECTED_SIGNAL",
             "NEVER_LEAK_CRITICAL_ERROR",

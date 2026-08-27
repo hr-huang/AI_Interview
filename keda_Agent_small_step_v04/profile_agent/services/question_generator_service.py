@@ -135,11 +135,11 @@ Business constraint:
 Skill names:
 {skills}
 
-Source type:
-{record.source_type.strip()}
+Dimension:
+{record.dimension_id}
 
-Source date:
-{record.published_at.isoformat()}
+Question mode:
+{record.primary_mode or record.question_mode}
 """.strip()
 
 

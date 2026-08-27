@@ -25,9 +25,11 @@ from profile_agent.schemas.question_rag_schema import (
     RetrievedQuestion,
 )
 from profile_agent.services.question_retrieval_service import (
+    ModeMatchTier,
     QuestionRetriever,
     build_query_embedding_text,
     build_question_retrieval_intent,
+    route_mode_candidates,
 )
 
 
@@ -712,6 +714,56 @@ class IntentBuilderTests(unittest.TestCase):
 
 
 class RetrieverTests(unittest.TestCase):
+    def test_route_prefers_exact_primary_over_compatible_candidates(self) -> None:
+        exact = RetrievedQuestion(record=make_record("q-exact"), score=0.1, index_version="v2")
+        compatible_record = make_record("q-compatible").model_copy(
+            update={"question_mode": "system_design", "primary_mode": "system_design"}
+        )
+        compatible = RetrievedQuestion(record=compatible_record, score=0.99, index_version="v2")
+        routed = route_mode_candidates(
+            QuestionRetrievalIntent(
+                query_text="query", role="ai_agent_engineer", dimension_id="role_dim_03",
+                question_mode="scenario", difficulty="intermediate",
+            ),
+            [compatible, exact],
+            QuestionModePolicy.default(),
+        )
+        self.assertEqual([item.question_id for item in routed], ["q-exact"])
+        self.assertEqual(getattr(routed, "match_tier", ModeMatchTier.EXACT), ModeMatchTier.EXACT)
+
+    def test_route_returns_compatible_in_frozen_order_only_when_primary_empty(self) -> None:
+        records = []
+        for mode in ("coding", "system_design"):
+            record = make_record(f"q-{mode}").model_copy(
+                update={"question_mode": mode, "primary_mode": mode}
+            )
+            records.append(RetrievedQuestion(record=record, score=0.5, index_version="v2"))
+        intent = QuestionRetrievalIntent(
+            query_text="query", role="ai_agent_engineer", dimension_id="role_dim_03",
+            question_mode="scenario", difficulty="intermediate",
+        )
+        routed = route_mode_candidates(intent, records, QuestionModePolicy.default())
+        self.assertEqual([item.question_id for item in routed], ["q-system_design", "q-coding"])
+        self.assertEqual(getattr(routed, "match_tier", ModeMatchTier.EXACT), ModeMatchTier.COMPATIBLE)
+
+    def test_retriever_queries_compatible_only_after_empty_primary(self) -> None:
+        compatible_record = make_record("q-compatible").model_copy(
+            update={"question_mode": "system_design", "primary_mode": "system_design"}
+        )
+        store = FakeStore()
+        def search(**kwargs: object) -> QuestionStoreSearchResult:
+            store.calls.append(kwargs)
+            requested = kwargs["intent"].question_mode  # type: ignore[union-attr]
+            if requested == "system_design":
+                return QuestionStoreSearchResult(status="hit", hits=[RetrievedQuestion(record=compatible_record, score=0.4, index_version="v2")], index_version="v2")
+            return QuestionStoreSearchResult(status="no_match", index_version="v2")
+        store.search = search  # type: ignore[method-assign]
+        retriever = QuestionRetriever(FakeEmbedding(), store, today=TODAY)
+        intent = QuestionRetrievalIntent(query_text="query", role="ai_agent_engineer", dimension_id="role_dim_03", question_mode="scenario", difficulty="intermediate")
+        result = retriever.retrieve(intent)
+        self.assertEqual(result.status, "hit")
+        self.assertEqual(result.trace.mode_match_tier, "compatible")
+        self.assertGreaterEqual(len(store.calls), 2)
     def test_retrieve_path_uses_safe_projection_instead_of_raw_intent(self) -> None:
         embedding = FakeEmbedding()
         store = FakeStore(QuestionStoreSearchResult(status="no_match"))

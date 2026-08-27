@@ -16,6 +16,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from datetime import date, datetime
+from enum import Enum
 import math
 import re
 from typing import Any, Protocol
@@ -48,6 +49,48 @@ from profile_agent.services.question_bank_service import (
 MAX_QUERY_CHARS = 512
 MAX_CANDIDATES = 3
 _ROLE = "ai_agent_engineer"
+
+
+class ModeMatchTier(str, Enum):
+    EXACT = "exact"
+    COMPATIBLE = "compatible"
+
+
+class RoutedCandidates(list[RetrievedQuestion]):
+    """Candidates after the strict primary/compatible routing decision."""
+
+    def __init__(self, values: Sequence[RetrievedQuestion], tier: ModeMatchTier):
+        super().__init__(values)
+        self.match_tier = tier
+        self.matched_mode = values[0].record.question_mode if values else None
+
+
+def route_mode_candidates(
+    intent: QuestionRetrievalIntent,
+    candidates: Sequence[RetrievedQuestion],
+    policy: QuestionModePolicy,
+) -> RoutedCandidates:
+    """Keep exact primary candidates authoritative; otherwise use frozen fallback order."""
+
+    if not isinstance(intent, QuestionRetrievalIntent):
+        raise TypeError("intent must be QuestionRetrievalIntent")
+    if not isinstance(policy, QuestionModePolicy):
+        policy = QuestionModePolicy.model_validate(policy)
+    primary = [
+        item for item in candidates
+        if item.record.primary_mode == intent.question_mode
+        or item.record.question_mode == intent.question_mode
+    ]
+    if primary:
+        return RoutedCandidates(primary, ModeMatchTier.EXACT)
+    allowed = set(policy.compatible_order_for(intent.dimension_id))
+    grouped = {mode: [] for mode in policy.compatible_order_for(intent.dimension_id)}
+    for item in candidates:
+        mode = item.record.primary_mode or item.record.question_mode
+        if mode in allowed and mode != intent.question_mode:
+            grouped.setdefault(mode, []).append(item)
+    fallback = [item for mode in policy.compatible_order_for(intent.dimension_id) for item in grouped.get(mode, [])]
+    return RoutedCandidates(fallback, ModeMatchTier.COMPATIBLE)
 
 # The vector score remains the main signal, while the other components are
 # deliberately bounded tie-breakers.  Keeping these constants explicit makes
@@ -967,60 +1010,73 @@ class QuestionRetriever:
             raise ValueError("limit must be a positive integer")
         requested_limit = min(MAX_CANDIDATES, requested_limit)
 
+        excluded_ids = set(intent.excluded_question_ids)
+        def collect(raw_store_result: Any, requested_intent: QuestionRetrievalIntent) -> tuple[list[RetrievedQuestion], bool, str | None, str]:
+            status, raw_hits, index_version = _store_status_and_hits(raw_store_result)
+            if status != "hit":
+                return [], False, index_version, status
+            found: list[RetrievedQuestion] = []
+            malformed = False
+            for raw_hit in raw_hits:
+                hit = _coerce_hit(raw_hit, index_version=index_version)
+                if hit is None:
+                    malformed = True
+                    continue
+                if index_version is not None and hit.index_version != index_version:
+                    malformed = True
+                    continue
+                record = hit.record
+                if record.role != requested_intent.role or record.dimension_id != requested_intent.dimension_id:
+                    continue
+                try:
+                    self.question_mode_policy.validate_mode_assignment(
+                        record.dimension_id, record.primary_mode or record.question_mode, record.compatible_modes
+                    )
+                except (TypeError, ValueError, AttributeError):
+                    malformed = True
+                    continue
+                if record.question_mode != requested_intent.question_mode:
+                    continue
+                if record.status != "active" or record.valid_until < as_of:
+                    continue
+                if record.question_id in excluded_ids:
+                    continue
+                found.append(hit)
+            return found, malformed, index_version, status
+
         try:
-            raw_store_result = self.store.search(
-                intent=intent,
-                query_vector=query_vector,
-                today=as_of,
-                limit=requested_limit,
-            )
+            raw_store_result = self.store.search(intent=intent, query_vector=query_vector, today=as_of, limit=requested_limit)
         except Exception:
             return self._result("unavailable", as_of=as_of)
-
-        status, raw_hits, store_index_version = _store_status_and_hits(raw_store_result)
-        if status in {"unavailable", "index_mismatch", "no_match"}:
+        candidates, malformed_hit, store_index_version, status = collect(raw_store_result, intent)
+        if status in {"unavailable", "index_mismatch"}:
             return self._result(status, as_of=as_of)
-        if status != "hit":
+        if status not in {"hit", "no_match"}:
             return self._result("unavailable", as_of=as_of)
 
-        candidates: list[RetrievedQuestion] = []
-        malformed_hit = False
-        excluded_ids = set(intent.excluded_question_ids)
-        for raw_hit in raw_hits:
-            hit = _coerce_hit(raw_hit, index_version=store_index_version)
-            if hit is None:
-                malformed_hit = True
-                continue
-            if (
-                store_index_version is not None
-                and hit.index_version != store_index_version
-            ):
-                malformed_hit = True
-                continue
-            record = hit.record
-            # Store filters are authoritative for efficiency, but this second
-            # boundary keeps an injected/faulty store from bypassing lifecycle,
-            # role, dimension, mode, or asked-question rules.
-            if record.role != intent.role:
-                continue
-            if record.dimension_id != intent.dimension_id:
-                continue
-            try:
-                self.question_mode_policy.validate_mode_assignment(
-                    record.dimension_id,
-                    record.primary_mode or record.question_mode,
-                    record.compatible_modes,
-                )
-            except (TypeError, ValueError, AttributeError):
-                malformed_hit = True
-                continue
-            if record.question_mode != intent.question_mode:
-                continue
-            if record.status != "active" or record.valid_until < as_of:
-                continue
-            if record.question_id in excluded_ids:
-                continue
-            candidates.append(hit)
+        # Compatible modes are queried only after the exact primary route is empty.
+        if not candidates and not malformed_hit:
+            for mode in self.question_mode_policy.compatible_order_for(intent.dimension_id):
+                if mode == intent.question_mode:
+                    continue
+                fallback_intent = intent.model_copy(update={"question_mode": mode})
+                try:
+                    fallback_result = self.store.search(
+                        intent=fallback_intent, query_vector=query_vector, today=as_of, limit=requested_limit
+                    )
+                except Exception:
+                    return self._result("unavailable", as_of=as_of)
+                more, malformed, fallback_version, fallback_status = collect(fallback_result, fallback_intent)
+                if fallback_status in {"unavailable", "index_mismatch"}:
+                    return self._result(fallback_status, as_of=as_of)
+                malformed_hit = malformed_hit or malformed
+                store_index_version = store_index_version or fallback_version
+                candidates.extend(more)
+                if candidates:
+                    break
+
+        routed = route_mode_candidates(intent, candidates, self.question_mode_policy)
+        candidates = list(routed)
 
         if not candidates:
             if malformed_hit:
@@ -1053,6 +1109,8 @@ class QuestionRetriever:
                 index_version=selected_question.index_version,
             ),
         )
+        object.__setattr__(result.trace, "mode_match_tier", routed.match_tier.value)
+        object.__setattr__(result.trace, "matched_mode", routed.matched_mode)
         self._attach_trace(result)
         return result
 
@@ -1184,10 +1242,12 @@ __all__ = [
     "FRESHNESS_WEIGHT",
     "MAX_QUERY_CHARS",
     "MODE_WEIGHT",
+    "ModeMatchTier",
     "QuestionRetriever",
     "RetrievalScoreBreakdown",
     "TRUST_WEIGHT",
     "VECTOR_WEIGHT",
     "build_query_embedding_text",
     "build_question_retrieval_intent",
+    "route_mode_candidates",
 ]
