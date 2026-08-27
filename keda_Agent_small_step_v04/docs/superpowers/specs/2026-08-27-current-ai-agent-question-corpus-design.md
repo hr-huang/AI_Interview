@@ -123,7 +123,7 @@ business_constraint 是候选人安全的约束摘要，例如数据新鲜度、
 
 每道题在进入 active 前必须关联至少两类证据：
 
-1. **近期公开面经信号**：来源发布日期或可确认的公开发布时间在 2025-01-01 至 2026-12-31；内容只记录“考察了什么能力/约束/故障/取舍”的人工摘要，不复制原问题或答案；
+1. **近期公开面经信号**：来源发布日期或可确认的公开发布时间必须满足 `2025-01-01 <= published_at <= corpus_as_of`；首版 `corpus_as_of=2026-08-27`，不得接受未来日期。内容只记录“考察了什么能力/约束/故障/取舍”的人工摘要，不复制原问题或答案；
 2. **技术交叉验证**：至少一条官方技术文档，或一份当前企业 JD。它用来验证题目中的工程事实、能力边界或岗位相关性，不是用来补齐答案。
 
 两条证据应分别登记 source_id。同一 URL 不能靠重复登记同时制造独立性；若一个来源同时提供两类信息，仍需再找到另一条独立 URL 才能满足本门槛。
@@ -224,7 +224,7 @@ sidecar 是与题目 JSON 一同版本化的审核事实，不是运行时可见
 - question_count=30、有序 question_ids；
 - 六维配额、primary mode 配额、mode_policy_version；
 - min_independent_urls=12、max_questions_per_url=3；
-- required_signal_window=2025-2026、dynamic_review_days=180、evergreen_review_days=365；
+- corpus_as_of=2026-08-27、required_signal_from=2025-01-01、dynamic_review_days=180、evergreen_review_days=365；所有来源日期必须不晚于 corpus_as_of；
 - active_count、active_trust_levels、生成/复核日期、发布状态；
 - 题目集合 hash、sidecar 集合 hash、embedding contract version。
 
@@ -235,7 +235,7 @@ Manifest 的数量和配额必须由校验器重新计算，不能只相信手�
 每个 source_id 一条记录，至少包括：
 
 - source_id、canonical URL、publisher、title、source class；
-- published_at 或（JD/页面无明确发布日期时）retrieved_at；
+- published_at；若官方文档或 JD 页面无明确发布日期，可使用 retrieved_at 并显式标记 date_basis=retrieved_at，但公开面经信号必须有可确认且不晚于 corpus_as_of 的公开时间；
 - role_level、支持的维度、source trust、当前可访问状态；
 - review_class：dynamic 或 evergreen；
 - 权益状态、是否允许人工摘要、最后验证日期和下一次复核日期；
@@ -504,6 +504,5 @@ artifacts/question_corpus/        # 生成物，可删除后重建，不是权�
 - 代表性来源仅用于说明允许的来源类别，没有声称真实采集已完成；
 - 没有把当前 difficulty、embedding 或 schema 缺口写成已经解决的事实，也没有用跨维度 fallback 掩盖缺口；
 - 运行时降级、人工审核、索引重建和候选人可见/不可见字段均保持单向、可审计边界。
-
 
 
