@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import FrozenInstanceError
-from datetime import date
+from datetime import date, datetime, timezone
 import json
 from pathlib import Path
 import tempfile
@@ -477,10 +477,36 @@ class QuestionCorpusGovernanceTests(unittest.TestCase):
         self.assertEqual(sum(entry.source_type == "current_enterprise_jd" for entry in independent), 5)
         recent_180 = [entry for entry in interviews if entry.published_at and entry.published_at >= date(2026, 2, 28)]
         recent_365 = [entry for entry in interviews if entry.published_at and entry.published_at >= date(2025, 8, 27)]
-        self.assertEqual(len(recent_180), 8)
+        self.assertEqual(len(recent_180), 10)
         self.assertEqual(len(recent_365), 10)
+        self.assertEqual(sum(entry.canonical_url.startswith("https://www.nowcoder.com/") for entry in interviews), 10)
+        self.assertEqual(sum("cloud.tencent.com" in entry.canonical_url for entry in independent if entry.source_type == "official_technical_doc"), 5)
+        self.assertEqual(sum(entry.canonical_url.startswith("https://talent.baidu.com/") for entry in independent if entry.source_type == "current_enterprise_jd"), 5)
         self.assertEqual(len({entry.canonical_url for entry in registry.entries}), len(registry.entries))
         self.assertTrue(all(entry.date_evidence.strip() for entry in registry.entries))
+        self.assertTrue(all(entry.date_evidence_locator.strip() for entry in registry.entries))
+        self.assertTrue({entry.provenance_kind for entry in interviews} <= {"firsthand", "anonymous_submission", "secondary_summary"})
+        self.assertIn("firsthand", {entry.provenance_kind for entry in interviews})
+        self.assertIn("secondary_summary", {entry.provenance_kind for entry in interviews})
+
+    def test_task6_reddit_epoch_and_evidence_kind_are_strict(self) -> None:
+        registry_path = Path(__file__).parents[1] / "profile_agent/knowledge/question_banks/ai_agent_engineer_2026_h2/QuestionSourceRegistry.json"
+        raw = json.loads(registry_path.read_text(encoding="utf-8"))
+        entry = raw["entries"][0]
+        epoch = int(datetime(2026, 8, 18, tzinfo=timezone.utc).timestamp())
+        reddit_entry = {**entry, "date_evidence_kind": "reddit_created_utc", "date_evidence_raw": str(epoch)}
+        epoch_date = datetime.fromtimestamp(int(reddit_entry["date_evidence_raw"]), tz=timezone.utc).date()
+        self.assertEqual(epoch_date.isoformat(), reddit_entry["published_at"])
+        QuestionSourceRegistryEntry.model_validate(reddit_entry)
+        bad = {**reddit_entry, "date_evidence_raw": str(epoch + 86400)}
+        with self.assertRaises(ValueError):
+            QuestionSourceRegistryEntry.model_validate(bad)
+        with self.assertRaises(ValueError):
+            QuestionSourceRegistryEntry.model_validate({**reddit_entry, "date_evidence_kind": "official_last_updated"})
+        with self.assertRaises(ValueError):
+            QuestionSourceRegistryEntry.model_validate({**reddit_entry, "date_evidence_locator": "placeholder"})
+        with self.assertRaises(ValueError):
+            QuestionSourceRegistryEntry.model_validate({**reddit_entry, "date_evidence_locator": ""})
 
     def test_validator_rejects_source_taxonomy_and_unsafe_source_page(self) -> None:
         snapshot = self._complete_snapshot()

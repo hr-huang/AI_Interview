@@ -8,7 +8,7 @@ runtime retrieval attempt selected (or why it could not select anything).
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from math import isfinite
 import re
 from typing import Any, Literal
@@ -43,6 +43,11 @@ QuestionSourceType = Literal[
     "official_technical_doc",
     "current_enterprise_jd",
 ]
+QuestionDateEvidenceKind = Literal[
+    "reddit_created_utc", "devto_published_at", "json_ld_date_published",
+    "visible_published_date", "official_last_updated", "accessed_current_jd",
+]
+QuestionProvenanceKind = Literal["firsthand", "anonymous_submission", "secondary_summary", "unknown"]
 QuestionSourceLifecycle = Literal["draft", "active", "needs_review", "retired"]
 QuestionReviewClass = Literal["dynamic", "evergreen"]
 QuestionPublicationStatus = Literal["draft", "ready", "published", "retired"]
@@ -1213,8 +1218,12 @@ class QuestionSourceRegistryEntry(BaseModel):
     rights_status: Literal["approved", "rejected", "pending"] = "pending"
     notes: str = ""
     date_evidence: str = ""
+    date_evidence_kind: QuestionDateEvidenceKind | None = None
+    date_evidence_locator: str = ""
+    date_evidence_raw: str = ""
+    provenance_kind: QuestionProvenanceKind = "unknown"
 
-    @field_validator("source_id", "title", "publisher", "human_summary", "role_level", "notes", "date_evidence")
+    @field_validator("source_id", "title", "publisher", "human_summary", "role_level", "notes", "date_evidence", "date_evidence_locator", "date_evidence_raw")
     @classmethod
     def validate_source_text(cls, value: str, info: Any) -> str:
         if value:
@@ -1257,6 +1266,31 @@ class QuestionSourceRegistryEntry(BaseModel):
             raise ValueError("accessed_at must not be after corpus_as_of")
         if self.verified_at > CORPUS_AS_OF:
             raise ValueError("verified_at must not be after corpus_as_of")
+        # Legacy in-memory fixtures may omit provenance; persisted Task6 entries
+        # provide all evidence fields and are validated strictly below.
+        if self.date_evidence_kind is None and not self.date_evidence_locator and not self.date_evidence_raw:
+            return self
+        allowed_kinds = {
+            "public_interview_experience": {"reddit_created_utc", "devto_published_at", "json_ld_date_published", "visible_published_date"},
+            "official_technical_doc": {"official_last_updated"},
+            "current_enterprise_jd": {"accessed_current_jd"},
+        }
+        if self.date_evidence_kind not in allowed_kinds[self.source_type]:
+            raise ValueError("date_evidence_kind is incompatible with source_type")
+        if not self.date_evidence_locator or self.date_evidence_locator.lower() in {"placeholder", "n/a", "unknown"}:
+            raise ValueError("date_evidence_locator must be reproducible")
+        if not self.date_evidence_raw or self.date_evidence_raw.lower() in {"placeholder", "n/a", "unknown"}:
+            raise ValueError("date_evidence_raw must contain observed timestamp")
+        try:
+            if self.date_evidence_kind == "reddit_created_utc":
+                evidence_date = datetime.fromtimestamp(int(self.date_evidence_raw), tz=timezone.utc).date()
+            else:
+                evidence_date = date.fromisoformat(self.date_evidence_raw[:10])
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("date_evidence_raw is not parseable") from exc
+        expected_date = self.accessed_at if self.source_type == "current_enterprise_jd" else self.published_at
+        if evidence_date != expected_date:
+            raise ValueError("date_evidence_raw does not match source date")
         return self
 
     @property
