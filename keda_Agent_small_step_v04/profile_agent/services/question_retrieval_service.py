@@ -14,7 +14,7 @@ can audit ranking without widening the strict Task 1 wire contract.
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import date, datetime
 import math
 import re
@@ -29,6 +29,8 @@ from profile_agent.schemas.interview_schema import (
 from profile_agent.schemas.job_schema import JobProfile
 from profile_agent.schemas.question_rag_schema import (
     InterviewQuestionRecord,
+    QuestionBankManifest,
+    QuestionModePolicy,
     QuestionRetrievalIntent,
     QuestionRetrievalResult,
     QuestionRetrievalTrace,
@@ -36,11 +38,21 @@ from profile_agent.schemas.question_rag_schema import (
 )
 from profile_agent.schemas.resume_schema import ResumeProfile
 from profile_agent.schemas.runtime_schema import InterviewTurn
+from profile_agent.services.question_bank_service import project_v1_record_to_v2
 
 
 MAX_QUERY_CHARS = 512
 MAX_CANDIDATES = 3
 _ROLE = "ai_agent_engineer"
+_V2_RECORD_FIELDS = frozenset(
+    {
+        "business_constraint",
+        "dimension_terms",
+        "primary_mode",
+        "compatible_modes",
+        "source_ids",
+    }
+)
 
 # The vector score remains the main signal, while the other components are
 # deliberately bounded tie-breakers.  Keeping these constants explicit makes
@@ -644,6 +656,12 @@ def _vector_score(value: Any) -> float:
     return round(max(-1.0, min(1.0, score)), 6)
 
 
+def _record_has_explicit_v2_fields(record: Any) -> bool:
+    if not isinstance(record, InterviewQuestionRecord):
+        return False
+    return bool(_V2_RECORD_FIELDS & set(record.model_fields_set))
+
+
 def _coerce_hit(value: Any, *, index_version: str | None) -> RetrievedQuestion | None:
     # The store boundary must return the Task 1 hit model.  Accepting a bare
     # record (or reconstructing one from arbitrary mappings) would make a
@@ -674,6 +692,20 @@ def _coerce_hit(value: Any, *, index_version: str | None) -> RetrievedQuestion |
         return None
     if not isinstance(validated.record.source_id, str) or not validated.record.source_id.strip():
         return None
+    # A v1 model is allowed through the strict read boundary above, but it
+    # must become an explicit v2 record before ranking or generation.  Inspect
+    # the original nested model because ``model_dump`` materializes v2 default
+    # fields and would otherwise erase the distinction.
+    if not _record_has_explicit_v2_fields(value.record):
+        try:
+            projected_record = project_v1_record_to_v2(value.record)
+            validated = RetrievedQuestion(
+                record=projected_record,
+                score=validated.score,
+                index_version=validated.index_version,
+            )
+        except Exception:
+            return None
     return validated
 
 
@@ -711,6 +743,10 @@ class QuestionRetriever:
         max_candidates: int = MAX_CANDIDATES,
         owns_embedding_client: bool = False,
         owns_store: bool = False,
+        question_mode_policy: QuestionModePolicy | Mapping[str, Any] | None = None,
+        question_bank_manifest: QuestionBankManifest | Mapping[str, Any] | None = None,
+        policy: QuestionModePolicy | Mapping[str, Any] | None = None,
+        manifest: QuestionBankManifest | Mapping[str, Any] | None = None,
     ) -> None:
         if embedding_client is not None and embedding is not None:
             raise ValueError("pass only one of embedding_client and embedding")
@@ -718,6 +754,14 @@ class QuestionRetriever:
             raise ValueError("pass only one of store and question_store")
         if today is not None and as_of is not None:
             raise ValueError("pass only one of today and as_of")
+        if question_mode_policy is not None and policy is not None:
+            raise ValueError(
+                "pass only one of question_mode_policy and policy"
+            )
+        if question_bank_manifest is not None and manifest is not None:
+            raise ValueError(
+                "pass only one of question_bank_manifest and manifest"
+            )
         if not isinstance(owns_embedding_client, bool):
             raise TypeError("owns_embedding_client must be a bool")
         if not isinstance(owns_store, bool):
@@ -739,6 +783,33 @@ class QuestionRetriever:
         self._closed = False
         self.today = today if today is not None else as_of
         self.max_candidates = min(MAX_CANDIDATES, max_candidates)
+        raw_policy = (
+            question_mode_policy
+            if question_mode_policy is not None
+            else policy
+        )
+        raw_manifest = (
+            question_bank_manifest
+            if question_bank_manifest is not None
+            else manifest
+        )
+        try:
+            self.question_mode_policy = (
+                QuestionModePolicy.default()
+                if raw_policy is None
+                else QuestionModePolicy.model_validate(raw_policy)
+            )
+            self.question_bank_manifest = (
+                None
+                if raw_manifest is None
+                else QuestionBankManifest.model_validate(raw_manifest)
+            )
+        except Exception as exc:
+            raise ValueError("invalid question mode policy or bank manifest") from exc
+        # Short aliases keep injected test adapters and older callers readable
+        # while the explicit names document the dependency boundary.
+        self.policy = self.question_mode_policy
+        self.manifest = self.question_bank_manifest
         self.last_rank_trace: list[dict[str, Any]] = []
         # Compatibility aliases for diagnostics used by callers that name the
         # same internal audit data differently.
@@ -794,6 +865,15 @@ class QuestionRetriever:
             return self._result("unavailable", as_of=as_of)
 
         try:
+            self.question_mode_policy.validate_mode_assignment(
+                intent.dimension_id,
+                intent.question_mode,
+                (),
+            )
+        except (TypeError, ValueError):
+            return self._result("unavailable", as_of=as_of)
+
+        try:
             query_vector = self._embed(intent.query_text)
         except Exception:
             return self._result("unavailable", as_of=as_of)
@@ -840,6 +920,15 @@ class QuestionRetriever:
             if record.role != intent.role:
                 continue
             if record.dimension_id != intent.dimension_id:
+                continue
+            try:
+                self.question_mode_policy.validate_mode_assignment(
+                    record.dimension_id,
+                    record.primary_mode or record.question_mode,
+                    record.compatible_modes,
+                )
+            except (TypeError, ValueError, AttributeError):
+                malformed_hit = True
                 continue
             if record.question_mode != intent.question_mode:
                 continue

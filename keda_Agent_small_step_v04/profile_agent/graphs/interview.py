@@ -24,7 +24,10 @@ from profile_agent.schemas.interview_schema import (
 )
 from profile_agent.schemas.report_schema import AssessmentReport
 from profile_agent.schemas.question_rag_schema import (
+    QuestionBankManifest,
+    QuestionModePolicy,
     QuestionRetrievalResult,
+    RetrievedQuestion,
 )
 from profile_agent.schemas.runtime_schema import (
     AnswerProcessingResult,
@@ -38,6 +41,7 @@ from profile_agent.services.question_generator_service import generate_question
 from profile_agent.services.question_retrieval_service import (
     build_question_retrieval_intent,
 )
+from profile_agent.services.question_bank_service import project_v1_record_to_v2
 from profile_agent.services.runtime_state_service import (
     initialize_runtime_state,
     record_question_asked,
@@ -82,9 +86,36 @@ def _as_answer_processing_result(
 def _as_question_retrieval_result(
     value: QuestionRetrievalResult | Any,
 ) -> QuestionRetrievalResult:
-    if isinstance(value, QuestionRetrievalResult):
-        return value
-    return QuestionRetrievalResult.model_validate(value)
+    result = (
+        value
+        if isinstance(value, QuestionRetrievalResult)
+        else QuestionRetrievalResult.model_validate(value)
+    )
+    selected = result.selected_question
+    if selected is None:
+        return result
+    if {
+        "business_constraint",
+        "dimension_terms",
+        "primary_mode",
+        "compatible_modes",
+        "source_ids",
+    }.intersection(selected.record.model_fields_set):
+        return result
+
+    # Injected/legacy retrievers may still return a v1 nested record.  Make
+    # the migration explicit before the generator receives a v2 result.
+    projected = project_v1_record_to_v2(selected.record)
+    return QuestionRetrievalResult(
+        status=result.status,
+        as_of=result.as_of,
+        selected_question=RetrievedQuestion(
+            record=projected,
+            score=selected.score,
+            index_version=selected.index_version,
+        ),
+        trace=result.trace,
+    )
 
 
 def _call_question_generator(
@@ -135,6 +166,8 @@ def build_interview_graph(
     report_generator: ReportGenerator | None = None,
     *,
     question_retriever: QuestionRetrieverCallable | Any | None = None,
+    question_mode_policy: QuestionModePolicy | Any | None = None,
+    question_bank_manifest: QuestionBankManifest | Any | None = None,
 ):
     """Build the interruptible interview graph.
 
@@ -157,6 +190,19 @@ def build_interview_graph(
         else report_generator
     )
     now_provider = _utc_now if now_provider is None else now_provider
+    try:
+        question_mode_policy = (
+            QuestionModePolicy.default()
+            if question_mode_policy is None
+            else QuestionModePolicy.model_validate(question_mode_policy)
+        )
+        question_bank_manifest = (
+            None
+            if question_bank_manifest is None
+            else QuestionBankManifest.model_validate(question_bank_manifest)
+        )
+    except Exception as exc:
+        raise ValueError("invalid question mode policy or bank manifest") from exc
     if checkpointer is None:
         checkpointer = InMemorySaver(serde=InterviewCheckpointSerializer())
     else:

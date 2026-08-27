@@ -19,6 +19,7 @@ from profile_agent.schemas.resume_schema import (
 from profile_agent.schemas.runtime_schema import InterviewTurn
 from profile_agent.schemas.question_rag_schema import (
     InterviewQuestionRecord,
+    QuestionModePolicy,
     QuestionRetrievalResult,
     RetrievedQuestion,
 )
@@ -603,6 +604,100 @@ class IntentBuilderTests(unittest.TestCase):
 
 
 class RetrieverTests(unittest.TestCase):
+    def test_retriever_explicitly_projects_v1_hits_before_v2_selection(self) -> None:
+        selected = RetrievedQuestion(
+            record=make_record("q_v1_candidate"),
+            score=0.91,
+            index_version="idx-v1",
+        )
+        store = FakeStore(
+            QuestionStoreSearchResult(
+                status="hit",
+                hits=[selected],
+                index_version="idx-v1",
+            )
+        )
+        retriever = QuestionRetriever(
+            FakeEmbedding(),
+            store,
+            today=TODAY,
+            question_mode_policy=QuestionModePolicy.default(),
+        )
+
+        result = retriever.retrieve(
+            build_question_retrieval_intent(action=make_action(), plan=make_plan())
+        )
+
+        self.assertEqual(result.status, "hit")
+        projected = result.selected_question.record
+        self.assertEqual(projected.primary_mode, "scenario")
+        self.assertEqual(projected.compatible_modes, [])
+        self.assertIn("primary_mode", projected.model_fields_set)
+        self.assertIn("source_ids", projected.model_fields_set)
+        self.assertEqual(len(store.calls), 1)
+
+    def test_retriever_rejects_v2_record_outside_fixed_mode_policy(self) -> None:
+        record = make_record("q_invalid_policy").model_copy(
+            update={
+                "dimension_id": "role_dim_01",
+                "primary_mode": "coding",
+                "question_mode": "coding",
+            }
+        )
+        hit = RetrievedQuestion(record=record, score=0.9, index_version="idx")
+        retriever = QuestionRetriever(
+            FakeEmbedding(),
+            FakeStore(
+                QuestionStoreSearchResult(
+                    status="hit",
+                    hits=[hit],
+                    index_version="idx",
+                )
+            ),
+            today=TODAY,
+            question_mode_policy=QuestionModePolicy.default(),
+        )
+
+        result = retriever.retrieve(
+            build_question_retrieval_intent(
+                action=make_action(),
+                plan=make_plan(dimension_id="role_dim_01"),
+            )
+        )
+
+        self.assertEqual(result.status, "unavailable")
+        self.assertIsNone(result.selected_question)
+
+    def test_retriever_rejects_an_incompatible_mode_assignment(self) -> None:
+        record = make_record("q_invalid_compatible").model_copy(
+            update={
+                "primary_mode": "scenario",
+                "question_mode": "scenario",
+                "compatible_modes": ["foundation", "coding"],
+                "business_constraint": "约束",
+                "dimension_terms": ["检索"],
+                "source_ids": ["source-q_invalid_compatible"],
+            }
+        )
+        hit = RetrievedQuestion(record=record, score=0.9, index_version="idx")
+        retriever = QuestionRetriever(
+            FakeEmbedding(),
+            FakeStore(
+                QuestionStoreSearchResult(
+                    status="hit",
+                    hits=[hit],
+                    index_version="idx",
+                )
+            ),
+            today=TODAY,
+        )
+
+        result = retriever.retrieve(
+            build_question_retrieval_intent(action=make_action(), plan=make_plan())
+        )
+
+        self.assertEqual(result.status, "unavailable")
+
     def test_retriever_revalidates_mutable_typed_hits_and_falls_back_safely(self) -> None:
         updates = {
             "hash": {"content_hash": "not-a-hash"},

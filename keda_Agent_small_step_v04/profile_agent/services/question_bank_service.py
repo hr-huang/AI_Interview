@@ -19,7 +19,12 @@ from urllib.parse import urlparse
 
 from pydantic import ValidationError
 
-from profile_agent.schemas.question_rag_schema import InterviewQuestionRecord
+from profile_agent.schemas.question_rag_schema import (
+    InterviewQuestionRecord,
+    QuestionModePolicy,
+    QuestionRetrievalResult,
+    RetrievedQuestion,
+)
 
 
 SUPPORTED_ROLE = "ai_agent_engineer"
@@ -39,9 +44,91 @@ SUPPORTED_SCHEMA_VERSIONS = frozenset(
         "v1",
         "question_bank.v1",
         "question_bank/v1",
+        2,
+        "2",
+        "v2",
+        "question_bank.v2",
+        "question_bank/v2",
     }
 )
 DEFAULT_EXPIRING_WITHIN_DAYS = 30
+
+_V1_RECORD_FIELDS: tuple[str, ...] = (
+    "question_id",
+    "question_text",
+    "role",
+    "role_version",
+    "dimension_id",
+    "skills",
+    "question_mode",
+    "difficulty",
+    "expected_signals",
+    "critical_errors",
+    "follow_up_seeds",
+    "company_tags",
+    "source_id",
+    "source_url",
+    "source_title",
+    "source_type",
+    "published_at",
+    "verified_at",
+    "valid_until",
+    "trust_level",
+    "status",
+    "version",
+    "content_hash",
+)
+_V2_ADDITIVE_FIELDS = frozenset(
+    {
+        "business_constraint",
+        "dimension_terms",
+        "primary_mode",
+        "compatible_modes",
+        "source_ids",
+    }
+)
+
+
+class _V1Projection(dict[str, Any]):
+    """Mapping that also supports the common Pydantic serialization calls.
+
+    Projection callers frequently pass records through code that expects a
+    ``model_dump``/``model_dump_json`` pair.  Keeping this tiny mapping wrapper
+    lets the result remain usable by strict v1 ``model_validate`` consumers
+    without reintroducing any v2 fields into the payload.
+    """
+
+    def __getattr__(self, name: str) -> Any:
+        try:
+            return self[name]
+        except KeyError as exc:
+            raise AttributeError(name) from exc
+
+    def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        mode = kwargs.get("mode", "python")
+        payload = dict(self)
+        if mode == "json":
+            return _json_safe(payload)
+        return payload
+
+    def model_dump_json(self, *args: Any, **kwargs: Any) -> str:
+        indent = kwargs.get("indent")
+        return json.dumps(
+            self.model_dump(mode="json"),
+            ensure_ascii=False,
+            indent=indent,
+            separators=None if indent is not None else (",", ":"),
+        )
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, Mapping):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    return value
 
 
 def normalize_question_text(value: str) -> str:
@@ -55,6 +142,274 @@ def normalize_question_text(value: str) -> str:
     if not isinstance(value, str):
         raise TypeError("question text must be a string")
     return " ".join(value.split())
+
+
+def normalize_project_mode(value: Any) -> str:
+    """Normalize the legacy ``project`` input alias to the v2 wire value.
+
+    ``project`` is accepted only at the explicit migration boundary.  The
+    schema and all runtime outputs continue to use the canonical
+    ``project_deep_dive`` value; no other aliases are guessed.
+    """
+
+    if not isinstance(value, str):
+        raise TypeError("question mode must be a string")
+    normalized = value.strip()
+    if normalized == "project":
+        return "project_deep_dive"
+    if normalized in {
+        "foundation",
+        "project_deep_dive",
+        "scenario",
+        "system_design",
+        "coding",
+        "follow_up",
+    }:
+        return normalized
+    raise ValueError(f"unsupported question mode: {value!r}")
+
+
+def _looks_like_explicit_v2_record(record: Any) -> bool:
+    """Detect additive fields without treating v1 serializer defaults as v2."""
+
+    if isinstance(record, InterviewQuestionRecord):
+        return bool(_V2_ADDITIVE_FIELDS & set(record.model_fields_set))
+    if not isinstance(record, Mapping):
+        return False
+    if "primary_mode" in record and record.get("primary_mode") is not None:
+        return True
+    if record.get("business_constraint", "") not in ("", None):
+        return True
+    if record.get("dimension_terms") not in (None, [], ()):
+        return True
+    if record.get("compatible_modes") not in (None, [], ()):
+        return True
+    source_ids = record.get("source_ids")
+    source_id = record.get("source_id")
+    return source_ids not in (None, [], (), [source_id])
+
+
+def _normalize_mode_fields(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Copy a record mapping while normalizing only the migration mode fields."""
+
+    normalized = dict(payload)
+    for field_name in ("question_mode", "primary_mode"):
+        if field_name in normalized and normalized[field_name] is not None:
+            normalized[field_name] = normalize_project_mode(normalized[field_name])
+    if "compatible_modes" in normalized and normalized["compatible_modes"] is not None:
+        values = normalized["compatible_modes"]
+        if isinstance(values, (str, bytes)):
+            raise TypeError("compatible_modes must be a sequence of modes")
+        try:
+            normalized["compatible_modes"] = [
+                normalize_project_mode(value) for value in values
+            ]
+        except TypeError:
+            raise TypeError("compatible_modes must be a sequence of modes") from None
+    return normalized
+
+
+def _validated_record(
+    record: InterviewQuestionRecord | Mapping[str, Any],
+    *,
+    normalize_modes: bool = False,
+) -> InterviewQuestionRecord:
+    """Revalidate both model and mapping inputs at the projection boundary."""
+
+    if isinstance(record, InterviewQuestionRecord):
+        payload = record.model_dump(mode="python", warnings=False)
+    elif isinstance(record, Mapping):
+        payload = dict(record)
+    else:
+        raise TypeError(
+            "question records must be InterviewQuestionRecord instances or mappings"
+        )
+    if normalize_modes:
+        payload = _normalize_mode_fields(payload)
+    try:
+        return InterviewQuestionRecord.model_validate(payload)
+    except ValidationError as exc:
+        raise ValueError(f"invalid interview question record: {exc}") from exc
+
+
+def _v1_hash_payload(record: InterviewQuestionRecord | Mapping[str, Any]) -> dict[str, Any]:
+    if isinstance(record, InterviewQuestionRecord):
+        question_text = record.question_text
+        role = record.role
+        dimension_id = record.dimension_id
+        skills = record.skills
+        question_mode = record.question_mode
+        difficulty = record.difficulty
+    else:
+        question_text = record.get("question_text")
+        role = record.get("role")
+        dimension_id = record.get("dimension_id")
+        skills = record.get("skills")
+        question_mode = record.get("question_mode")
+        difficulty = record.get("difficulty")
+    return {
+        "question_text": normalize_question_text(question_text),
+        "role": role,
+        "dimension_id": dimension_id,
+        "skills": sorted(normalize_question_text(value) for value in skills),
+        # Keep malformed values hashable for audit diagnostics.  Strict schema
+        # validation and the projection boundary reject them before runtime.
+        "question_mode": question_mode,
+        "difficulty": difficulty,
+    }
+
+
+def _v2_hash_payload(record: InterviewQuestionRecord) -> dict[str, Any]:
+    primary_mode = normalize_project_mode(record.primary_mode or record.question_mode)
+    compatible_modes = [normalize_project_mode(value) for value in record.compatible_modes]
+    # Mode policy controls the order in the wire record; using that same order
+    # for the hash makes semantically equivalent input order deterministic.
+    policy = QuestionModePolicy.default()
+    order = policy.compatible_order_for(record.dimension_id)
+    compatible_modes.sort(key=lambda value: order.index(value))
+    return {
+        "question_text": normalize_question_text(record.question_text),
+        "business_constraint": normalize_question_text(record.business_constraint),
+        "skills": sorted(normalize_question_text(value) for value in record.skills),
+        "dimension_terms": sorted(
+            normalize_question_text(value) for value in record.dimension_terms
+        ),
+        "primary_mode": primary_mode,
+        "compatible_modes": compatible_modes,
+        "role": record.role,
+        "dimension_id": record.dimension_id,
+        "difficulty": record.difficulty,
+    }
+
+
+def _hash_payload(payload: Mapping[str, Any]) -> str:
+    digest = hashlib.sha256(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    return f"sha256:{digest}"
+
+
+def _build_v1_hash(record: InterviewQuestionRecord | Mapping[str, Any]) -> str:
+    return _hash_payload(_v1_hash_payload(record))
+
+
+def _build_v2_hash(record: InterviewQuestionRecord) -> str:
+    return _hash_payload(_v2_hash_payload(record))
+
+
+def _validate_mode_assignment(record: InterviewQuestionRecord) -> None:
+    QuestionModePolicy.default().validate_mode_assignment(
+        record.dimension_id,
+        record.primary_mode or record.question_mode,
+        record.compatible_modes,
+    )
+
+
+def project_v1_record_to_v2(
+    record: InterviewQuestionRecord | Mapping[str, Any],
+) -> InterviewQuestionRecord:
+    """Explicitly project a legacy v1 record into the additive v2 shape."""
+
+    if _looks_like_explicit_v2_record(record):
+        raise ValueError("project_v1_record_to_v2 expects a v1 record")
+    validated = _validated_record(record, normalize_modes=True)
+    primary_mode = normalize_project_mode(validated.question_mode)
+    payload = {
+        field_name: getattr(validated, field_name)
+        for field_name in _V1_RECORD_FIELDS
+    }
+    payload.update(
+        {
+            "question_mode": primary_mode,
+            "business_constraint": "",
+            "dimension_terms": [],
+            "primary_mode": primary_mode,
+            "compatible_modes": [],
+            "source_ids": [validated.source_id],
+            # A v2 projection has a v2 semantic identity, even when the
+            # source record was hashed with the v1 payload.
+            "content_hash": "sha256:" + ("0" * 64),
+        }
+    )
+    projected = InterviewQuestionRecord.model_validate(payload)
+    payload["content_hash"] = _build_v2_hash(projected)
+    return InterviewQuestionRecord.model_validate(payload)
+
+
+def _project_v2_record_mapping(
+    record: InterviewQuestionRecord | Mapping[str, Any],
+) -> _V1Projection:
+    validated = _validated_record(record)
+    primary_mode = normalize_project_mode(validated.primary_mode or validated.question_mode)
+    _validate_mode_assignment(validated)
+    payload = {
+        field_name: getattr(validated, field_name)
+        for field_name in _V1_RECORD_FIELDS
+    }
+    payload["question_mode"] = primary_mode
+    # A strict v1 reader may recalculate the legacy identity hash.  Recompute
+    # it from the projected fields instead of leaking the v2 semantic hash.
+    payload["content_hash"] = _build_v1_hash(payload)
+    return _V1Projection(payload)
+
+
+def project_v2_record_to_v1(
+    record: InterviewQuestionRecord | RetrievedQuestion | Mapping[str, Any],
+) -> _V1Projection:
+    """Project a v2 record (or nested retrieval hit) to strict v1 fields.
+
+    Supporting ``RetrievedQuestion`` here keeps the migration boundary
+    explicit when an old caller serializes a nested retrieval payload.
+    """
+
+    if isinstance(record, RetrievedQuestion):
+        return _V1Projection(
+            {
+                "record": _project_v2_record_mapping(record.record),
+                "score": record.score,
+                "index_version": record.index_version,
+            }
+        )
+    if isinstance(record, Mapping) and (
+        "record" in record or "question" in record
+    ) and "question_id" not in record:
+        try:
+            nested = RetrievedQuestion.model_validate(record)
+        except ValidationError as exc:
+            raise ValueError(f"invalid retrieved question: {exc}") from exc
+        return project_v2_record_to_v1(nested)
+    return _project_v2_record_mapping(record)
+
+
+def project_retrieved_question_to_v1(
+    value: RetrievedQuestion | Mapping[str, Any],
+) -> _V1Projection:
+    """Named nested alias for callers migrating retrieval envelopes."""
+
+    return project_v2_record_to_v1(value)
+
+
+def project_question_retrieval_result_to_v1(
+    value: QuestionRetrievalResult | Mapping[str, Any],
+) -> _V1Projection:
+    """Project a retrieval result while stripping additive nested fields."""
+
+    if isinstance(value, QuestionRetrievalResult):
+        result = value
+    elif isinstance(value, Mapping):
+        try:
+            result = QuestionRetrievalResult.model_validate(value)
+        except ValidationError as exc:
+            raise ValueError(f"invalid question retrieval result: {exc}") from exc
+    else:
+        raise TypeError("retrieval result must be a QuestionRetrievalResult or mapping")
+
+    payload = result.model_dump(mode="python", warnings=False)
+    if result.selected_question is not None:
+        payload["selected_question"] = project_retrieved_question_to_v1(
+            result.selected_question
+        )
+    return _V1Projection(payload)
 
 
 def _as_question_record(
@@ -203,6 +558,10 @@ def _record_validation_issues(
             issues.append(
                 "content_hash mismatch: stored value does not match canonical hash"
             )
+    try:
+        _validate_mode_assignment(record)
+    except (TypeError, ValueError, AttributeError) as exc:
+        issues.append(f"mode policy: {exc}")
     return tuple(dict.fromkeys(issues))
 
 
@@ -218,18 +577,9 @@ def build_question_content_hash(
     """
 
     record = _as_question_record(record)
-    payload = {
-        "question_text": normalize_question_text(record.question_text),
-        "role": record.role,
-        "dimension_id": record.dimension_id,
-        "skills": sorted(normalize_question_text(value) for value in record.skills),
-        "question_mode": record.question_mode,
-        "difficulty": record.difficulty,
-    }
-    digest = hashlib.sha256(
-        json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
-    ).hexdigest()
-    return f"sha256:{digest}"
+    if _looks_like_explicit_v2_record(record):
+        return _build_v2_hash(record)
+    return _build_v1_hash(record)
 
 
 def _read_question_bank(path: str | Path) -> Mapping[str, Any]:
@@ -342,7 +692,9 @@ def load_question_bank(
 
     for index, question in enumerate(questions):
         try:
-            record = InterviewQuestionRecord.model_validate(question)
+            record = InterviewQuestionRecord.model_validate(
+                _normalize_mode_fields(question)
+            )
         except ValidationError as exc:
             raise ValueError(f"invalid question bank record at index {index}: {exc}") from exc
 
@@ -637,5 +989,10 @@ __all__ = [
     "audit_question_bank",
     "build_question_content_hash",
     "load_question_bank",
+    "normalize_project_mode",
     "normalize_question_text",
+    "project_question_retrieval_result_to_v1",
+    "project_retrieved_question_to_v1",
+    "project_v1_record_to_v2",
+    "project_v2_record_to_v1",
 ]

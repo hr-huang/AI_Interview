@@ -7,17 +7,114 @@ from pathlib import Path
 import tempfile
 import unittest
 
+from pydantic import BaseModel, ConfigDict
+
+from profile_agent.schemas.question_rag_schema import (
+    InterviewQuestionRecord,
+    QuestionRetrievalResult,
+    QuestionRetrievalTrace,
+    RetrievedQuestion,
+)
 from profile_agent.services.question_bank_service import (
     audit_question_bank,
     build_question_content_hash,
     load_question_bank,
     normalize_question_text,
+    normalize_project_mode,
+    project_v1_record_to_v2,
+    project_question_retrieval_result_to_v1,
+    project_v2_record_to_v1,
 )
 
 
 FIXTURE_PATH = (
     Path(__file__).parent / "fixtures" / "question_rag" / "minimal_question_bank.json"
 )
+
+V1_FIELDS = {
+    "question_id",
+    "question_text",
+    "role",
+    "role_version",
+    "dimension_id",
+    "skills",
+    "question_mode",
+    "difficulty",
+    "expected_signals",
+    "critical_errors",
+    "follow_up_seeds",
+    "company_tags",
+    "source_id",
+    "source_url",
+    "source_title",
+    "source_type",
+    "published_at",
+    "verified_at",
+    "valid_until",
+    "trust_level",
+    "status",
+    "version",
+    "content_hash",
+}
+
+
+class StrictV1Record(BaseModel):
+    """Consumer fixture representing the pre-v2 record contract."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    question_id: str
+    question_text: str
+    role: str
+    role_version: str
+    dimension_id: str
+    skills: list[str]
+    question_mode: str
+    difficulty: str
+    expected_signals: list[str]
+    critical_errors: list[str]
+    follow_up_seeds: list[str]
+    company_tags: list[str]
+    source_id: str
+    source_url: str
+    source_title: str
+    source_type: str
+    published_at: date
+    verified_at: date
+    valid_until: date
+    trust_level: str
+    status: str
+    version: int
+    content_hash: str
+
+
+class StrictV1RetrievedQuestion(BaseModel):
+    """Nested v1 fixture used by old retrieval/report consumers."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    record: StrictV1Record
+    score: float | None = None
+    index_version: str | None = None
+
+
+class StrictV1Trace(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: str
+    question_id: str | None = None
+    source_id: str | None = None
+    score: float | None = None
+    index_version: str | None = None
+
+
+class StrictV1Result(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: str
+    as_of: date | None = None
+    selected_question: StrictV1RetrievedQuestion | None = None
+    trace: StrictV1Trace | None = None
 
 
 class QuestionBankServiceTests(unittest.TestCase):
@@ -31,11 +128,135 @@ class QuestionBankServiceTests(unittest.TestCase):
         path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
         return path
 
+    def _v2_fixture(self) -> InterviewQuestionRecord:
+        record = load_question_bank(FIXTURE_PATH, allow_test_only=True)[0]
+        payload = record.model_dump(mode="python")
+        payload.update(
+            {
+                "business_constraint": "数据新鲜度和权限边界",
+                "dimension_terms": ["失败恢复", "任务编排"],
+                "primary_mode": record.question_mode,
+                "compatible_modes": ["foundation"],
+                "source_ids": [record.source_id],
+            }
+        )
+        return InterviewQuestionRecord.model_validate(payload)
+
     def test_normalize_question_text_collapses_whitespace(self) -> None:
         self.assertEqual(
             normalize_question_text("  Agent  \n  失败恢复  "),
             "Agent 失败恢复",
         )
+
+    def test_v1_record_projects_to_explicit_v2_defaults(self) -> None:
+        v1_record = load_question_bank(FIXTURE_PATH, allow_test_only=True)[0]
+
+        projected = project_v1_record_to_v2(v1_record)
+
+        self.assertEqual(projected.question_mode, v1_record.question_mode)
+        self.assertEqual(projected.primary_mode, v1_record.question_mode)
+        self.assertEqual(projected.compatible_modes, [])
+        self.assertEqual(projected.business_constraint, "")
+        self.assertEqual(projected.dimension_terms, [])
+        self.assertEqual(projected.source_ids, [v1_record.source_id])
+        self.assertTrue(
+            {
+                "business_constraint",
+                "dimension_terms",
+                "primary_mode",
+                "compatible_modes",
+                "source_ids",
+            }.issubset(projected.model_fields_set)
+        )
+
+    def test_v2_projects_to_strict_v1_record_and_nested_json_boundary(self) -> None:
+        v2_record = self._v2_fixture()
+
+        projected = project_v2_record_to_v1(v2_record)
+
+        self.assertEqual(set(projected), V1_FIELDS)
+        self.assertNotIn("business_constraint", projected)
+        self.assertNotIn("dimension_terms", projected)
+        self.assertNotIn("primary_mode", projected)
+        self.assertNotIn("compatible_modes", projected)
+        self.assertNotIn("source_ids", projected)
+        self.assertEqual(set(projected.model_dump()), V1_FIELDS)
+        self.assertEqual(
+            set(json.loads(projected.model_dump_json())),
+            V1_FIELDS,
+        )
+
+        strict_record = StrictV1Record.model_validate(projected)
+        self.assertEqual(set(strict_record.model_dump()), V1_FIELDS)
+        self.assertEqual(
+            set(json.loads(strict_record.model_dump_json())),
+            V1_FIELDS,
+        )
+
+        nested = project_v2_record_to_v1(
+            RetrievedQuestion(record=v2_record, score=0.87, index_version="idx-v2")
+        )
+        strict_nested = StrictV1RetrievedQuestion.model_validate(nested)
+        self.assertEqual(strict_nested.record.question_mode, v2_record.primary_mode)
+        self.assertEqual(set(strict_nested.record.model_dump()), V1_FIELDS)
+        self.assertNotIn("business_constraint", nested["record"])
+
+        result = QuestionRetrievalResult(
+            status="hit",
+            as_of=date(2026, 8, 26),
+            selected_question=RetrievedQuestion(
+                record=v2_record,
+                score=0.87,
+                index_version="idx-v2",
+            ),
+            trace=QuestionRetrievalTrace(
+                status="hit",
+                question_id=v2_record.question_id,
+                source_id=v2_record.source_id,
+                score=0.87,
+                index_version="idx-v2",
+            ),
+        )
+        strict_result = StrictV1Result.model_validate(
+            project_question_retrieval_result_to_v1(result)
+        )
+        self.assertEqual(
+            set(strict_result.selected_question.record.model_dump()), V1_FIELDS
+        )
+
+    def test_v1_and_v2_json_fixtures_reject_unknown_role_version_and_mode(self) -> None:
+        v1_payload = self._load_fixture_json()["questions"][0]
+        for field, value in (
+            ("role", "untrusted_role"),
+            ("role_version", "2025-H1"),
+            ("question_mode", "unsupported_mode"),
+        ):
+            with self.subTest(field=field):
+                invalid = dict(v1_payload)
+                invalid[field] = value
+                with self.assertRaises(ValueError):
+                    project_v1_record_to_v2(invalid)
+
+        self.assertEqual(normalize_project_mode("project"), "project_deep_dive")
+        for invalid_mode in ("", "unknown", "PROJECT", None, 1):
+            with self.subTest(invalid_mode=invalid_mode):
+                with self.assertRaises((TypeError, ValueError)):
+                    normalize_project_mode(invalid_mode)
+
+    def test_v2_content_hash_includes_all_additive_semantic_fields(self) -> None:
+        baseline = self._v2_fixture()
+        baseline_hash = build_question_content_hash(baseline)
+
+        updates = {
+            "business_constraint": "延迟预算和权限边界",
+            "dimension_terms": ["新的维度语义"],
+            "primary_mode": "system_design",
+            "compatible_modes": ["project_deep_dive"],
+        }
+        for field, value in updates.items():
+            with self.subTest(field=field):
+                changed = baseline.model_copy(update={field: value})
+                self.assertNotEqual(build_question_content_hash(changed), baseline_hash)
 
     def test_content_hash_is_stable_for_whitespace_and_skill_order(self) -> None:
         records = load_question_bank(FIXTURE_PATH, allow_test_only=True)

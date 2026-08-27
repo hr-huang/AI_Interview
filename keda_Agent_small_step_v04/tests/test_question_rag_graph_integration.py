@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
+import inspect
 import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -22,6 +23,7 @@ from profile_agent.schemas.interview_schema import (
 )
 from profile_agent.schemas.question_rag_schema import (
     InterviewQuestionRecord,
+    QuestionModePolicy,
     QuestionRetrievalIntent,
     QuestionRetrievalResult,
     QuestionRetrievalTrace,
@@ -183,6 +185,32 @@ class QuestionRagGraphIntegrationTests(unittest.TestCase):
             "evidences": [],
         }
 
+    def test_graph_and_container_accept_keyword_only_policy_manifest_dependencies(self) -> None:
+        parameters = inspect.signature(build_interview_graph).parameters
+        for name in ("question_mode_policy", "question_bank_manifest"):
+            with self.subTest(name=name):
+                self.assertEqual(
+                    parameters[name].kind,
+                    inspect.Parameter.KEYWORD_ONLY,
+                )
+
+        policy = QuestionModePolicy.default()
+        graph = build_interview_graph(
+            question_mode_policy=policy,
+            question_bank_manifest=None,
+        )
+        self.assertIsNotNone(graph)
+
+        container = WebContainer.for_test(
+            repository=object(),
+            pre_interview_graph=object(),
+            dispatcher=object(),
+            question_mode_policy=policy,
+            question_bank_manifest=None,
+        )
+        self.assertIs(container.question_mode_policy, policy)
+        self.assertIsNone(container.question_bank_manifest)
+
     @staticmethod
     def config() -> dict:
         return {"configurable": {"thread_id": "rag-graph"}}
@@ -221,6 +249,10 @@ class QuestionRagGraphIntegrationTests(unittest.TestCase):
         self.assertEqual(
             generator.calls[0]["retrieval_result"].selected_question.question_id,
             "q_graph_private",
+        )
+        self.assertEqual(
+            generator.calls[0]["retrieval_result"].selected_question.record.primary_mode,
+            "scenario",
         )
         self.assertEqual(
             state["interview_turns"][0].retrieval_trace.status,

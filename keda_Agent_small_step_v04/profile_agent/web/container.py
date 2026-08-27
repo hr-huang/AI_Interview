@@ -14,6 +14,8 @@ from profile_agent.graphs.interview import build_interview_graph
 from profile_agent.graphs.pre_interview import pre_interview_draft_graph
 from profile_agent.schemas.report_schema import RoleCompetencyProfile
 from profile_agent.schemas.question_rag_schema import (
+    QuestionBankManifest,
+    QuestionModePolicy,
     QuestionRetrievalIntent,
     QuestionRetrievalResult,
 )
@@ -82,7 +84,11 @@ class LazyQuestionRetriever:
                 pass
 
 
-def _question_retriever_factory_from_env() -> QuestionRetrieverFactory | None:
+def _question_retriever_factory_from_env(
+    *,
+    question_mode_policy: QuestionModePolicy | Any | None = None,
+    question_bank_manifest: QuestionBankManifest | Any | None = None,
+) -> QuestionRetrieverFactory | None:
     """Return a lazy local-index factory when an index path is configured."""
 
     index_path = (
@@ -123,6 +129,8 @@ def _question_retriever_factory_from_env() -> QuestionRetrieverFactory | None:
                 store=store,
                 owns_embedding_client=True,
                 owns_store=True,
+                question_mode_policy=question_mode_policy,
+                question_bank_manifest=question_bank_manifest,
             )
         except Exception:
             # The embedding client is owned by the retriever we intended to
@@ -169,6 +177,8 @@ class WebContainer:
     # Keep this after every pre-existing field so direct positional construction
     # remains compatible with the original WebContainer dataclass.
     question_retriever: object | None = None
+    question_mode_policy: QuestionModePolicy | None = None
+    question_bank_manifest: QuestionBankManifest | None = None
 
     @classmethod
     def for_test(
@@ -181,6 +191,8 @@ class WebContainer:
         role_profile: RoleCompetencyProfile | None = None,
         interview_graph: object | None = None,
         question_retriever: object | None = None,
+        question_mode_policy: QuestionModePolicy | None = None,
+        question_bank_manifest: QuestionBankManifest | None = None,
         checkpoint_connection: sqlite3.Connection | None = None,
         interview_lock: RLock | None = None,
     ) -> WebContainer:
@@ -193,6 +205,8 @@ class WebContainer:
             or load_role_profile("ai_application_engineering", "2026-H2"),
             interview_graph=interview_graph,
             question_retriever=question_retriever,
+            question_mode_policy=question_mode_policy,
+            question_bank_manifest=question_bank_manifest,
             checkpoint_connection=checkpoint_connection,
             interview_lock=interview_lock or RLock(),
         )
@@ -202,6 +216,8 @@ class WebContainer:
         cls,
         *,
         question_retriever_factory: QuestionRetrieverFactory | None = None,
+        question_mode_policy: QuestionModePolicy | None = None,
+        question_bank_manifest: QuestionBankManifest | None = None,
     ) -> WebContainer:
         database_path = Path(
             os.getenv("WEB_DATABASE_PATH", "data/web.sqlite3")
@@ -220,7 +236,10 @@ class WebContainer:
         configured_factory = (
             question_retriever_factory
             if question_retriever_factory is not None
-            else _question_retriever_factory_from_env()
+            else _question_retriever_factory_from_env(
+                question_mode_policy=question_mode_policy,
+                question_bank_manifest=question_bank_manifest,
+            )
         )
         question_retriever = (
             LazyQuestionRetriever(configured_factory)
@@ -231,6 +250,8 @@ class WebContainer:
             interview_graph = build_interview_graph(
                 checkpointer=SqliteSaver(checkpoint_connection),
                 question_retriever=question_retriever,
+                question_mode_policy=question_mode_policy,
+                question_bank_manifest=question_bank_manifest,
             )
         except Exception:
             checkpoint_connection.close()
@@ -246,5 +267,7 @@ class WebContainer:
             ),
             interview_graph=interview_graph,
             question_retriever=question_retriever,
+            question_mode_policy=question_mode_policy,
+            question_bank_manifest=question_bank_manifest,
             checkpoint_connection=checkpoint_connection,
         )
