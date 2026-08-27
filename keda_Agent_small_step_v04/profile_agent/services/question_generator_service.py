@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from profile_agent.llm import llm
 from profile_agent.schemas.claim_schema import ClaimRegistry
 from profile_agent.schemas.interview_schema import (
@@ -123,23 +124,41 @@ def _retrieval_grounding_text(
     if selected is None:
         return ""
     record = selected.record
-    skills = ", ".join(skill.strip() for skill in record.skills)
+    def safe(value: object) -> str | None:
+        text = str(value or "").strip()
+        lowered = text.casefold()
+        if not text or re.search(r"(?:https?://|www\.|[\w.+-]+@[\w.-]+|\b\d[\d -]{7,}\d)", text):
+            return None
+        if any(marker in lowered for marker in ("jd", "resume", "answer", "candidate", "prompt", "system message")):
+            return None
+        return text
+
+    question = safe(record.question_text)
+    constraint = safe(business_constraint)
+    skills_values = [safe(skill) for skill in record.skills]
+    skills = ", ".join(value for value in skills_values if value is not None)
+    if question is None or constraint is None or not skills:
+        return ""
+    dimension = safe(record.dimension_id)
+    mode = safe(record.primary_mode or record.question_mode)
+    if dimension is None or mode is None:
+        return ""
     return f"""
 检索题目安全上下文（只可用于改写问题，不得泄露答案提示）：
 Original question:
-{record.question_text.strip()}
+{question}
 
 Business constraint:
-{business_constraint.strip()}
+{constraint}
 
 Skill names:
 {skills}
 
 Dimension:
-{record.dimension_id}
+{dimension}
 
 Question mode:
-{record.primary_mode or record.question_mode}
+{mode}
 """.strip()
 
 

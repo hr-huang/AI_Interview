@@ -391,6 +391,7 @@ class QdrantQuestionStore:
                     key="question_mode", match=MatchValue(value=intent.question_mode)
                 ),
                 FieldCondition(key="status", match=MatchValue(value="active")),
+                FieldCondition(key="trust_level", match=MatchAny(any=["medium", "high"])),
                 FieldCondition(
                     key="valid_until_epoch",
                     range=Range(gte=float(today.toordinal())),
@@ -1056,6 +1057,15 @@ class QdrantQuestionStore:
         payload = points[0].payload
         if not isinstance(payload, Mapping) or payload.get("record_type") != _MANIFEST_RECORD_TYPE:
             return None
+        raw_index_version = payload.get("index_version", payload.get("version"))
+        is_v2 = payload.get("schema_version") == "v2" or raw_index_version == "questions-v2"
+        required_v2_fields = (
+            "embedding_text_version",
+            "question_bank_manifest_hash",
+            "mode_policy_version",
+        )
+        if is_v2 and any(field not in payload for field in required_v2_fields):
+            return None
         try:
             return IndexFingerprint.model_validate(
                 {
@@ -1146,6 +1156,8 @@ class QdrantQuestionStore:
         if payload.get("question_mode") != intent.question_mode:
             return False
         if payload.get("status") != "active":
+            return False
+        if payload.get("trust_level") not in {"medium", "high"}:
             return False
         question_id = payload.get("question_id")
         if question_id in set(intent.excluded_question_ids):

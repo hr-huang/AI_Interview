@@ -25,6 +25,21 @@ from profile_agent.schemas.question_rag_schema import (
 
 
 class QdrantQuestionStoreTests(unittest.TestCase):
+    def test_payload_match_rejects_low_trust(self) -> None:
+        store = self.make_store(fingerprint=self.fingerprint)
+        payload = store._record_to_payload(self.record("q-low").model_copy(update={"trust_level": "low"}))
+        self.assertFalse(store._payload_matches_intent(payload, self.intent, date(2026, 8, 26)))
+
+    def test_v2_manifest_missing_each_contract_field_is_unreadable(self) -> None:
+        store = self.make_store(fingerprint=IndexFingerprint(provider="p", model="m", dimension=3, index_version="questions-v2", embedding_text_version="six-section-v1", question_bank_manifest_hash="sha256:bank", mode_policy_version="2026-H2"))
+        store.rebuild([self.record("q-v2")], [[1.0, 0.0, 0.0]], store.fingerprint)
+        point = store.client.retrieve(collection_name=COLLECTION_NAME, ids=[store._manifest_point_id()], with_payload=True, with_vectors=False)[0]
+        for field in ("embedding_text_version", "question_bank_manifest_hash", "mode_policy_version"):
+            payload = dict(point.payload)
+            payload.pop(field)
+            store.client.upsert(collection_name=COLLECTION_NAME, points=[PointStruct(id=point.id, vector=[0.0, 0.0, 0.0], payload=payload)])
+            self.assertIsNone(store._read_manifest())
+
     def setUp(self) -> None:
         self.fingerprint = IndexFingerprint(
             provider="fake-embeddings",

@@ -735,7 +735,7 @@ class RetrieverTests(unittest.TestCase):
         records = []
         for mode in ("coding", "system_design"):
             record = make_record(f"q-{mode}").model_copy(
-                update={"question_mode": mode, "primary_mode": mode}
+                update={"question_mode": mode, "primary_mode": mode, "compatible_modes": ["scenario"]}
             )
             records.append(RetrievedQuestion(record=record, score=0.5, index_version="v2"))
         intent = QuestionRetrievalIntent(
@@ -746,9 +746,17 @@ class RetrieverTests(unittest.TestCase):
         self.assertEqual([item.question_id for item in routed], ["q-system_design", "q-coding"])
         self.assertEqual(getattr(routed, "match_tier", ModeMatchTier.EXACT), ModeMatchTier.COMPATIBLE)
 
+    def test_route_requires_requested_mode_in_record_compatible_modes(self) -> None:
+        record = make_record("q-not-compatible").model_copy(
+            update={"question_mode": "system_design", "primary_mode": "system_design", "compatible_modes": []}
+        )
+        intent = QuestionRetrievalIntent(query_text="query", role="ai_agent_engineer", dimension_id="role_dim_03", question_mode="scenario", difficulty="intermediate")
+        routed = route_mode_candidates(intent, [RetrievedQuestion(record=record, score=0.5, index_version="v2")], QuestionModePolicy.default())
+        self.assertEqual(routed, [])
+
     def test_retriever_queries_compatible_only_after_empty_primary(self) -> None:
         compatible_record = make_record("q-compatible").model_copy(
-            update={"question_mode": "system_design", "primary_mode": "system_design"}
+            update={"question_mode": "system_design", "primary_mode": "system_design", "compatible_modes": ["scenario"]}
         )
         store = FakeStore()
         def search(**kwargs: object) -> QuestionStoreSearchResult:
@@ -764,6 +772,13 @@ class RetrieverTests(unittest.TestCase):
         self.assertEqual(result.status, "hit")
         self.assertEqual(result.trace.mode_match_tier, "compatible")
         self.assertGreaterEqual(len(store.calls), 2)
+
+    def test_retriever_rejects_low_trust_even_when_store_returns_hit(self) -> None:
+        low = make_record("q-low", trust_level="low")
+        store = FakeStore(QuestionStoreSearchResult(status="hit", hits=[RetrievedQuestion(record=low, score=.9, index_version="v2")], index_version="v2"))
+        retriever = QuestionRetriever(FakeEmbedding(), store, today=TODAY)
+        intent = QuestionRetrievalIntent(query_text="query", role="ai_agent_engineer", dimension_id="role_dim_03", question_mode="scenario", difficulty="intermediate")
+        self.assertEqual(retriever.retrieve(intent).status, "no_match")
     def test_retrieve_path_uses_safe_projection_instead_of_raw_intent(self) -> None:
         embedding = FakeEmbedding()
         store = FakeStore(QuestionStoreSearchResult(status="no_match"))
@@ -964,7 +979,7 @@ class RetrieverTests(unittest.TestCase):
         self.assertTrue(retriever.last_rank_trace)
         self.assertEqual(
             {item["question_id"] for item in retriever.last_rank_trace},
-            {"q_low_trust", "q_high_trust"},
+            {"q_high_trust"},
         )
         self.assertIn("vector_similarity", retriever.last_rank_trace[0]["components"])
         self.assertIn("trust", retriever.last_rank_trace[0]["components"])
@@ -974,7 +989,6 @@ class RetrieverTests(unittest.TestCase):
         self.assertIn("duplicate_penalty", retriever.last_rank_trace[0]["components"])
         self.assertIn("asked_penalty", retriever.last_rank_trace[0]["components"])
         expected_sources = {
-            first.question_id: (first.source_id, first.index_version),
             second.question_id: (second.source_id, second.index_version),
         }
         for trace in retriever.last_rank_trace:

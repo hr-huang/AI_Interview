@@ -697,6 +697,7 @@ class QuestionRagGraphIntegrationTests(unittest.TestCase):
             payload["test_only"] = False
             for question in payload["questions"]:
                 question["source_type"] = "public_interview_experience"
+                question["trust_level"] = "medium"
             bank_path.write_text(
                 json.dumps(payload, ensure_ascii=False),
                 encoding="utf-8",

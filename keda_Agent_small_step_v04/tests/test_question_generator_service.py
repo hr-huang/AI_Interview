@@ -37,6 +37,18 @@ class FakeLLM:
 
 
 class CandidateSafeProjectionTests(unittest.TestCase):
+    def test_grounding_omits_entire_candidate_when_safe_value_contains_pii_or_prompt_marker(self) -> None:
+        record = InterviewQuestionRecord(
+            question_id="q-unsafe", question_text="联系 candidate@example.com",
+            role="ai_agent_engineer", role_version="2026-H2", dimension_id="role_dim_03",
+            skills=["检索"], question_mode="scenario", difficulty="intermediate",
+            business_constraint="resume: secret", expected_signals=["x"], critical_errors=[], follow_up_seeds=[], company_tags=[],
+            source_id="s", source_url="https://x.invalid", source_title="t", source_type="synthetic",
+            published_at=date(2026, 1, 1), verified_at=date(2026, 2, 1), valid_until=date(2027, 1, 1),
+            trust_level="high", status="active", version=1, content_hash="sha256:x",
+        )
+        result = QuestionRetrievalResult(status="hit", as_of=date(2026, 2, 1), selected_question=RetrievedQuestion(record=record, score=.5, index_version="v2"), trace=QuestionRetrievalTrace(status="hit", question_id="q-unsafe", source_id="s", score=.5, index_version="v2"))
+        self.assertEqual(_retrieval_grounding_text(result, business_constraint="ok"), "")
     def test_grounding_contains_only_candidate_safe_projection(self) -> None:
         record = InterviewQuestionRecord(
             question_id="q-safe",

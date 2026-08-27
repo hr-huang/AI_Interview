@@ -87,7 +87,11 @@ def route_mode_candidates(
     grouped = {mode: [] for mode in policy.compatible_order_for(intent.dimension_id)}
     for item in candidates:
         mode = item.record.primary_mode or item.record.question_mode
-        if mode in allowed and mode != intent.question_mode:
+        if (
+            mode in allowed
+            and mode != intent.question_mode
+            and intent.question_mode in item.record.compatible_modes
+        ):
             grouped.setdefault(mode, []).append(item)
     fallback = [item for mode in policy.compatible_order_for(intent.dimension_id) for item in grouped.get(mode, [])]
     return RoutedCandidates(fallback, ModeMatchTier.COMPATIBLE)
@@ -1038,6 +1042,8 @@ class QuestionRetriever:
                 if record.question_mode != requested_intent.question_mode:
                     continue
                 if record.status != "active" or record.valid_until < as_of:
+                    continue
+                if record.trust_level not in {"medium", "high"}:
                     continue
                 if record.question_id in excluded_ids:
                     continue
