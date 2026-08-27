@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+import json
 import logging
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -175,6 +176,80 @@ class QdrantQuestionStoreTests(unittest.TestCase):
         result = self.search(store)
         self.assertEqual(result.status, "hit")
         self.assertEqual(result.hits[0].record.question_id, "q-good")
+
+    def test_question_payload_has_exact_safe_allowlist_and_drops_forbidden_values(self) -> None:
+        store = self.make_store(fingerprint=self.fingerprint)
+        record = self.record("q-payload").model_copy(
+            update={
+                "difficulty": "advanced",
+                "expected_signals": ["EXPECTED_SIGNAL_PROBE"],
+                "critical_errors": ["CRITICAL_ERROR_PROBE"],
+                "follow_up_seeds": ["FOLLOW_UP_PROBE"],
+                "company_tags": ["COMPANY_TAG_PROBE"],
+                "source_url": "https://forbidden.example/SOURCE_URL_PROBE",
+                "source_title": "SOURCE_TITLE_PROBE",
+                "source_id": "candidate@example.com",
+                "source_type": "https://forbidden.example/SOURCE_TYPE_PROBE",
+            }
+        )
+
+        store.rebuild([record], [[1.0, 0.0, 0.0]], self.fingerprint)
+
+        points, _ = store.client.scroll(
+            collection_name=COLLECTION_NAME,
+            limit=10,
+            with_payload=True,
+            with_vectors=False,
+        )
+        payload = next(
+            point.payload
+            for point in points
+            if point.payload and point.payload.get("record_type") == "question"
+        )
+        expected_keys = {
+            "record_type",
+            "question_id",
+            "question_text",
+            "role",
+            "dimension_id",
+            "question_mode",
+            "skills",
+            "source_id",
+            "source_type",
+            "published_at",
+            "verified_at",
+            "valid_until",
+            "valid_until_epoch",
+            "trust_level",
+            "status",
+        }
+        self.assertEqual(set(payload), expected_keys)
+        self.assertEqual(payload["source_id"], "qdrant:q-payload")
+        self.assertEqual(payload["source_type"], "qdrant_index")
+        serialized_payload = json.dumps(payload, ensure_ascii=False)
+        for forbidden in (
+            "difficulty",
+            "expected_signals",
+            "critical_errors",
+            "follow_up_seeds",
+            "company_tags",
+            "source_url",
+            "source_title",
+            "EXPECTED_SIGNAL_PROBE",
+            "CRITICAL_ERROR_PROBE",
+            "FOLLOW_UP_PROBE",
+            "COMPANY_TAG_PROBE",
+            "SOURCE_URL_PROBE",
+            "SOURCE_TITLE_PROBE",
+            "SOURCE_TYPE_PROBE",
+        ):
+            self.assertNotIn(forbidden, serialized_payload)
+
+        result = self.search(store)
+        self.assertEqual(result.status, "hit")
+        hit = result.hits[0].record
+        self.assertEqual(hit.question_id, "q-payload")
+        self.assertNotIn("SOURCE_URL_PROBE", json.dumps(hit.model_dump(mode="json")))
 
     def test_extended_fingerprint_is_persisted_and_each_component_mismatch_is_safe(self) -> None:
         fingerprint = IndexFingerprint(

@@ -370,6 +370,7 @@ class QuestionBankServiceTests(unittest.TestCase):
         projected = project_v1_record_to_v2(v1_record)
 
         self.assertEqual(classify_question_record(projected), "v2")
+        self.assertEqual(compute_question_content_hash(projected), projected.content_hash)
         self.assertEqual(build_question_content_hash(projected), projected.content_hash)
 
         v2_bank = json.loads(V2_FIXTURE_PATH.read_text(encoding="utf-8"))
@@ -379,7 +380,41 @@ class QuestionBankServiceTests(unittest.TestCase):
 
         self.assertEqual(classify_question_record(loaded), "v2")
         self.assertEqual(loaded.content_hash, projected.content_hash)
+        self.assertEqual(compute_question_content_hash(loaded), loaded.content_hash)
         self.assertEqual(build_question_content_hash(loaded), loaded.content_hash)
+
+    def test_v2_content_hash_orders_only_set_like_fields(self) -> None:
+        baseline = self._v2_fixture().model_copy(
+            update={
+                "skills": ["Agent", "RAG"],
+                "dimension_terms": ["失败恢复", "任务编排"],
+                "compatible_modes": ["foundation", "coding"],
+                "source_ids": ["source-a", "source-b"],
+                "company_tags": ["company-a", "company-b"],
+                "expected_signals": ["signal-a", "signal-b"],
+                "critical_errors": ["error-a", "error-b"],
+                "follow_up_seeds": ["follow-a", "follow-b"],
+            }
+        )
+        baseline_hash = compute_question_content_hash(baseline)
+
+        for field in ("skills", "dimension_terms", "compatible_modes", "source_ids", "company_tags"):
+            with self.subTest(field=field):
+                reversed_record = baseline.model_copy(
+                    update={field: list(reversed(getattr(baseline, field)))}
+                )
+                self.assertEqual(
+                    compute_question_content_hash(reversed_record), baseline_hash
+                )
+
+        for field in ("expected_signals", "critical_errors", "follow_up_seeds"):
+            with self.subTest(field=field):
+                reversed_record = baseline.model_copy(
+                    update={field: list(reversed(getattr(baseline, field)))}
+                )
+                self.assertNotEqual(
+                    compute_question_content_hash(reversed_record), baseline_hash
+                )
 
     def test_record_classification_survives_dump_json_and_checkpoint_roundtrip(self) -> None:
         v1_record = load_question_bank(LEGACY_V1_FIXTURE_PATH, allow_test_only=True)[0]

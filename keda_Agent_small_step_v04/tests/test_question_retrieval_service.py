@@ -209,14 +209,14 @@ class IntentBuilderTests(unittest.TestCase):
             excluded_question_ids=["q-secret"],
         )
 
-        text = build_query_embedding_text(intent, ["  Zed\n", "alpha"])
+        text = build_query_embedding_text(intent, ["  失败恢复\n", "Agent"])
 
         self.assertEqual(
             text.splitlines(),
             [
-                "question=如何设计 Agent 的失败恢复边界？",
+                "question=Agent 失败恢复 失败恢复边界 恢复",
                 "business_constraint=",
-                "skills=alpha,Zed",
+                "skills=Agent,失败恢复",
                 "dimension_terms=role_dim_01",
                 "primary_mode=scenario",
                 "compatible_modes=",
@@ -224,6 +224,69 @@ class IntentBuilderTests(unittest.TestCase):
         )
         self.assertNotIn("q-secret", text)
         self.assertNotIn("advanced", text)
+
+    def test_query_embedding_projection_drops_untrusted_role_terms(self) -> None:
+        intent = QuestionRetrievalIntent(
+            query_text="如何设计 Agent 的失败恢复边界？",
+            role="ai_agent_engineer",
+            dimension_id="role_dim_01",
+            question_mode="scenario",
+            difficulty="advanced",
+        )
+
+        text = build_query_embedding_text(
+            intent,
+            [
+                "Agent",
+                "任务编排",
+                "candidate@example.com",
+                "https://evil.example/Agent",
+                "UNRECOGNIZED_ROLE_TEXT",
+            ],
+        )
+
+        self.assertIn("skills=Agent,任务编排", text)
+        for forbidden in (
+            "candidate@example.com",
+            "https://evil.example/Agent",
+            "UNRECOGNIZED_ROLE_TEXT",
+        ):
+            self.assertNotIn(forbidden, text)
+
+        pii_only_text = build_query_embedding_text(
+            intent,
+            ["Agent@example.com", "https://evil.example/RAG", "unknown-token"],
+        )
+        self.assertIn("skills=", pii_only_text)
+        self.assertNotIn("skills=Agent", pii_only_text)
+        self.assertNotIn("skills=RAG", pii_only_text)
+
+    def test_query_embedding_projection_uses_only_approved_intent_anchors(self) -> None:
+        intent = QuestionRetrievalIntent(
+            query_text=(
+                "dimension=role_dim_01 | mode=scenario | depth=advanced | "
+                "objective=JD resume candidate@example.com https://evil.example/Agent "
+                "Agent 失败恢复边界 | requirement=secret-token"
+            ),
+            role="ai_agent_engineer",
+            dimension_id="role_dim_01",
+            question_mode="scenario",
+            difficulty="advanced",
+        )
+
+        text = build_query_embedding_text(intent, [])
+
+        self.assertIn("question=Agent 失败恢复 失败恢复边界 恢复", text)
+        for forbidden in (
+            "depth=",
+            "advanced",
+            "JD",
+            "resume",
+            "candidate@example.com",
+            "https://evil.example/Agent",
+            "secret-token",
+        ):
+            self.assertNotIn(forbidden, text)
 
     def test_resolves_target_requirement_and_uses_bounded_safe_anchors(self) -> None:
         intent = build_question_retrieval_intent(
@@ -635,6 +698,49 @@ class IntentBuilderTests(unittest.TestCase):
 
 
 class RetrieverTests(unittest.TestCase):
+    def test_retrieve_path_uses_safe_projection_instead_of_raw_intent(self) -> None:
+        embedding = FakeEmbedding()
+        store = FakeStore(QuestionStoreSearchResult(status="no_match"))
+        retriever = QuestionRetriever(embedding, store, today=TODAY)
+        intent = QuestionRetrievalIntent(
+            query_text=(
+                "dimension=role_dim_01 | mode=scenario | depth=advanced | "
+                "objective=JD marker resume marker candidate@example.com "
+                "https://evil.example/Agent Agent | requirement=answer marker"
+            ),
+            role="ai_agent_engineer",
+            dimension_id="role_dim_01",
+            question_mode="scenario",
+            difficulty="advanced",
+        )
+
+        result = retriever.retrieve(intent)
+
+        self.assertEqual(result.status, "no_match")
+        self.assertEqual(len(embedding.inputs), 1)
+        query_text = embedding.inputs[0]
+        self.assertEqual(
+            query_text.splitlines(),
+            [
+                "question=Agent",
+                "business_constraint=",
+                "skills=",
+                "dimension_terms=role_dim_01",
+                "primary_mode=scenario",
+                "compatible_modes=",
+            ],
+        )
+        for forbidden in (
+            "depth=",
+            "advanced",
+            "JD marker",
+            "resume marker",
+            "candidate@example.com",
+            "https://evil.example/Agent",
+            "answer marker",
+        ):
+            self.assertNotIn(forbidden, query_text)
+
     def test_retriever_explicitly_projects_v1_hits_before_v2_selection(self) -> None:
         selected = RetrievedQuestion(
             record=make_record("q_v1_candidate"),

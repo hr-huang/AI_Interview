@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
+import hashlib
 import logging
 import math
 from pathlib import Path
@@ -49,10 +50,54 @@ _QUESTION_RECORD_TYPE = "question"
 _MANIFEST_KEY = "__interview_question_index_manifest__"
 _NAMESPACE = uuid5(NAMESPACE_URL, "keda-profile-agent/interview-questions")
 _SEARCH_STATUSES = Literal["hit", "no_match", "unavailable", "index_mismatch"]
+# Qdrant is a disposable retrieval index, not a second question-bank
+# authority.  Keep only fields needed for filtering/ranking and an internal
+# trace.  Rubric/provenance/PII-bearing fields remain in the authoritative
+# JSON bank and never cross this persistence boundary.
+_QUESTION_PAYLOAD_ALLOWLIST = frozenset(
+    {
+        "record_type",
+        "question_id",
+        "question_text",
+        "role",
+        "dimension_id",
+        "question_mode",
+        "skills",
+        "source_id",
+        "source_type",
+        "published_at",
+        "verified_at",
+        "valid_until",
+        "valid_until_epoch",
+        "trust_level",
+        "status",
+    }
+)
+_QUESTION_RECORD_PAYLOAD_FIELDS = frozenset(
+    _QUESTION_PAYLOAD_ALLOWLIST - {"record_type", "valid_until_epoch"}
+)
+_SAFE_RECONSTRUCTED_SOURCE_URL = "qdrant-indexed-record"
+_SAFE_RECONSTRUCTED_SOURCE_TITLE = "Indexed interview question"
+_SAFE_RECONSTRUCTED_SOURCE_TYPE = "qdrant_index"
+_SAFE_SOURCE_TYPES = frozenset(
+    {"public_interview_experience", "test_only_synthetic"}
+)
 DEFAULT_EMBEDDING_TEXT_VERSION = "legacy-v1"
 DEFAULT_QUESTION_BANK_MANIFEST_HASH = "legacy-v1"
 DEFAULT_MODE_POLICY_VERSION = MODE_POLICY_VERSION
 logger = logging.getLogger(__name__)
+
+
+def _safe_source_id(value: Any, question_id: Any) -> str:
+    """Keep internal trace IDs opaque and free of URL/email-shaped text."""
+
+    fallback = f"qdrant:{question_id}" if isinstance(question_id, str) else "qdrant:unknown"
+    if not isinstance(value, str):
+        return fallback
+    normalized = value.strip()
+    if not normalized or "://" in normalized or "@" in normalized:
+        return fallback
+    return normalized
 
 
 class IndexFingerprint(BaseModel):
@@ -503,7 +548,17 @@ class QdrantQuestionStore:
             )
         if not isinstance(payload, dict):
             raise ValueError("invalid interview question record")
-        return dict(payload)
+        safe_payload = {
+            key: payload[key]
+            for key in _QUESTION_RECORD_PAYLOAD_FIELDS
+            if key in payload
+        }
+        safe_payload["source_id"] = _safe_source_id(
+            safe_payload.get("source_id"), safe_payload.get("question_id")
+        )
+        if safe_payload.get("source_type") not in _SAFE_SOURCE_TYPES:
+            safe_payload["source_type"] = _SAFE_RECONSTRUCTED_SOURCE_TYPE
+        return safe_payload
 
     @staticmethod
     def _validate_vector(
@@ -1018,10 +1073,65 @@ class QdrantQuestionStore:
 
     @staticmethod
     def _record_from_payload(payload: Mapping[str, Any]) -> InterviewQuestionRecord | None:
+        # Read only the same allowlisted retrieval fields written by this
+        # adapter.  A legacy/corrupt point may still contain a full bank
+        # record; ignoring those keys prevents rubric, provenance URLs/titles,
+        # company tags, and other metadata from being rehydrated into a hit.
+        safe_payload = {
+            key: payload[key]
+            for key in _QUESTION_RECORD_PAYLOAD_FIELDS
+            if key in payload
+        }
+        question_id = safe_payload.get("question_id")
+        if not isinstance(question_id, str) or not question_id.strip():
+            return None
+        role = safe_payload.get("role") or "ai_agent_engineer"
+        dimension_id = safe_payload.get("dimension_id") or "role_dim_01"
+        question_mode = safe_payload.get("question_mode") or "scenario"
+        skills = safe_payload.get("skills") or ["检索"]
+        source_id = _safe_source_id(
+            safe_payload.get("source_id"), question_id.strip()
+        )
+        source_type = safe_payload.get("source_type")
+        if source_type not in _SAFE_SOURCE_TYPES:
+            source_type = _SAFE_RECONSTRUCTED_SOURCE_TYPE
+        valid_until = safe_payload.get("valid_until")
+        if valid_until is None:
+            return None
+        published_at = safe_payload.get("published_at") or valid_until
+        verified_at = safe_payload.get("verified_at") or published_at
         record_payload = {
-            key: value
-            for key, value in payload.items()
-            if key not in {"record_type", "valid_until_epoch"}
+            "question_id": question_id,
+            "question_text": safe_payload.get("question_text") or question_id,
+            "role": role,
+            "role_version": "2026-H2",
+            "dimension_id": dimension_id,
+            "skills": skills,
+            "question_mode": question_mode,
+            "business_constraint": "",
+            "dimension_terms": [],
+            "primary_mode": question_mode,
+            "compatible_modes": [],
+            "difficulty": "intermediate",
+            "expected_signals": ["retrieval metadata unavailable"],
+            "critical_errors": [],
+            "follow_up_seeds": [],
+            "company_tags": [],
+            "source_id": source_id,
+            "source_ids": [source_id],
+            "source_url": _SAFE_RECONSTRUCTED_SOURCE_URL,
+            "source_title": _SAFE_RECONSTRUCTED_SOURCE_TITLE,
+            "source_type": source_type,
+            "published_at": published_at,
+            "verified_at": verified_at,
+            "valid_until": valid_until,
+            "trust_level": safe_payload.get("trust_level") or "medium",
+            "status": safe_payload.get("status") or "active",
+            "version": 1,
+            "content_hash": "sha256:"
+            + hashlib.sha256(
+                f"qdrant:{question_id.strip()}".encode("utf-8")
+            ).hexdigest(),
         }
         try:
             return InterviewQuestionRecord.model_validate(record_payload)

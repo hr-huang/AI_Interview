@@ -245,6 +245,8 @@ def classify_question_record(
                 if isinstance(record, InterviewQuestionRecord)
                 else _as_question_record(record)
             )
+            if stored_hash == _build_v2_full_hash(normalized):
+                return "v2"
             if stored_hash == _build_v2_hash(normalized):
                 return "v2"
             if stored_hash == _build_v1_hash(normalized):
@@ -416,7 +418,14 @@ def _build_v1_hash(record: InterviewQuestionRecord | Mapping[str, Any]) -> str:
 
 
 def _build_v2_hash(record: InterviewQuestionRecord) -> str:
+    """Build the historical v2 semantic hash for compatibility reads only."""
+
     return _hash_payload(_v2_hash_payload(record))
+
+
+_V2_SET_LIKE_FIELDS = frozenset(
+    {"skills", "dimension_terms", "compatible_modes", "source_ids", "company_tags"}
+)
 
 
 def _validate_mode_assignment(record: InterviewQuestionRecord) -> None:
@@ -458,7 +467,7 @@ def project_v1_record_to_v2(
         _validate_mode_assignment(projected)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"invalid v2 mode assignment: {exc}") from exc
-    payload["content_hash"] = _build_v2_hash(projected)
+    payload["content_hash"] = _build_v2_full_hash(projected)
     return InterviewQuestionRecord.model_validate(payload)
 
 
@@ -685,7 +694,12 @@ def _record_validation_issues(
     if record.dimension_id not in dimensions:
         issues.append(f"dimension_id: unsupported value {record.dimension_id!r}")
     try:
-        legacy_hash = build_question_content_hash(record)
+        record_kind = classify_question_record(record)
+        legacy_hash = (
+            _build_v2_hash(record)
+            if record_kind == "v2"
+            else _build_v1_hash(record)
+        )
         computed_hash = compute_question_content_hash(record)
     except (TypeError, ValueError, AttributeError) as exc:
         issues.append(f"content_hash: unable to compute canonical hash ({exc})")
@@ -704,18 +718,36 @@ def _record_validation_issues(
 def build_question_content_hash(
     record: InterviewQuestionRecord | Mapping[str, Any],
 ) -> str:
-    """Build the deterministic identity hash for semantic question fields.
+    """Build the v1-compatible or canonical v2 question identity.
 
-    Provenance, lifecycle, version and question id are intentionally omitted:
-    changing any of those fields must not make the same semantic question look
-    like a new question.  Whitespace in the question text and skill labels is
-    normalized, and skill order is not significant.
+    v1 records retain their historical semantic hash.  A normal v2 record
+    hashes every canonical record field except ``content_hash`` itself, while
+    the historical v2 hash is returned only when the stored value exactly
+    matches that legacy payload for an explicit compatibility read.
     """
 
-    return _canonical_hash(record)
+    try:
+        normalized = _validated_record(record, normalize_modes=True)
+    except (TypeError, ValueError):
+        # ``model_copy(update=...)`` is intentionally allowed by the audit
+        # tests to create malformed typed probes.  Preserve the historical
+        # best-effort hash helper for those probes; load/compute validation
+        # remains strict and cannot accept their result as a valid record.
+        if isinstance(record, InterviewQuestionRecord):
+            return _canonical_hash(record)
+        raise
+    if classify_question_record(record) == "v1":
+        return _build_v1_hash(normalized)
+
+    # Keep old v2 fixture/bank values readable through this compatibility
+    # helper, but never use that legacy payload for a newly projected v2
+    # record.  The canonical v2 path below includes every record field.
+    if normalized.content_hash == _build_v2_hash(normalized):
+        return normalized.content_hash
+    return _build_v2_full_hash(normalized)
 
 
-def _canonical_hash_value(value: Any, *, sort_lists: bool = True) -> Any:
+def _canonical_hash_value(value: Any, *, sort_lists: bool = False) -> Any:
     """Normalize nested JSON values before hashing a complete record."""
 
     if isinstance(value, str):
@@ -731,9 +763,9 @@ def _canonical_hash_value(value: Any, *, sort_lists: bool = True) -> Any:
         ]
         if not sort_lists:
             return normalized
-        # Lists in a question record are sets of labels/IDs rather than ordered
-        # prose.  Sorting them makes JSON source ordering immaterial while
-        # retaining duplicate entries for the schema/audit layer to reject.
+        # Callers opt into sorting only for a field whose schema semantics are
+        # set-like.  Ordered rubric/metadata lists must retain source order so
+        # reversing them changes the v2 content identity.
         return sorted(
             normalized,
             key=lambda item: json.dumps(item, ensure_ascii=False, sort_keys=True),
@@ -747,7 +779,25 @@ def _complete_v2_hash_payload(record: InterviewQuestionRecord) -> dict[str, Any]
     payload = record.model_dump(mode="json", warnings=False)
     payload.pop("content_hash", None)
     payload["hash_version"] = QUESTION_CONTENT_HASH_VERSION
-    return _canonical_hash_value(payload)
+    canonical = _canonical_hash_value(payload, sort_lists=False)
+    for field_name in _V2_SET_LIKE_FIELDS:
+        values = canonical.get(field_name)
+        if isinstance(values, list):
+            canonical[field_name] = sorted(
+                values,
+                key=lambda item: json.dumps(
+                    item,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
+            )
+    return canonical
+
+
+def _build_v2_full_hash(record: InterviewQuestionRecord) -> str:
+    """Build the canonical full-record v2 identity used for new artifacts."""
+
+    return _hash_payload(_complete_v2_hash_payload(record))
 
 
 def compute_question_content_hash(
@@ -764,7 +814,7 @@ def compute_question_content_hash(
     normalized = _validated_record(record, normalize_modes=True)
     if classify_question_record(record) == "v1":
         return _build_v1_hash(normalized)
-    return _hash_payload(_complete_v2_hash_payload(normalized))
+    return _build_v2_full_hash(normalized)
 
 
 def compute_question_bank_manifest_hash(

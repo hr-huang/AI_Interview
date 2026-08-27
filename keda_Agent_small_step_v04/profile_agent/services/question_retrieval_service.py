@@ -169,6 +169,9 @@ _CANONICAL_QUERY_TERMS: tuple[str, ...] = (
     "Bearer token flow",
 )
 _CANONICAL_QUERY_TERM_SET = frozenset(_CANONICAL_QUERY_TERMS)
+_CANONICAL_QUERY_TERM_BY_FOLD = {
+    term.casefold(): term for term in _CANONICAL_QUERY_TERMS
+}
 _EMAIL_RE = re.compile(
     r"(?i)(?<![A-Za-z0-9._%+-])[A-Za-z0-9][A-Za-z0-9._%+-]*"
     r"@[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?![A-Za-z0-9.-])"
@@ -191,6 +194,10 @@ _QUERY_SECTION_BUDGETS = {
     "resume": 60,
     "recent": 60,
 }
+_QUERY_CONTROL_FIELDS = frozenset({"dimension", "mode", "depth", "difficulty"})
+_QUERY_SEMANTIC_FIELDS = frozenset(
+    {"objective", "requirement", "coverage_gap", "jd", "resume", "recent"}
+)
 
 
 class EmbeddingClient(Protocol):
@@ -215,14 +222,37 @@ def build_query_embedding_text(
     if isinstance(role_terms, (str, bytes, bytearray)):
         raise TypeError("role_terms must be a sequence")
     try:
-        normalized_terms = [" ".join(value.split()) for value in role_terms]
+        raw_terms = list(role_terms)
     except (AttributeError, TypeError):
         raise TypeError("role_terms must be a sequence of strings") from None
-    if any(not value for value in normalized_terms):
+    normalized_terms: list[str] = []
+    for value in raw_terms:
+        if not isinstance(value, str):
+            raise TypeError("role_terms must be a sequence of strings")
+        normalized = _normalise_match_text(value)
+        if not normalized:
+            raise ValueError("role_terms must not contain blank values")
+        if _EMAIL_RE.search(normalized) or _URL_RE.search(normalized) or _PHONE_RE.search(normalized):
+            continue
+        canonical = _CANONICAL_QUERY_TERM_BY_FOLD.get(normalized.casefold())
+        if canonical is not None:
+            normalized_terms.append(canonical)
+    normalized_terms = sorted(
+        set(normalized_terms), key=lambda value: (value.casefold(), value)
+    )
+
+    # ``intent.query_text`` is a structured, bounded diagnostic string.  It is
+    # still not an embedding input: only canonical role-pack anchors may cross
+    # this boundary.  This prevents difficulty/depth, JD/resume prose, answer
+    # text, identifiers, URLs, and PII from becoming vector semantics.
+    intent_terms = _extract_canonical_terms(
+        _query_embedding_anchor_values(intent.query_text)
+    )
+    question_text = " ".join(intent_terms) or intent.dimension_id
+    if not question_text:
         raise ValueError("role_terms must not contain blank values")
-    normalized_terms.sort(key=lambda value: (value.casefold(), value))
     projection = QuestionEmbeddingProjection(
-        question=intent.query_text,
+        question=question_text,
         business_constraint="",
         skills=normalized_terms,
         dimension_terms=[intent.dimension_id],
@@ -230,6 +260,33 @@ def build_query_embedding_text(
         compatible_modes=[],
     )
     return projection.to_text()
+
+
+def _query_embedding_anchor_values(query_text: str) -> list[str]:
+    """Select semantic intent sections before canonical-term extraction."""
+
+    sanitized = _PHONE_RE.sub(
+        " ", _URL_RE.sub(" ", _EMAIL_RE.sub(" ", query_text))
+    )
+    parts = [part.strip() for part in sanitized.split("|") if part.strip()]
+    parsed: list[tuple[str, str]] = []
+    recognized = False
+    for part in parts:
+        label, separator, value = part.partition("=")
+        if not separator:
+            continue
+        normalized_label = label.strip().casefold()
+        parsed.append((normalized_label, value.strip()))
+        recognized = recognized or normalized_label in (
+            _QUERY_CONTROL_FIELDS | _QUERY_SEMANTIC_FIELDS
+        )
+    if recognized:
+        return [
+            value
+            for label, value in parsed
+            if label in _QUERY_SEMANTIC_FIELDS and value
+        ]
+    return [sanitized]
 
 
 class RetrievalScoreBreakdown:
