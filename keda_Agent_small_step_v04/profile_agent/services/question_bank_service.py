@@ -38,6 +38,8 @@ SUPPORTED_DIMENSION_IDS = frozenset(
 SUPPORTED_SOURCE_TYPES = frozenset(
     {
         "public_interview_experience",
+        "official_technical_doc",
+        "current_enterprise_jd",
         "test_only_synthetic",
     }
 )

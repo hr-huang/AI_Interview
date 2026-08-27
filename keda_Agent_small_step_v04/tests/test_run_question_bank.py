@@ -315,6 +315,54 @@ class RunQuestionBankTests(unittest.TestCase):
         self.assertFalse(store.closed)
         self.assertEqual(stderr, "")
 
+    def test_corpus_read_only_actions_are_zero_cost_and_write_audit_artifacts_only(self) -> None:
+        from tests.test_question_corpus_governance import QuestionCorpusGovernanceTests
+
+        corpus_dir = Path(self.temp_dir.name) / "corpus"
+        corpus_dir.mkdir()
+        QuestionCorpusGovernanceTests()._write_snapshot(corpus_dir)
+        embedding_calls: list[bool] = []
+        store_calls: list[bool] = []
+        artifact_calls: list[Path] = []
+        environment = ReadingEnv({"SILICONFLOW_API_KEY": "must-not-be-read"})
+
+        with patch.object(
+            run_question_bank,
+            "_write_corpus_artifact",
+            side_effect=lambda path, _payload: artifact_calls.append(path),
+        ):
+            for action in ("audit-corpus", "manifest", "evaluate-local"):
+                with self.subTest(action=action):
+                    code, stdout, stderr = self._run(
+                        [
+                            action,
+                            "--corpus-dir",
+                            str(corpus_dir),
+                            "--as-of",
+                            "2026-08-27",
+                            "--dry-run",
+                            "--format",
+                            "json",
+                        ],
+                        env=environment,
+                        embedding_factory=lambda **_: embedding_calls.append(True),
+                        store_factory=lambda **_: store_calls.append(True),
+                    )
+                    self.assertNotEqual(code, 2)
+                    self.assertIn(action, stdout)
+                    self.assertEqual(stderr, "")
+
+        self.assertEqual(embedding_calls, [])
+        self.assertEqual(store_calls, [])
+        self.assertEqual(environment.reads, [])
+        self.assertEqual(
+            [path.name for path in artifact_calls],
+            [
+                "manifest_preview.json",
+                "validation_report.json",
+            ] * 3,
+        )
+
     def test_apply_embedding_spy_receives_canonical_six_section_projection(self) -> None:
         bank = self._write_bank()
         embedding = FakeEmbedding()

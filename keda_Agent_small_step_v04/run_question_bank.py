@@ -44,6 +44,13 @@ from profile_agent.services.question_bank_service import (
     load_question_bank_runtime_identity,
     load_question_bank,
 )
+from profile_agent.services.question_corpus_governance import (
+    DEFAULT_CORPUS_DIR,
+    CorpusIssue,
+    build_manifest_preview,
+    load_question_corpus_snapshot,
+    validate_question_corpus,
+)
 from profile_agent.services.siliconflow_embedding_service import (
     DEFAULT_BASE_URL,
     DEFAULT_DIMENSION,
@@ -264,6 +271,38 @@ def _build_parser() -> argparse.ArgumentParser:
                 default=None,
                 help="可选的 embedding 维度约束，必须为正整数",
             )
+    for action in ("audit-corpus", "manifest", "evaluate-local"):
+        subparser = subparsers.add_parser(action, help=f"执行 {action} 操作")
+        subparser.add_argument(
+            "--corpus-dir",
+            type=_parse_path,
+            default=DEFAULT_CORPUS_DIR,
+            help="版本化题库目录；默认使用 canonical question corpus",
+        )
+        subparser.add_argument(
+            "--as-of",
+            "--today",
+            dest="as_of",
+            type=_parse_date,
+            default=None,
+            help="治理判断日期，格式 YYYY-MM-DD；默认使用今天",
+        )
+        subparser.add_argument(
+            "--format",
+            choices=("human", "json"),
+            default="human",
+            help="摘要格式，默认 human；json 适合脚本消费",
+        )
+        subparser.add_argument(
+            "--json",
+            action="store_true",
+            help="--format json 的简写",
+        )
+        subparser.add_argument(
+            "--dry-run",
+            action="store_true",
+            help="只执行离线治理检查，不构造模型或索引依赖",
+        )
     return parser
 
 
@@ -1402,6 +1441,155 @@ def _render_summary(summary: Mapping[str, Any], *, output_format: str) -> str:
     return " ".join(fields)
 
 
+_DEFAULT_ROLE_PACK_PATH = Path(
+    "profile_agent/knowledge/role_packs/ai_application_engineer_2026_h2.json"
+)
+_CORPUS_READ_ONLY_ACTIONS = frozenset({"audit-corpus", "manifest", "evaluate-local"})
+
+
+def _load_corpus_role_pack() -> Mapping[str, Any]:
+    """Load the local role-pack facts used by the offline validator."""
+
+    try:
+        payload = json.loads(_DEFAULT_ROLE_PACK_PATH.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise QuestionBankValidationError("role pack could not be read") from exc
+    if not isinstance(payload, Mapping):
+        raise QuestionBankValidationError("role pack root is invalid")
+    return payload
+
+
+def _safe_corpus_issue(issue: CorpusIssue) -> dict[str, str]:
+    """Serialize a finding without echoing arbitrary IDs from a corrupt bank."""
+
+    path = issue.path
+
+    def replace_bracket(match: re.Match[str]) -> str:
+        value = match.group(1)
+        if value.isdigit() or value.startswith("<record:"):
+            return f"[{value}]"
+        return f"[{_safe_audit_identifier(value)}]"
+
+    path = re.sub(r"\[([^\]]+)\]", replace_bracket, path)
+    return {
+        "code": issue.code,
+        "path": path,
+        "message": issue.message,
+        "severity": issue.severity,
+    }
+
+
+def _safe_manifest_preview(preview: Mapping[str, Any]) -> dict[str, Any]:
+    """Keep manifest artifacts useful while hashing untrusted question IDs."""
+
+    result = dict(preview)
+    ids = result.get("question_ids")
+    if isinstance(ids, Sequence) and not isinstance(ids, (str, bytes, bytearray)):
+        result["question_ids"] = _safe_audit_identifiers(list(ids))
+    return result
+
+
+def _write_corpus_artifact(path: Path, payload: Mapping[str, Any]) -> None:
+    """Write only generated audit output; canonical corpus files remain read-only."""
+
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+            encoding="utf-8",
+        )
+    except (OSError, TypeError, ValueError) as exc:
+        raise QuestionBankConfigurationError("question corpus artifact could not be written") from exc
+
+
+def _run_corpus_read_only_action(
+    args: argparse.Namespace,
+    *,
+    as_of: date,
+    output: Callable[[str], None],
+    output_format: str,
+) -> int:
+    """Run audit/manifest/evaluate-local without env, embedding, or Qdrant."""
+
+    try:
+        snapshot = load_question_corpus_snapshot(args.corpus_dir, as_of)
+        role_pack = _load_corpus_role_pack()
+        issues = tuple(validate_question_corpus(snapshot, role_pack, as_of))
+    except QuestionBankValidationError:
+        raise
+    except (TypeError, ValueError, OSError) as exc:
+        # Keep malformed JSON/Pydantic input behind the safe CLI error boundary.
+        raise QuestionBankValidationError("question corpus validation failed") from exc
+
+    issue_payload = [_safe_corpus_issue(issue) for issue in issues]
+    errors = sum(1 for issue in issues if issue.severity == "error")
+    warnings = sum(1 for issue in issues if issue.severity == "warning")
+    preview = _safe_manifest_preview(build_manifest_preview(snapshot, issues))
+    report: dict[str, Any] = {
+        "action": args.action,
+        "status": "valid" if errors == 0 else "invalid",
+        "as_of": as_of.isoformat(),
+        "error_count": errors,
+        "warning_count": warnings,
+        "issue_count": len(issues),
+        "issues": issue_payload,
+        "manifest_preview": preview,
+        "dry_run": True,
+    }
+
+    # Artifacts are generated reports, never writes to corpus or index paths.
+    _write_corpus_artifact(
+        Path("artifacts/question_corpus/manifest_preview.json"),
+        preview,
+    )
+    _write_corpus_artifact(
+        Path("artifacts/question_corpus/validation_report.json"),
+        report,
+    )
+
+    if args.action == "manifest":
+        rendered: Mapping[str, Any] = {
+            "action": "manifest",
+            **preview,
+            "error_count": errors,
+            "warning_count": warnings,
+            "issues": issue_payload,
+        }
+    elif args.action == "evaluate-local":
+        # The full labelled evaluation harness is introduced by the later
+        # corpus-evaluation task.  This action is intentionally a zero-cost
+        # validation preview until that harness is available.
+        rendered = {
+            "action": "evaluate-local",
+            "status": report["status"],
+            "as_of": report["as_of"],
+            "question_count": preview["question_count"],
+            "error_count": errors,
+            "warning_count": warnings,
+            "issues": issue_payload,
+            "dry_run": True,
+        }
+    else:
+        rendered = report
+
+    if output_format == "json":
+        output(json.dumps(rendered, ensure_ascii=False, sort_keys=True))
+    else:
+        output(
+            " ".join(
+                (
+                    f"{str(args.action).upper()} status={rendered.get('status', report['status'])}",
+                    f"as_of={as_of.isoformat()}",
+                    f"questions={preview['question_count']}",
+                    f"errors={errors}",
+                    f"warnings={warnings}",
+                    "dry_run=true",
+                )
+            )
+        )
+    return EXIT_OK if errors == 0 else EXIT_OPERATION_ERROR
+
+
 def _safe_error_message(error: BaseException, *, category: str) -> str:
     """Return a useful but deliberately non-echoing error message."""
 
@@ -1624,6 +1812,15 @@ def main(
             now_provider=now_provider,
             test_dependency=test_dependency,
         )
+        if args.action in _CORPUS_READ_ONLY_ACTIONS:
+            today_provider = _now_provider(view.get("now_provider", default=None))
+            as_of = _resolve_today(getattr(args, "as_of", None), today_provider)
+            return _run_corpus_read_only_action(
+                args,
+                as_of=as_of,
+                output=output,
+                output_format=output_format,
+            )
         loader = view.get("bank_loader", default=load_question_bank)
         if not callable(loader):
             raise QuestionBankValidationError("question bank loader is not callable")
