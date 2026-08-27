@@ -40,6 +40,16 @@ class QdrantQuestionStoreTests(unittest.TestCase):
             store.client.upsert(collection_name=COLLECTION_NAME, points=[PointStruct(id=point.id, vector=[0.0, 0.0, 0.0], payload=payload)])
             self.assertIsNone(store._read_manifest())
 
+    def test_legacy_manifest_missing_contract_field_is_public_index_mismatch(self) -> None:
+        store = self.make_store(fingerprint=self.fingerprint)
+        store.rebuild([self.record("q-legacy")], [[1.0, 0.0, 0.0]], self.fingerprint)
+        point = store.client.retrieve(collection_name=COLLECTION_NAME, ids=[store._manifest_point_id()], with_payload=True, with_vectors=False)[0]
+        for field in ("embedding_text_version", "question_bank_manifest_hash", "mode_policy_version"):
+            payload = dict(point.payload)
+            payload.pop(field)
+            store.client.upsert(collection_name=COLLECTION_NAME, points=[PointStruct(id=point.id, vector=[0.0, 0.0, 0.0], payload=payload)])
+            self.assertEqual(store.search(intent=self.intent, query_vector=[1.0, 0.0, 0.0], today=date(2026, 8, 26)).status, "index_mismatch")
+
     def setUp(self) -> None:
         self.fingerprint = IndexFingerprint(
             provider="fake-embeddings",
