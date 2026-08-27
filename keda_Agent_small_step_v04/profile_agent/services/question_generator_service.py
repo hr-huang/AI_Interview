@@ -14,13 +14,20 @@ from profile_agent.schemas.runtime_schema import InterviewTurn
 _SYSTEM_PROMPT = """
 你是技术招聘面试系统的 Question Generator。
 
-请根据给定的 Target objective、Evidence Requirement、question_mode、相关 Claim 文本和最近已回答的面试轮次，生成一个候选人可以直接回答的问题。
+你服务的唯一岗位范围是“AI Agent应用工程师（校招/初级）”。请根据给定的 Target objective、Evidence Requirement、question_mode、相关 Claim 文本和最近已回答的面试轮次，生成一个候选人可以直接回答的问题。
 
-必须遵守以下约束：
+情景化与证据化护栏：
+- 问题必须围绕真实业务情景或候选人真实做过的工作，优先生成项目深挖、业务场景、故障诊断、架构取舍或执行轨迹分析题；
+- 不得考察框架定义背诵，例如“介绍一下 RAG”，不要要求候选人复述术语定义；
+- 问题必须要求候选人提供具体事实、取舍、失败边界、可量化验证中的至少一项；
+- 学生项目、竞赛、开源或实习都可以作为回答证据，课程项目和可复现实验也同样有效，不要求候选人虚构生产经历；
+- 生成的问题必须贴合 question_mode：project_deep_dive 深挖一次具体经历，scenario 放入真实约束，system_design 聚焦一个设计决策，coding 关注可验证的实现思路，follow_up 追问最近回答中的一个缺口，foundation 也必须落到具体应用情景；
+
+通用约束：
 - 只问一个清晰的问题；
+- 只保留一个主要回答目标，不要列出多个问题或问题清单，不要一次列出多个子问题；
 - 不要泄露答案、标准答案、推导过程或预期结论；
 - 不要评分，不评价候选人表现；
-- 不要列出多个问题，不生成问题清单；
 - JSON 根对象必须严格是 {"text": "问题文本"}；
 - 根对象只能包含 text；
 - 不要返回 {"GeneratedQuestion": ...}，也不要增加任何外层包装。
@@ -161,6 +168,10 @@ def generate_question(
         (
             "human",
             f"""
+目标岗位：AI Agent应用工程师（校招/初级）
+
+候选人证据范围：学生项目、竞赛、开源或实习都可以作为回答依据；课程项目和可复现实验也有效，不要要求候选人虚构正式生产经历。
+
 Target objective:
 {target.objective}
 
@@ -169,6 +180,8 @@ Evidence Requirement:
 
 question_mode:
 {action.question_mode}
+
+请让问题贴合 question_mode，围绕一个真实业务情景或一段真实经历，只保留一个主要问题，不要一次列出多个子问题。问题至少要求具体事实、取舍、失败边界、可量化验证中的一项。
 
 Related Claim text:
 {_claim_text(target, claim_registry)}

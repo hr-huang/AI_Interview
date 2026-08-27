@@ -13,6 +13,7 @@ from profile_agent.calibration.schemas import (
 
 
 OFFLINE_CASE_IDS = ("C01", "C03", "C06")
+_SUPPORTED_REPLAY_CASE_IDS = (*OFFLINE_CASE_IDS, "DEMO_STUDENT")
 
 
 def run_offline_calibration_case(
@@ -20,7 +21,7 @@ def run_offline_calibration_case(
 ) -> ReportCalibrationRun:
     """Replay one supported case through current deterministic report stages."""
 
-    if case.id not in OFFLINE_CASE_IDS:
+    if case.id not in _SUPPORTED_REPLAY_CASE_IDS:
         raise ValueError(f"不支持的离线回放案例: {case.id}")
     runs = run_report_calibration_case(
         case,

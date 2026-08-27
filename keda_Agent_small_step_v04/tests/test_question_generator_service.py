@@ -218,6 +218,39 @@ class QuestionGeneratorServiceTest(unittest.TestCase):
         degraded_prompt = "\n".join(content for _, content in degraded_llm.calls[0][0])
         self.assertEqual(legacy_prompt, degraded_prompt)
 
+    def test_prompt_requires_real_scenario_and_verifiable_evidence(self) -> None:
+        fake_llm = FakeLLM(GeneratedQuestion(text="请讲一个你实际处理过的故障。"))
+
+        generate_question(
+            action=make_action(),
+            plan=make_plan(),
+            recent_turns=[make_turn(1, "你做过什么？", "我做过一个课程项目。")],
+            llm_client=fake_llm,
+        )
+
+        prompt = "\n".join(content for _, content in fake_llm.calls[0][0])
+        self.assertIn("真实业务情景", prompt)
+        self.assertIn("不得考察框架定义背诵", prompt)
+        self.assertIn("可量化验证", prompt)
+        self.assertIn("学生项目、竞赛、开源或实习", prompt)
+        self.assertIn("AI Agent应用工程师（校招/初级）", prompt)
+        self.assertIn("课程项目", prompt)
+        self.assertIn("可复现实验", prompt)
+        self.assertIn("具体事实、取舍、失败边界、可量化验证", prompt)
+
+    def test_prompt_requires_mode_fit_without_multiple_subquestions(self) -> None:
+        fake_llm = FakeLLM(GeneratedQuestion(text="请描述一次你定位并验证修复的经历。"))
+
+        generate_question(
+            action=make_action(question_mode="follow_up"),
+            plan=make_plan(),
+            llm_client=fake_llm,
+        )
+
+        prompt = "\n".join(content for _, content in fake_llm.calls[0][0])
+        self.assertIn("贴合 question_mode", prompt)
+        self.assertIn("不要一次列出多个子问题", prompt)
+
     def test_generates_one_trimmed_question_with_target_requirement_and_claim_context(self) -> None:
         fake_llm = FakeLLM(GeneratedQuestion(text="  请说明你如何保证并发更新的一致性？  "))
 

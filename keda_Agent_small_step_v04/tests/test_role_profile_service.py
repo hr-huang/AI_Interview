@@ -1,4 +1,7 @@
+import json
+from pathlib import Path
 import unittest
+from urllib.parse import urlparse
 
 from profile_agent.schemas.report_schema import RoleCompetencyProfile
 from profile_agent.services.role_profile_service import load_role_profile
@@ -28,16 +31,31 @@ class RoleProfileServiceTest(unittest.TestCase):
         self.assertEqual(
             [dimension.name for dimension in profile.dimensions],
             [
-                "AI应用与Agent编排",
+                "Agent架构与任务编排",
                 "业务理解与任务建模",
-                "Context、RAG与工具集成",
-                "AI原生工程交付",
-                "可靠性、评测与安全",
-                "系统思维与持续进化",
+                "Context、RAG、Memory与工具工程",
+                "AI协作开发与生产交付",
+                "评测、可观测性与安全治理",
+                "成本、性能与持续优化",
             ],
         )
 
-    def test_weights_equal_25_15_15_15_20_10_percent(self) -> None:
+    def test_ai_application_role_pack_uses_2026_h21_student_scope(self) -> None:
+        profile = load_role_profile(
+            "ai_application_engineering",
+            "2026-H2",
+        )
+
+        self.assertEqual(profile.display_name, "AI Agent应用工程师（校招/初级）")
+        self.assertEqual(
+            [item.weight for item in profile.dimensions],
+            [0.20, 0.15, 0.20, 0.15, 0.20, 0.10],
+        )
+        self.assertTrue(
+            all(item.accepted_alternatives for item in profile.dimensions)
+        )
+
+    def test_weights_equal_20_15_20_15_20_10_percent(self) -> None:
         profile = load_role_profile(
             "ai_application_engineering",
             "2026-H2",
@@ -45,7 +63,65 @@ class RoleProfileServiceTest(unittest.TestCase):
 
         self.assertEqual(
             [dimension.weight for dimension in profile.dimensions],
-            [0.25, 0.15, 0.15, 0.15, 0.20, 0.10],
+            [0.20, 0.15, 0.20, 0.15, 0.20, 0.10],
+        )
+
+    def test_source_refs_resolve_to_auditable_registry(self) -> None:
+        profile = load_role_profile(
+            "ai_application_engineering",
+            "2026-H2",
+        )
+        registry_path = (
+            Path(__file__).resolve().parents[1]
+            / "profile_agent"
+            / "knowledge"
+            / "role_packs"
+            / "ai_application_engineer_2026_h2_sources.json"
+        )
+        sources = json.loads(registry_path.read_text("utf-8"))
+        source_by_id = {source["id"]: source for source in sources}
+        dimension_ids = {dimension.id for dimension in profile.dimensions}
+
+        self.assertEqual(set(profile.source_refs), set(source_by_id))
+        for source in sources:
+            with self.subTest(source=source.get("id")):
+                for field in (
+                    "id",
+                    "publisher",
+                    "title",
+                    "url",
+                    "published_at",
+                    "retrieved_at",
+                    "role_level",
+                    "supports_dimension_ids",
+                ):
+                    self.assertTrue(source.get(field), field)
+                parsed_url = urlparse(source["url"])
+                self.assertIn(parsed_url.scheme, {"http", "https"})
+                self.assertTrue(parsed_url.netloc)
+                self.assertTrue(
+                    set(source["supports_dimension_ids"]).issubset(dimension_ids)
+                )
+
+        self.assertTrue(
+            any("京东" in source["publisher"] for source in sources)
+        )
+        self.assertTrue(
+            any("上海人工智能实验室" in source["publisher"] for source in sources)
+        )
+        self.assertTrue(
+            any(
+                "Anthropic" in source["publisher"]
+                and "tool" in source["url"]
+                for source in sources
+            )
+        )
+        self.assertTrue(
+            any(
+                "Anthropic" in source["publisher"]
+                and "eval" in source["url"]
+                for source in sources
+            )
         )
 
     def test_each_dimension_has_two_minimum_two_excellence_one_error(
