@@ -1277,6 +1277,11 @@ class QuestionSourceRegistryEntry(BaseModel):
         }
         if self.date_evidence_kind not in allowed_kinds[self.source_type]:
             raise ValueError("date_evidence_kind is incompatible with source_type")
+        provenance_text = f"{self.date_evidence_locator} {self.notes}"
+        if self.provenance_kind == "firsthand" and any(token in provenance_text for token in ("汇编", "二手", "整理")):
+            raise ValueError("firsthand provenance conflicts with secondary-summary evidence")
+        if self.provenance_kind == "secondary_summary" and not any(token in provenance_text for token in ("汇编", "二手", "整理", "总结")):
+            raise ValueError("secondary_summary provenance requires explicit summary evidence")
         if not self.date_evidence_locator or self.date_evidence_locator.lower() in {"placeholder", "n/a", "unknown"}:
             raise ValueError("date_evidence_locator must be reproducible")
         if not self.date_evidence_raw or self.date_evidence_raw.lower() in {"placeholder", "n/a", "unknown"}:
