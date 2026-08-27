@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from profile_agent.llm import llm
 from profile_agent.schemas.claim_schema import ClaimRegistry
 from profile_agent.schemas.interview_schema import (
@@ -8,7 +7,10 @@ from profile_agent.schemas.interview_schema import (
     GeneratedQuestion,
     InterviewPlan,
 )
-from profile_agent.schemas.question_rag_schema import QuestionRetrievalResult
+from profile_agent.schemas.question_rag_schema import (
+    QuestionRetrievalResult,
+    validate_embedding_text_value,
+)
 from profile_agent.schemas.runtime_schema import InterviewTurn
 
 
@@ -125,13 +127,10 @@ def _retrieval_grounding_text(
         return ""
     record = selected.record
     def safe(value: object) -> str | None:
-        text = str(value or "").strip()
-        lowered = text.casefold()
-        if not text or re.search(r"(?:https?://|www\.|[\w.+-]+@[\w.-]+|\b\d[\d -]{7,}\d)", text):
+        try:
+            return validate_embedding_text_value(value, "candidate_grounding")
+        except (TypeError, ValueError):
             return None
-        if any(marker in lowered for marker in ("jd", "resume", "answer", "candidate", "prompt", "system message")):
-            return None
-        return text
 
     question = safe(record.question_text)
     constraint = safe(business_constraint)

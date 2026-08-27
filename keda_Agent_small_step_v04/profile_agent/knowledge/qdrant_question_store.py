@@ -365,7 +365,16 @@ class QdrantQuestionStore:
                 return QuestionStoreSearchResult(status="unavailable", hits=[])
             manifest = self._read_manifest()
             if manifest is None:
-                return QuestionStoreSearchResult(status="unavailable", hits=[])
+                raw_manifest = self._client.retrieve(
+                    collection_name=self.collection_name,
+                    ids=[self._manifest_point_id()],
+                    with_payload=True,
+                    with_vectors=False,
+                )
+                return QuestionStoreSearchResult(
+                    status="index_mismatch" if raw_manifest else "unavailable",
+                    hits=[],
+                )
             if self._expected_fingerprint is not None and manifest != self._expected_fingerprint:
                 return QuestionStoreSearchResult(
                     status="index_mismatch",
