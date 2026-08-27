@@ -219,6 +219,10 @@ def build_query_embedding_text(
 
     if not isinstance(intent, QuestionRetrievalIntent):
         raise TypeError("intent must be QuestionRetrievalIntent")
+    if intent.dimension_id not in _ROLE_PACK_DIMENSION_IDS:
+        raise ValueError(
+            f"unsupported role-pack dimension_id: {intent.dimension_id!r}"
+        )
     if isinstance(role_terms, (str, bytes, bytearray)):
         raise TypeError("role_terms must be a sequence")
     try:

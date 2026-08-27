@@ -12,7 +12,6 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
-import hashlib
 import logging
 import math
 from pathlib import Path
@@ -76,8 +75,6 @@ _QUESTION_PAYLOAD_ALLOWLIST = frozenset(
 _QUESTION_RECORD_PAYLOAD_FIELDS = frozenset(
     _QUESTION_PAYLOAD_ALLOWLIST - {"record_type", "valid_until_epoch"}
 )
-_SAFE_RECONSTRUCTED_SOURCE_URL = "qdrant-indexed-record"
-_SAFE_RECONSTRUCTED_SOURCE_TITLE = "Indexed interview question"
 _SAFE_RECONSTRUCTED_SOURCE_TYPE = "qdrant_index"
 _SAFE_SOURCE_TYPES = frozenset(
     {"public_interview_experience", "test_only_synthetic"}
@@ -227,7 +224,10 @@ class QdrantQuestionStore:
     ``path=':memory:'`` is the default so constructing this class is local and
     side-effect free.  A caller may inject a local ``QdrantClient`` or provide
     a persistence path.  The fingerprint is required for every reader and
-    writer; a manifest created with another fingerprint is never queried.
+    writer; a manifest created with another fingerprint is never queried.  A
+    reader also needs the authoritative catalog supplied at construction or
+    by a successful rebuild/sync; durable points alone are never promoted to
+    canonical records.
     """
 
     def __init__(
@@ -238,6 +238,9 @@ class QdrantQuestionStore:
         collection_name: str = COLLECTION_NAME,
         fingerprint: IndexFingerprint | Mapping[str, Any] | None = None,
         expected_fingerprint: IndexFingerprint | Mapping[str, Any] | None = None,
+        authoritative_catalog: Mapping[
+            str, InterviewQuestionRecord | Mapping[str, Any]
+        ] | None = None,
     ) -> None:
         if fingerprint is not None and expected_fingerprint is not None:
             raise ValueError("pass only one of fingerprint and expected_fingerprint")
@@ -252,6 +255,9 @@ class QdrantQuestionStore:
         self._expected_fingerprint = configured_fingerprint
         self._owns_client = client is None
         self._client = client if client is not None else QdrantClient(path=str(path))
+        self._question_catalog = self._coerce_authoritative_catalog(
+            authoritative_catalog
+        )
 
     @property
     def client(self) -> QdrantClient:
@@ -291,6 +297,7 @@ class QdrantQuestionStore:
         self._assert_expected_fingerprint(normalized_fingerprint)
         prepared = self._prepare_records(records, vectors, normalized_fingerprint)
         self._write_collection(prepared, normalized_fingerprint)
+        self._question_catalog = self._catalog_from_prepared(prepared)
 
     def sync(
         self,
@@ -330,6 +337,7 @@ class QdrantQuestionStore:
         # subset and switching the alias means retired/expired/stale points
         # disappear together with the new manifest.
         self._write_collection(active, normalized_fingerprint)
+        self._question_catalog = self._catalog_from_prepared(active)
 
     def search(
         self,
@@ -406,6 +414,7 @@ class QdrantQuestionStore:
                 with_vectors=False,
             )
             hits: list[RetrievedQuestion] = []
+            missing_canonical_record = False
             for point in response.points:
                 payload = point.payload if isinstance(point.payload, Mapping) else {}
                 if payload.get("record_type") != _QUESTION_RECORD_TYPE:
@@ -414,6 +423,7 @@ class QdrantQuestionStore:
                     continue
                 record = self._record_from_payload(payload)
                 if record is None:
+                    missing_canonical_record = True
                     continue
                 try:
                     score = float(point.score)
@@ -430,7 +440,9 @@ class QdrantQuestionStore:
                 )
             if not hits:
                 return QuestionStoreSearchResult(
-                    status="no_match",
+                    status=(
+                        "unavailable" if missing_canonical_record else "no_match"
+                    ),
                     hits=[],
                     index_version=manifest.index_version,
                 )
@@ -492,6 +504,7 @@ class QdrantQuestionStore:
         prepared: list[dict[str, Any]] = []
         question_ids: set[str] = set()
         for record, vector in zip(record_list, vector_list):
+            validated_record = self._validated_question_record(record)
             payload = self._record_to_payload(record)
             question_id = payload.get("question_id")
             if not isinstance(question_id, str) or not question_id.strip():
@@ -514,38 +527,66 @@ class QdrantQuestionStore:
                     "point_id": self._question_point_id(question_id),
                     "vector": normalized_vector,
                     "payload": payload,
+                    "record": validated_record,
                 }
             )
         return prepared
 
     @staticmethod
-    def _record_to_payload(
+    def _validated_question_record(
         record: InterviewQuestionRecord | Mapping[str, Any],
-    ) -> dict[str, Any]:
+    ) -> InterviewQuestionRecord:
         if isinstance(record, InterviewQuestionRecord):
-            # Pydantic's ``model_copy(update=...)`` intentionally skips
-            # validation.  Never trust such a mutable typed instance at the
-            # persistence boundary: dump to plain Python values first, then
-            # run the complete schema (including nested/model validators)
-            # before serializing to a Qdrant payload.
-            try:
-                validated_record = InterviewQuestionRecord.model_validate(
-                    record.model_dump(mode="python", warnings=False)
-                )
-                payload = validated_record.model_dump(mode="json")
-            except Exception as exc:
-                raise ValueError("invalid interview question record") from exc
+            payload = record.model_dump(mode="python", warnings=False)
         elif isinstance(record, Mapping):
-            try:
-                payload = InterviewQuestionRecord.model_validate(record).model_dump(
-                    mode="json"
-                )
-            except Exception as exc:
-                raise ValueError("invalid interview question record") from exc
+            payload = dict(record)
         else:
             raise TypeError(
                 "records must be InterviewQuestionRecord instances or mappings"
             )
+        try:
+            return InterviewQuestionRecord.model_validate(payload)
+        except Exception as exc:
+            raise ValueError("invalid interview question record") from exc
+
+    @staticmethod
+    def _catalog_from_prepared(
+        prepared: Sequence[Mapping[str, Any]],
+    ) -> dict[str, InterviewQuestionRecord]:
+        catalog: dict[str, InterviewQuestionRecord] = {}
+        for item in prepared:
+            record = item.get("record")
+            if isinstance(record, InterviewQuestionRecord):
+                catalog[record.question_id] = record
+        return catalog
+
+    @classmethod
+    def _coerce_authoritative_catalog(
+        cls,
+        catalog: Mapping[str, InterviewQuestionRecord | Mapping[str, Any]] | None,
+    ) -> dict[str, InterviewQuestionRecord]:
+        if catalog is None:
+            return {}
+        if not isinstance(catalog, Mapping):
+            raise TypeError("authoritative_catalog must be a mapping")
+        normalized: dict[str, InterviewQuestionRecord] = {}
+        for question_id, record in catalog.items():
+            if not isinstance(question_id, str) or not question_id.strip():
+                raise ValueError("authoritative catalog IDs must be non-blank strings")
+            validated = cls._validated_question_record(record)
+            if validated.question_id != question_id:
+                raise ValueError(
+                    "authoritative catalog key must match question_id"
+                )
+            normalized[question_id] = validated
+        return normalized
+
+    @staticmethod
+    def _record_to_payload(
+        record: InterviewQuestionRecord | Mapping[str, Any],
+    ) -> dict[str, Any]:
+        validated_record = QdrantQuestionStore._validated_question_record(record)
+        payload = validated_record.model_dump(mode="json", warnings=False)
         if not isinstance(payload, dict):
             raise ValueError("invalid interview question record")
         safe_payload = {
@@ -652,6 +693,57 @@ class QdrantQuestionStore:
         if alias_target is not None:
             # Qdrant applies the delete/create alias operations as one update,
             # leaving the old alias readable if the update is rejected.
+            try:
+                self._client.update_collection_aliases(
+                    [
+                        DeleteAliasOperation(
+                            delete_alias=DeleteAlias(alias_name=COLLECTION_NAME)
+                        ),
+                        CreateAliasOperation(
+                            create_alias=CreateAlias(
+                                collection_name=new_collection,
+                                alias_name=COLLECTION_NAME,
+                            )
+                        ),
+                    ]
+                )
+            except Exception:
+                # The server may have committed the alias update before the
+                # client observed a transport error.  Inspect the current
+                # alias and staged manifest before deleting the temporary
+                # collection in _write_collection's failure path.
+                if not self._migration_target_is_verified(new_collection):
+                    self._restore_alias_target(alias_target)
+                    raise
+        elif self._client.collection_exists(COLLECTION_NAME):
+            self._migrate_legacy_collection(new_collection)
+        else:
+            try:
+                self._client.update_collection_aliases(
+                    [
+                        CreateAliasOperation(
+                            create_alias=CreateAlias(
+                                collection_name=new_collection,
+                                alias_name=COLLECTION_NAME,
+                            )
+                        )
+                    ]
+                )
+            except Exception:
+                if not self._migration_target_is_verified(new_collection):
+                    raise
+
+        if old_collection and old_collection not in {COLLECTION_NAME, new_collection}:
+            self._delete_collection_safely(old_collection)
+
+    def _restore_alias_target(self, old_collection: str | None) -> None:
+        """Restore the previous alias after an uncertain staged switch."""
+
+        if old_collection is None:
+            return
+        if self._alias_target() == old_collection:
+            return
+        try:
             self._client.update_collection_aliases(
                 [
                     DeleteAliasOperation(
@@ -659,28 +751,20 @@ class QdrantQuestionStore:
                     ),
                     CreateAliasOperation(
                         create_alias=CreateAlias(
-                            collection_name=new_collection,
+                            collection_name=old_collection,
                             alias_name=COLLECTION_NAME,
                         )
                     ),
                 ]
             )
-        elif self._client.collection_exists(COLLECTION_NAME):
-            self._migrate_legacy_collection(new_collection)
-        else:
-            self._client.update_collection_aliases(
-                [
-                    CreateAliasOperation(
-                        create_alias=CreateAlias(
-                            collection_name=new_collection,
-                            alias_name=COLLECTION_NAME,
-                        )
-                    )
-                ]
-            )
-
-        if old_collection and old_collection not in {COLLECTION_NAME, new_collection}:
-            self._delete_collection_safely(old_collection)
+        except Exception:
+            # A restore request has the same uncertain-commit semantics.  A
+            # committed restore is safe even if the response path failed.
+            if self._alias_target() == old_collection:
+                return
+            raise
+        if self._alias_target() != old_collection:
+            raise RuntimeError("legacy alias restore verification failed")
 
     def _migrate_legacy_collection(self, new_collection: str) -> None:
         """Switch a pre-alias collection without losing its active snapshot."""
@@ -1071,72 +1155,26 @@ class QdrantQuestionStore:
         except ValueError:
             return False
 
-    @staticmethod
-    def _record_from_payload(payload: Mapping[str, Any]) -> InterviewQuestionRecord | None:
-        # Read only the same allowlisted retrieval fields written by this
-        # adapter.  A legacy/corrupt point may still contain a full bank
-        # record; ignoring those keys prevents rubric, provenance URLs/titles,
-        # company tags, and other metadata from being rehydrated into a hit.
-        safe_payload = {
-            key: payload[key]
-            for key in _QUESTION_RECORD_PAYLOAD_FIELDS
-            if key in payload
-        }
-        question_id = safe_payload.get("question_id")
+    def _record_from_payload(
+        self, payload: Mapping[str, Any]
+    ) -> InterviewQuestionRecord | None:
+        # Payload fields are only retrieval filters/trace.  A durable Qdrant
+        # point is not a canonical question record; rehydrate by ID from the
+        # process-local authoritative catalog and fail closed when it is not
+        # available (for example after a process restart).
+        question_id = payload.get("question_id")
         if not isinstance(question_id, str) or not question_id.strip():
             return None
-        role = safe_payload.get("role") or "ai_agent_engineer"
-        dimension_id = safe_payload.get("dimension_id") or "role_dim_01"
-        question_mode = safe_payload.get("question_mode") or "scenario"
-        skills = safe_payload.get("skills") or ["检索"]
-        source_id = _safe_source_id(
-            safe_payload.get("source_id"), question_id.strip()
-        )
-        source_type = safe_payload.get("source_type")
-        if source_type not in _SAFE_SOURCE_TYPES:
-            source_type = _SAFE_RECONSTRUCTED_SOURCE_TYPE
-        valid_until = safe_payload.get("valid_until")
-        if valid_until is None:
+        record = self._question_catalog.get(question_id)
+        if record is None:
             return None
-        published_at = safe_payload.get("published_at") or valid_until
-        verified_at = safe_payload.get("verified_at") or published_at
-        record_payload = {
-            "question_id": question_id,
-            "question_text": safe_payload.get("question_text") or question_id,
-            "role": role,
-            "role_version": "2026-H2",
-            "dimension_id": dimension_id,
-            "skills": skills,
-            "question_mode": question_mode,
-            "business_constraint": "",
-            "dimension_terms": [],
-            "primary_mode": question_mode,
-            "compatible_modes": [],
-            "difficulty": "intermediate",
-            "expected_signals": ["retrieval metadata unavailable"],
-            "critical_errors": [],
-            "follow_up_seeds": [],
-            "company_tags": [],
-            "source_id": source_id,
-            "source_ids": [source_id],
-            "source_url": _SAFE_RECONSTRUCTED_SOURCE_URL,
-            "source_title": _SAFE_RECONSTRUCTED_SOURCE_TITLE,
-            "source_type": source_type,
-            "published_at": published_at,
-            "verified_at": verified_at,
-            "valid_until": valid_until,
-            "trust_level": safe_payload.get("trust_level") or "medium",
-            "status": safe_payload.get("status") or "active",
-            "version": 1,
-            "content_hash": "sha256:"
-            + hashlib.sha256(
-                f"qdrant:{question_id.strip()}".encode("utf-8")
-            ).hexdigest(),
-        }
         try:
-            return InterviewQuestionRecord.model_validate(record_payload)
-        except Exception:
+            validated = self._validated_question_record(record)
+        except (TypeError, ValueError):
             return None
+        if validated.question_id != question_id:
+            return None
+        return validated
 
 
 __all__ = [

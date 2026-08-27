@@ -199,6 +199,20 @@ class FakeStore:
 
 
 class IntentBuilderTests(unittest.TestCase):
+    def test_query_embedding_projection_rejects_unknown_or_pii_dimension_ids(self) -> None:
+        intent = QuestionRetrievalIntent(
+            query_text="Agent 失败恢复",
+            role="ai_agent_engineer",
+            dimension_id="role_dim_01",
+            question_mode="scenario",
+            difficulty="intermediate",
+        )
+        for dimension_id in ("role_dim_untrusted", "candidate@example.com"):
+            with self.subTest(dimension_id=dimension_id):
+                invalid_intent = intent.model_copy(update={"dimension_id": dimension_id})
+                with self.assertRaisesRegex(ValueError, "dimension_id"):
+                    build_query_embedding_text(invalid_intent, [])
+
     def test_query_embedding_projection_uses_intent_and_role_terms(self) -> None:
         intent = QuestionRetrievalIntent(
             query_text="  如何设计 Agent 的失败恢复边界？\u00a0",

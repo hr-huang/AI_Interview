@@ -95,8 +95,12 @@ class QdrantQuestionStoreTests(unittest.TestCase):
             collection_name=COLLECTION_NAME,
             vectors_config=VectorParams(size=3, distance=Distance.COSINE),
         )
-        store = QdrantQuestionStore(client=client, fingerprint=self.fingerprint)
         old = self.record("q-old")
+        store = QdrantQuestionStore(
+            client=client,
+            fingerprint=self.fingerprint,
+            authoritative_catalog={old.question_id: old},
+        )
         old_payload = store._record_to_payload(old)
         old_payload["record_type"] = "question"
         old_payload["valid_until_epoch"] = old.valid_until.toordinal()
@@ -249,7 +253,7 @@ class QdrantQuestionStoreTests(unittest.TestCase):
         self.assertEqual(result.status, "hit")
         hit = result.hits[0].record
         self.assertEqual(hit.question_id, "q-payload")
-        self.assertNotIn("SOURCE_URL_PROBE", json.dumps(hit.model_dump(mode="json")))
+        self.assertEqual(hit.source_url, record.source_url)
 
     def test_extended_fingerprint_is_persisted_and_each_component_mismatch_is_safe(self) -> None:
         fingerprint = IndexFingerprint(
@@ -486,6 +490,58 @@ class QdrantQuestionStoreTests(unittest.TestCase):
         self.assertEqual(result.status, "index_mismatch")
         self.assertEqual(result.hits, [])
 
+    def test_persisted_reader_without_authoritative_catalog_returns_unavailable(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir)
+            writer = QdrantQuestionStore(path=path, fingerprint=self.fingerprint)
+            writer.rebuild(
+                [self.record("q-catalog")],
+                [[1.0, 0.0, 0.0]],
+                self.fingerprint,
+            )
+            writer.close()
+
+            reader = QdrantQuestionStore(path=path, fingerprint=self.fingerprint)
+            result = self.search(reader)
+            reader.close()
+
+        self.assertEqual(result.status, "unavailable")
+        self.assertEqual(result.hits, [])
+
+    def test_search_uses_authoritative_catalog_instead_of_clipped_payload(self) -> None:
+        store = self.make_store(fingerprint=self.fingerprint)
+        record = self.record("q-catalog")
+        store.rebuild([record], [[1.0, 0.0, 0.0]], self.fingerprint)
+        point = store.client.retrieve(
+            collection_name=COLLECTION_NAME,
+            ids=[store._question_point_id(record.question_id)],
+            with_payload=True,
+            with_vectors=True,
+        )[0]
+        clipped_payload = dict(point.payload or {})
+        clipped_payload["question_text"] = "PAYLOAD_ONLY_NOT_CANONICAL"
+        clipped_payload["source_id"] = "payload-only-source"
+        store.client.upsert(
+            collection_name=COLLECTION_NAME,
+            points=[
+                PointStruct(
+                    id=point.id,
+                    vector=point.vector,
+                    payload=clipped_payload,
+                )
+            ],
+        )
+
+        result = self.search(store)
+
+        self.assertEqual(result.status, "hit")
+        self.assertEqual(result.hits[0].record.question_text, record.question_text)
+        self.assertEqual(result.hits[0].record.source_id, record.source_id)
+        self.assertNotEqual(
+            result.hits[0].record.question_text,
+            "PAYLOAD_ONLY_NOT_CANONICAL",
+        )
+
     def test_rebuild_write_failure_keeps_previous_collection_and_manifest(self) -> None:
         store = self.make_store(fingerprint=self.fingerprint)
         store.rebuild([self.record("q-old")], [[1.0, 0.0, 0.0]], self.fingerprint)
@@ -538,6 +594,35 @@ class QdrantQuestionStoreTests(unittest.TestCase):
 
         self.assertEqual(self.search(store).hits[0].record.question_id, "q-old")
         self.assertEqual(store.get_manifest(), self.fingerprint)
+
+    def test_alias_switch_applied_then_raises_keeps_new_alias_and_search(self) -> None:
+        store = self.make_store(fingerprint=self.fingerprint)
+        store.rebuild([self.record("q-old")], [[1.0, 0.0, 0.0]], self.fingerprint)
+        original_update = store.client.update_collection_aliases
+
+        def update_then_raise(*args: object, **kwargs: object) -> object:
+            result = original_update(*args, **kwargs)
+            raise RuntimeError("alias applied before response failed")
+
+        with patch.object(
+            store.client,
+            "update_collection_aliases",
+            side_effect=update_then_raise,
+        ):
+            store.rebuild(
+                [self.record("q-new")],
+                [[0.0, 1.0, 0.0]],
+                self.fingerprint,
+            )
+
+        self.assertIsNotNone(store._alias_target())
+        self.assertEqual(self.search(store).status, "hit")
+        self.assertEqual(self.search(store).hits[0].record.question_id, "q-new")
+        self.assertEqual(store.get_manifest(), self.fingerprint)
+        self.assertEqual(
+            self.temporary_collections_with_question(store.client, "q-old"),
+            [],
+        )
 
     def test_legacy_collection_alias_failure_preserves_old_index(self) -> None:
         store, client = self.make_legacy_store()
