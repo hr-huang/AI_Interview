@@ -38,21 +38,15 @@ from profile_agent.schemas.question_rag_schema import (
 )
 from profile_agent.schemas.resume_schema import ResumeProfile
 from profile_agent.schemas.runtime_schema import InterviewTurn
-from profile_agent.services.question_bank_service import project_v1_record_to_v2
+from profile_agent.services.question_bank_service import (
+    classify_question_record,
+    project_v1_record_to_v2,
+)
 
 
 MAX_QUERY_CHARS = 512
 MAX_CANDIDATES = 3
 _ROLE = "ai_agent_engineer"
-_V2_RECORD_FIELDS = frozenset(
-    {
-        "business_constraint",
-        "dimension_terms",
-        "primary_mode",
-        "compatible_modes",
-        "source_ids",
-    }
-)
 
 # The vector score remains the main signal, while the other components are
 # deliberately bounded tie-breakers.  Keeping these constants explicit makes
@@ -656,12 +650,6 @@ def _vector_score(value: Any) -> float:
     return round(max(-1.0, min(1.0, score)), 6)
 
 
-def _record_has_explicit_v2_fields(record: Any) -> bool:
-    if not isinstance(record, InterviewQuestionRecord):
-        return False
-    return bool(_V2_RECORD_FIELDS & set(record.model_fields_set))
-
-
 def _coerce_hit(value: Any, *, index_version: str | None) -> RetrievedQuestion | None:
     # The store boundary must return the Task 1 hit model.  Accepting a bare
     # record (or reconstructing one from arbitrary mappings) would make a
@@ -696,7 +684,7 @@ def _coerce_hit(value: Any, *, index_version: str | None) -> RetrievedQuestion |
     # must become an explicit v2 record before ranking or generation.  Inspect
     # the original nested model because ``model_dump`` materializes v2 default
     # fields and would otherwise erase the distinction.
-    if not _record_has_explicit_v2_fields(value.record):
+    if classify_question_record(value.record) == "v1":
         try:
             projected_record = project_v1_record_to_v2(value.record)
             validated = RetrievedQuestion(

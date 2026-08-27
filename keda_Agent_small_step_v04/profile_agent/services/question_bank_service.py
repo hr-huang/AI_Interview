@@ -169,24 +169,91 @@ def normalize_project_mode(value: Any) -> str:
     raise ValueError(f"unsupported question mode: {value!r}")
 
 
-def _looks_like_explicit_v2_record(record: Any) -> bool:
-    """Detect additive fields without treating v1 serializer defaults as v2."""
+def classify_question_record(
+    record: InterviewQuestionRecord | Mapping[str, Any],
+) -> str:
+    """Classify a record by semantic shape, independent of serializer history.
+
+    A v1 record acquires v2 defaults when it passes through ``model_dump`` or
+    a checkpoint/JSON round trip.  Those defaults are not evidence of a v2
+    record: the compatibility shape is the empty constraint/terms/compatible
+    set plus ``source_ids == [source_id]`` and a primary equal to the legacy
+    question mode.  Non-empty additive semantics (or a primary-only record
+    with no legacy mode) are genuine v2 input.
+    """
 
     if isinstance(record, InterviewQuestionRecord):
-        return bool(_V2_ADDITIVE_FIELDS & set(record.model_fields_set))
-    if not isinstance(record, Mapping):
-        return False
-    if "primary_mode" in record and record.get("primary_mode") is not None:
-        return True
-    if record.get("business_constraint", "") not in ("", None):
-        return True
-    if record.get("dimension_terms") not in (None, [], ()):
-        return True
-    if record.get("compatible_modes") not in (None, [], ()):
-        return True
-    source_ids = record.get("source_ids")
-    source_id = record.get("source_id")
-    return source_ids not in (None, [], (), [source_id])
+        get_value = lambda name, default=None: getattr(record, name, default)
+    elif isinstance(record, Mapping):
+        get_value = lambda name, default=None: record.get(name, default)
+    else:
+        raise TypeError(
+            "question records must be InterviewQuestionRecord instances or mappings"
+        )
+
+    question_mode = get_value("question_mode")
+    primary_mode = get_value("primary_mode")
+    business_constraint = get_value("business_constraint", "")
+    dimension_terms = get_value("dimension_terms", ())
+    compatible_modes = get_value("compatible_modes", ())
+    source_ids = get_value("source_ids")
+    source_id = get_value("source_id")
+
+    def comparable_mode(value: Any) -> Any:
+        if value is None:
+            return None
+        try:
+            return normalize_project_mode(value)
+        except (TypeError, ValueError):
+            # The projection/validation boundary reports malformed modes.  A
+            # classifier should still be able to compare two equally malformed
+            # values without turning an old record into a false v2 hit.
+            return value
+
+    if (
+        isinstance(business_constraint, str)
+        and business_constraint.strip()
+    ):
+        return "v2"
+    if dimension_terms not in (None, [], ()):
+        return "v2"
+    if compatible_modes not in (None, [], ()):
+        return "v2"
+    if source_ids not in (None, [], ()):
+        if isinstance(source_ids, (str, bytes)):
+            return "v2"
+        try:
+            if list(source_ids) != [source_id]:
+                return "v2"
+        except TypeError:
+            return "v2"
+    # A caller that explicitly supplies only the additive primary mode is a
+    # genuine v2 payload.  A serialized v1 model, in contrast, carries the
+    # complete additive default shape; using the field set only for this
+    # distinction keeps that round trip classified as v1.
+    explicit_fields: set[str] | None = None
+    if isinstance(record, InterviewQuestionRecord):
+        explicit_fields = set(record.model_fields_set)
+    elif isinstance(record, Mapping):
+        explicit_fields = set(record)
+    if (
+        explicit_fields is not None
+        and "primary_mode" in explicit_fields
+        and not _V2_ADDITIVE_FIELDS.issubset(explicit_fields)
+    ):
+        return "v2"
+    # A primary-only payload is not a valid v1 record.  If both modes exist,
+    # their equality (including the derived value after a round trip) keeps
+    # legacy records classified as v1.
+    if primary_mode is not None and question_mode is None:
+        return "v2"
+    if (
+        primary_mode is not None
+        and question_mode is not None
+        and comparable_mode(primary_mode) != comparable_mode(question_mode)
+    ):
+        return "v2"
+    return "v1"
 
 
 def _normalize_mode_fields(payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -310,7 +377,7 @@ def project_v1_record_to_v2(
 ) -> InterviewQuestionRecord:
     """Explicitly project a legacy v1 record into the additive v2 shape."""
 
-    if _looks_like_explicit_v2_record(record):
+    if classify_question_record(record) != "v1":
         raise ValueError("project_v1_record_to_v2 expects a v1 record")
     validated = _validated_record(record, normalize_modes=True)
     primary_mode = normalize_project_mode(validated.question_mode)
@@ -332,6 +399,10 @@ def project_v1_record_to_v2(
         }
     )
     projected = InterviewQuestionRecord.model_validate(payload)
+    try:
+        _validate_mode_assignment(projected)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"invalid v2 mode assignment: {exc}") from exc
     payload["content_hash"] = _build_v2_hash(projected)
     return InterviewQuestionRecord.model_validate(payload)
 
@@ -447,6 +518,15 @@ def _source_issue(record: Any) -> str | None:
     if record.source_type not in SUPPORTED_SOURCE_TYPES:
         return "invalid"
     return None
+
+
+def _canonical_hash(record: InterviewQuestionRecord | Mapping[str, Any]) -> str:
+    """Use the shared semantic classifier for every hash/load boundary."""
+
+    normalized = _as_question_record(record)
+    if classify_question_record(normalized) == "v2":
+        return _build_v2_hash(normalized)
+    return _build_v1_hash(normalized)
 
 
 @dataclass(frozen=True)
@@ -576,10 +656,7 @@ def build_question_content_hash(
     normalized, and skill order is not significant.
     """
 
-    record = _as_question_record(record)
-    if _looks_like_explicit_v2_record(record):
-        return _build_v2_hash(record)
-    return _build_v1_hash(record)
+    return _canonical_hash(record)
 
 
 def _read_question_bank(path: str | Path) -> Mapping[str, Any]:
@@ -739,7 +816,7 @@ def load_question_bank(
         if record.question_id in seen_question_ids:
             raise ValueError(f"duplicate question_id: {record.question_id}")
 
-        computed_hash = build_question_content_hash(record)
+        computed_hash = _canonical_hash(record)
         if computed_hash in seen_content_hashes:
             raise ValueError(
                 "duplicate content_hash: "
@@ -988,6 +1065,7 @@ __all__ = [
     "SUPPORTED_SOURCE_TYPES",
     "audit_question_bank",
     "build_question_content_hash",
+    "classify_question_record",
     "load_question_bank",
     "normalize_project_mode",
     "normalize_question_text",

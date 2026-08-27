@@ -38,10 +38,13 @@ from profile_agent.services.assessment_report_service import (
     generate_assessment_report,
 )
 from profile_agent.services.question_generator_service import generate_question
+from profile_agent.services.question_bank_service import (
+    classify_question_record,
+    project_v1_record_to_v2,
+)
 from profile_agent.services.question_retrieval_service import (
     build_question_retrieval_intent,
 )
-from profile_agent.services.question_bank_service import project_v1_record_to_v2
 from profile_agent.services.runtime_state_service import (
     initialize_runtime_state,
     record_question_asked,
@@ -94,13 +97,7 @@ def _as_question_retrieval_result(
     selected = result.selected_question
     if selected is None:
         return result
-    if {
-        "business_constraint",
-        "dimension_terms",
-        "primary_mode",
-        "compatible_modes",
-        "source_ids",
-    }.intersection(selected.record.model_fields_set):
+    if classify_question_record(selected.record) == "v2":
         return result
 
     # Injected/legacy retrievers may still return a v1 nested record.  Make

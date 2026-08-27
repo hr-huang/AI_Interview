@@ -1,0 +1,22 @@
+{
+  "interview_turns": [
+    {
+      "id": "turn_001",
+      "sequence_number": 1,
+      "target_id": "target_fixture",
+      "primary_requirement_id": "requirement_fixture",
+      "question_mode": "scenario",
+      "question": "旧 checkpoint 中的问题",
+      "answer": null,
+      "asked_at": "2026-08-26T09:00:00+00:00",
+      "answered_at": null,
+      "retrieval_trace": {
+        "status": "hit",
+        "question_id": "q_fixture_v1",
+        "source_id": "src_fixture_v1",
+        "score": 0.9,
+        "index_version": "idx-v1"
+      }
+    }
+  ]
+}

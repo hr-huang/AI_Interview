@@ -15,9 +15,11 @@ from profile_agent.schemas.question_rag_schema import (
     QuestionRetrievalTrace,
     RetrievedQuestion,
 )
+from profile_agent.state.checkpoint_serialization import InterviewCheckpointSerializer
 from profile_agent.services.question_bank_service import (
     audit_question_bank,
     build_question_content_hash,
+    classify_question_record,
     load_question_bank,
     normalize_question_text,
     normalize_project_mode,
@@ -29,6 +31,18 @@ from profile_agent.services.question_bank_service import (
 
 FIXTURE_PATH = (
     Path(__file__).parent / "fixtures" / "question_rag" / "minimal_question_bank.json"
+)
+LEGACY_V1_FIXTURE_PATH = (
+    Path(__file__).parent / "fixtures" / "question_rag" / "legacy_v1_question.json"
+)
+V2_FIXTURE_PATH = (
+    Path(__file__).parent / "fixtures" / "question_rag" / "question_v2.json"
+)
+LEGACY_CHECKPOINT_FIXTURE_PATH = (
+    Path(__file__).parent / "fixtures" / "question_rag" / "legacy_checkpoint.json"
+)
+PUBLIC_PROJECTION_FIXTURE_PATH = (
+    Path(__file__).parent / "fixtures" / "question_rag" / "public_projection.json"
 )
 
 V1_FIELDS = {
@@ -168,6 +182,99 @@ class QuestionBankServiceTests(unittest.TestCase):
                 "source_ids",
             }.issubset(projected.model_fields_set)
         )
+
+    def test_record_classification_survives_dump_json_and_checkpoint_roundtrip(self) -> None:
+        v1_record = load_question_bank(LEGACY_V1_FIXTURE_PATH, allow_test_only=True)[0]
+        self.assertEqual(classify_question_record(v1_record), "v1")
+
+        dumped = v1_record.model_dump(mode="python")
+        self.assertEqual(classify_question_record(dumped), "v1")
+        self.assertEqual(build_question_content_hash(dumped), v1_record.content_hash)
+        json_payload = json.loads(v1_record.model_dump_json())
+        self.assertEqual(classify_question_record(json_payload), "v1")
+        self.assertEqual(build_question_content_hash(json_payload), v1_record.content_hash)
+        json_roundtrip = InterviewQuestionRecord.model_validate_json(
+            v1_record.model_dump_json()
+        )
+        self.assertEqual(classify_question_record(json_roundtrip), "v1")
+        self.assertEqual(
+            build_question_content_hash(json_roundtrip),
+            v1_record.content_hash,
+        )
+
+        serializer = InterviewCheckpointSerializer()
+        serialized = serializer.dumps_typed(v1_record)
+        checkpoint_roundtrip = serializer.loads_typed(serialized)
+        self.assertIsInstance(checkpoint_roundtrip, InterviewQuestionRecord)
+        self.assertEqual(classify_question_record(checkpoint_roundtrip), "v1")
+        self.assertEqual(
+            build_question_content_hash(checkpoint_roundtrip),
+            v1_record.content_hash,
+        )
+
+        legacy_checkpoint = json.loads(
+            LEGACY_CHECKPOINT_FIXTURE_PATH.read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            legacy_checkpoint["interview_turns"][0]["question_mode"],
+            v1_record.question_mode,
+        )
+        public_projection = json.loads(
+            PUBLIC_PROJECTION_FIXTURE_PATH.read_text(encoding="utf-8")
+        )
+        self.assertNotIn("retrieval_trace", public_projection[0])
+
+        v2_record = load_question_bank(V2_FIXTURE_PATH, allow_test_only=True)[0]
+        self.assertEqual(classify_question_record(v2_record), "v2")
+        self.assertEqual(
+            classify_question_record(v2_record.model_dump(mode="python")),
+            "v2",
+        )
+
+    def test_classification_keeps_explicit_primary_only_v2_shape(self) -> None:
+        payload = load_question_bank(FIXTURE_PATH, allow_test_only=True)[0].model_dump(
+            mode="python"
+        )
+        for field_name in (
+            "question_mode",
+            "business_constraint",
+            "dimension_terms",
+            "compatible_modes",
+            "source_ids",
+        ):
+            payload.pop(field_name, None)
+        payload["primary_mode"] = "scenario"
+        self.assertEqual(classify_question_record(payload), "v2")
+        v2_record = InterviewQuestionRecord.model_validate(payload)
+
+        self.assertEqual(classify_question_record(v2_record), "v2")
+
+    def test_v2_fixture_hash_and_v1_fixture_hash_remain_readable(self) -> None:
+        v1_record = load_question_bank(LEGACY_V1_FIXTURE_PATH, allow_test_only=True)[0]
+        v2_record = load_question_bank(V2_FIXTURE_PATH, allow_test_only=True)[0]
+
+        self.assertEqual(build_question_content_hash(v1_record), v1_record.content_hash)
+        self.assertEqual(build_question_content_hash(v2_record), v2_record.content_hash)
+
+        roundtripped_bank = self._load_fixture_json()
+        roundtripped_bank["questions"] = [
+            json.loads(v1_record.model_dump_json())
+        ]
+        path = self._write_bank(roundtripped_bank)
+        loaded_roundtrip = load_question_bank(path, allow_test_only=True)[0]
+        self.assertEqual(classify_question_record(loaded_roundtrip), "v1")
+        self.assertEqual(loaded_roundtrip.content_hash, v1_record.content_hash)
+
+    def test_v1_projection_rejects_mode_not_allowed_by_frozen_dimension_policy(self) -> None:
+        v1_record = load_question_bank(FIXTURE_PATH, allow_test_only=True)[0].model_copy(
+            update={
+                "dimension_id": "role_dim_01",
+                "question_mode": "coding",
+            }
+        )
+
+        with self.assertRaises(ValueError):
+            project_v1_record_to_v2(v1_record)
 
     def test_v2_projects_to_strict_v1_record_and_nested_json_boundary(self) -> None:
         v2_record = self._v2_fixture()

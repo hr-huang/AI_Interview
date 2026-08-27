@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "role": "ai_agent_engineer",
+  "role_version": "2026-H2",
+  "test_only": true,
+  "questions": [
+    {
+      "question_id": "q_fixture_v1",
+      "question_text": "如何设计 Agent 的失败恢复边界？",
+      "role": "ai_agent_engineer",
+      "role_version": "2026-H2",
+      "dimension_id": "role_dim_01",
+      "skills": ["失败恢复"],
+      "question_mode": "scenario",
+      "difficulty": "intermediate",
+      "expected_signals": ["重试边界"],
+      "critical_errors": ["无边界重试"],
+      "follow_up_seeds": ["如何验证恢复？"],
+      "company_tags": [],
+      "source_id": "src_fixture_v1",
+      "source_url": "https://example.com/fixture-v1",
+      "source_title": "Fixture v1 question",
+      "source_type": "test_only_synthetic",
+      "published_at": "2026-07-01",
+      "verified_at": "2026-08-01",
+      "valid_until": "2027-02-26",
+      "trust_level": "low",
+      "status": "active",
+      "version": 1,
+      "content_hash": "sha256:f9038387617eb10138011acf25a8ecebb8b4568623320d52f26235dad589d794"
+    }
+  ]
+}

@@ -271,6 +271,42 @@ class QuestionRagGraphIntegrationTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, serialized_payload)
 
+    def test_graph_legacy_projection_policy_failure_degrades_to_unavailable(self) -> None:
+        base = make_hit_result()
+        invalid_record = base.selected_question.record.model_copy(
+            update={
+                "dimension_id": "role_dim_01",
+                "question_mode": "coding",
+            }
+        )
+        invalid_result = QuestionRetrievalResult(
+            status="hit",
+            as_of=base.as_of,
+            selected_question=RetrievedQuestion(
+                record=invalid_record,
+                score=base.selected_question.score,
+                index_version=base.selected_question.index_version,
+            ),
+            trace=QuestionRetrievalTrace(
+                status="hit",
+                question_id=invalid_record.question_id,
+                source_id=invalid_record.source_id,
+                score=base.selected_question.score,
+                index_version=base.selected_question.index_version,
+            ),
+        )
+        retriever = FakeRetriever(invalid_result)
+        generator = FakeQuestionGenerator()
+
+        graph = self.build(retriever, generator)
+        result = graph.invoke(self.initial_state(), self.config())
+
+        self.assertEqual(self.interrupt_payload(result)["question"], "生成问题 1")
+        self.assertEqual(
+            generator.calls[0]["retrieval_result"].status,
+            "unavailable",
+        )
+
     def test_resume_does_not_retrieve_again_for_the_same_interrupt(self) -> None:
         retriever = FakeRetriever(make_hit_result())
         generator = FakeQuestionGenerator()
