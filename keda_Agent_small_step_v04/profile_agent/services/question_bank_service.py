@@ -78,15 +78,6 @@ _V1_RECORD_FIELDS: tuple[str, ...] = (
     "version",
     "content_hash",
 )
-_V2_ADDITIVE_FIELDS = frozenset(
-    {
-        "business_constraint",
-        "dimension_terms",
-        "primary_mode",
-        "compatible_modes",
-        "source_ids",
-    }
-)
 
 
 class _V1Projection(dict[str, Any]):
@@ -179,7 +170,10 @@ def classify_question_record(
     record: the compatibility shape is the empty constraint/terms/compatible
     set plus ``source_ids == [source_id]`` and a primary equal to the legacy
     question mode.  Non-empty additive semantics (or a primary-only record
-    with no legacy mode) are genuine v2 input.
+    with no legacy mode) are genuine v2 input.  When the additive shape is
+    empty, the stored content hash deterministically disambiguates a v1 hash
+    from a v2 projection hash; an unknown/stale hash falls back to v1 so audit
+    can report the mismatch without changing the legacy classification.
     """
 
     if isinstance(record, InterviewQuestionRecord):
@@ -227,21 +221,6 @@ def classify_question_record(
                 return "v2"
         except TypeError:
             return "v2"
-    # A caller that explicitly supplies only the additive primary mode is a
-    # genuine v2 payload.  A serialized v1 model, in contrast, carries the
-    # complete additive default shape; using the field set only for this
-    # distinction keeps that round trip classified as v1.
-    explicit_fields: set[str] | None = None
-    if isinstance(record, InterviewQuestionRecord):
-        explicit_fields = set(record.model_fields_set)
-    elif isinstance(record, Mapping):
-        explicit_fields = set(record)
-    if (
-        explicit_fields is not None
-        and "primary_mode" in explicit_fields
-        and not _V2_ADDITIVE_FIELDS.issubset(explicit_fields)
-    ):
-        return "v2"
     # A primary-only payload is not a valid v1 record.  If both modes exist,
     # their equality (including the derived value after a round trip) keeps
     # legacy records classified as v1.
@@ -253,6 +232,23 @@ def classify_question_record(
         and comparable_mode(primary_mode) != comparable_mode(question_mode)
     ):
         return "v2"
+
+    stored_hash = get_value("content_hash")
+    if isinstance(stored_hash, str):
+        try:
+            normalized = (
+                record
+                if isinstance(record, InterviewQuestionRecord)
+                else _as_question_record(record)
+            )
+            if stored_hash == _build_v2_hash(normalized):
+                return "v2"
+            if stored_hash == _build_v1_hash(normalized):
+                return "v1"
+        except (AttributeError, KeyError, TypeError, ValueError):
+            # Schema/hash validation is performed by the caller's boundary.
+            # Classification remains conservative for malformed/stale input.
+            pass
     return "v1"
 
 

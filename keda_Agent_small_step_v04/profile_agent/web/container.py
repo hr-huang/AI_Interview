@@ -177,8 +177,14 @@ class WebContainer:
     # Keep this after every pre-existing field so direct positional construction
     # remains compatible with the original WebContainer dataclass.
     question_retriever: object | None = None
-    question_mode_policy: QuestionModePolicy | None = None
-    question_bank_manifest: QuestionBankManifest | None = None
+    question_mode_policy: QuestionModePolicy | None = field(
+        default=None,
+        kw_only=True,
+    )
+    question_bank_manifest: QuestionBankManifest | None = field(
+        default=None,
+        kw_only=True,
+    )
 
     @classmethod
     def for_test(

@@ -183,6 +183,23 @@ class QuestionBankServiceTests(unittest.TestCase):
             }.issubset(projected.model_fields_set)
         )
 
+    def test_v1_projection_hash_is_v2_and_survives_v2_json_reload(self) -> None:
+        v1_record = load_question_bank(FIXTURE_PATH, allow_test_only=True)[0]
+
+        projected = project_v1_record_to_v2(v1_record)
+
+        self.assertEqual(classify_question_record(projected), "v2")
+        self.assertEqual(build_question_content_hash(projected), projected.content_hash)
+
+        v2_bank = json.loads(V2_FIXTURE_PATH.read_text(encoding="utf-8"))
+        v2_bank["questions"] = [json.loads(projected.model_dump_json())]
+        path = self._write_bank(v2_bank)
+        loaded = load_question_bank(path, allow_test_only=True)[0]
+
+        self.assertEqual(classify_question_record(loaded), "v2")
+        self.assertEqual(loaded.content_hash, projected.content_hash)
+        self.assertEqual(build_question_content_hash(loaded), loaded.content_hash)
+
     def test_record_classification_survives_dump_json_and_checkpoint_roundtrip(self) -> None:
         v1_record = load_question_bank(LEGACY_V1_FIXTURE_PATH, allow_test_only=True)[0]
         self.assertEqual(classify_question_record(v1_record), "v1")
@@ -232,9 +249,9 @@ class QuestionBankServiceTests(unittest.TestCase):
         )
 
     def test_classification_keeps_explicit_primary_only_v2_shape(self) -> None:
-        payload = load_question_bank(FIXTURE_PATH, allow_test_only=True)[0].model_dump(
-            mode="python"
-        )
+        payload = project_v1_record_to_v2(
+            load_question_bank(FIXTURE_PATH, allow_test_only=True)[0]
+        ).model_dump(mode="python")
         for field_name in (
             "question_mode",
             "business_constraint",

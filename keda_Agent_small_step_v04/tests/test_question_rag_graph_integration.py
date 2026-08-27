@@ -194,6 +194,26 @@ class QuestionRagGraphIntegrationTests(unittest.TestCase):
                     inspect.Parameter.KEYWORD_ONLY,
                 )
 
+        container_parameters = inspect.signature(WebContainer).parameters
+        for name in ("question_mode_policy", "question_bank_manifest"):
+            with self.subTest(container_field=name):
+                self.assertEqual(
+                    container_parameters[name].kind,
+                    inspect.Parameter.KEYWORD_ONLY,
+                )
+
+        legacy_container = WebContainer(
+            object(),
+            object(),
+            object(),
+            object(),
+            object(),
+            object(),
+            object(),
+            object(),
+        )
+        self.assertIsNone(legacy_container.question_mode_policy)
+
         policy = QuestionModePolicy.default()
         graph = build_interview_graph(
             question_mode_policy=policy,
@@ -210,6 +230,17 @@ class QuestionRagGraphIntegrationTests(unittest.TestCase):
         )
         self.assertIs(container.question_mode_policy, policy)
         self.assertIsNone(container.question_bank_manifest)
+
+        direct_container = WebContainer(
+            object(),
+            object(),
+            object(),
+            object(),
+            object(),
+            question_mode_policy=policy,
+            question_bank_manifest=None,
+        )
+        self.assertIs(direct_container.question_mode_policy, policy)
 
     @staticmethod
     def config() -> dict:
