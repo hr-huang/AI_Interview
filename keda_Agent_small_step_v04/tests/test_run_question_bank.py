@@ -22,6 +22,12 @@ from profile_agent.services.question_bank_service import (
 FIXTURE_PATH = (
     Path(__file__).parent / "fixtures" / "question_rag" / "minimal_question_bank.json"
 )
+LEGACY_V1_FIXTURE_PATH = (
+    Path(__file__).parent / "fixtures" / "question_rag" / "legacy_v1_question.json"
+)
+LEGACY_MANIFEST_FIXTURE_PATH = (
+    Path(__file__).parent / "fixtures" / "question_rag" / "legacy_v1_manifest.json"
+)
 
 
 class FakeEmbedding:
@@ -337,6 +343,65 @@ class RunQuestionBankTests(unittest.TestCase):
         self.assertTrue(fingerprint.question_bank_manifest_hash.startswith("sha256:"))
         self.assertEqual(fingerprint.mode_policy_version, "2026-H2")
         self.assertEqual(stdout.count("APPLIED"), 1)
+        self.assertEqual(stderr, "")
+
+    def test_apply_rejects_sensitive_projection_before_embedding_spy(self) -> None:
+        bank = self._write_bank()
+        records = load_question_bank(bank)
+        unsafe = records[0].model_copy(
+            update={"business_constraint": "电话：13800138000"}
+        )
+        embedding_calls: list[bool] = []
+        store_calls: list[bool] = []
+
+        code, stdout, stderr = self._run(
+            ["rebuild", "--bank", str(bank), "--apply"],
+            env={
+                "QUESTION_RAG_EMBEDDING_PROVIDER": "fake-provider",
+                "QUESTION_RAG_EMBEDDING_MODEL": "fake-model",
+                "QUESTION_RAG_EMBEDDING_DIMENSION": "3",
+            },
+            bank_loader=lambda *_args, **_kwargs: [unsafe],
+            embedding_factory=lambda **_: embedding_calls.append(True),
+            store_factory=lambda **_: store_calls.append(True),
+        )
+
+        self.assertEqual(code, 2)
+        self.assertEqual(stdout, "")
+        self.assertEqual(embedding_calls, [])
+        self.assertEqual(store_calls, [])
+        self.assertNotIn("13800138000", stderr)
+
+    def test_apply_accepts_legacy_v1_manifest_fixture(self) -> None:
+        payload = json.loads(LEGACY_V1_FIXTURE_PATH.read_text(encoding="utf-8"))
+        payload["test_only"] = False
+        payload["questions"][0]["source_type"] = "public_interview_experience"
+        self.bank_path.write_text(
+            json.dumps(payload, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        self.bank_path.with_name("QuestionBankManifest.json").write_text(
+            LEGACY_MANIFEST_FIXTURE_PATH.read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        embedding = FakeEmbedding()
+        store = FakeStore()
+
+        code, stdout, stderr = self._run(
+            ["rebuild", "--bank", str(self.bank_path), "--apply"],
+            env={
+                "QUESTION_RAG_EMBEDDING_PROVIDER": "fake-provider",
+                "QUESTION_RAG_EMBEDDING_MODEL": "fake-model",
+                "QUESTION_RAG_EMBEDDING_DIMENSION": "3",
+            },
+            embedding_factory=lambda **_: embedding,
+            store_factory=lambda **_: store,
+        )
+
+        self.assertEqual(code, 0)
+        self.assertEqual(len(embedding.calls), 1)
+        self.assertEqual(len(store.rebuild_calls), 1)
+        self.assertTrue(store.rebuild_calls[0][2].question_bank_manifest_hash.startswith("sha256:"))
         self.assertEqual(stderr, "")
 
     def test_sync_apply_passes_explicit_today_and_calls_only_sync(self) -> None:

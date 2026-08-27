@@ -790,6 +790,67 @@ class QuestionRagGraphIntegrationTests(unittest.TestCase):
                 "unavailable:canonical-question-bank",
             )
 
+    def test_env_factory_accepts_legacy_v1_manifest_fixture(self) -> None:
+        fixture_path = (
+            Path(__file__).parent
+            / "fixtures"
+            / "question_rag"
+            / "legacy_v1_question.json"
+        )
+        manifest_fixture_path = (
+            Path(__file__).parent
+            / "fixtures"
+            / "question_rag"
+            / "legacy_v1_manifest.json"
+        )
+        with TemporaryDirectory() as root:
+            root_path = Path(root)
+            bank_path = root_path / "questions.json"
+            payload = json.loads(fixture_path.read_text(encoding="utf-8"))
+            payload["test_only"] = False
+            payload["questions"][0]["source_type"] = "public_interview_experience"
+            bank_path.write_text(
+                json.dumps(payload, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            bank_path.with_name("QuestionBankManifest.json").write_text(
+                manifest_fixture_path.read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            env = self._default_env(root, index_path=str(root_path / "index"))
+            env.update(
+                {
+                    "QUESTION_RAG_BANK_PATH": str(bank_path),
+                    "QUESTION_RAG_EMBEDDING_PROVIDER": "fake-provider",
+                    "QUESTION_RAG_EMBEDDING_MODEL": "fake-model",
+                    "QUESTION_RAG_EMBEDDING_DIMENSION": "3",
+                    "SILICONFLOW_API_KEY": "fake-key",
+                }
+            )
+            embedding = CloseSpy()
+            with (
+                patch.dict(os.environ, env, clear=False),
+                patch(
+                    "profile_agent.services.siliconflow_embedding_service.SiliconFlowEmbeddingClient.from_env",
+                    return_value=embedding,
+                ),
+                patch(
+                    "profile_agent.knowledge.qdrant_question_store.QdrantQuestionStore",
+                    return_value=object(),
+                ) as store_cls,
+                patch(
+                    "profile_agent.services.question_retrieval_service.QuestionRetriever",
+                    return_value=object(),
+                ),
+            ):
+                factory = _question_retriever_factory_from_env()
+                self.assertIsNotNone(factory)
+                factory()
+
+            self.assertEqual(len(store_cls.call_args.kwargs["authoritative_catalog"]), 1)
+            fingerprint = store_cls.call_args.kwargs["expected_fingerprint"]
+            self.assertTrue(fingerprint.question_bank_manifest_hash.startswith("sha256:"))
+
     def test_web_restart_recovers_persisted_hit_from_authoritative_catalog(self) -> None:
         fixture_path = (
             Path(__file__).parent

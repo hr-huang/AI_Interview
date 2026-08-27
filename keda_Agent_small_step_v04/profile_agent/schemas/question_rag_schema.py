@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import date
 from math import isfinite
+import re
 from typing import Any, Literal
 from urllib.parse import urlparse
 
@@ -18,6 +19,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    ValidationError,
     field_validator,
     model_validator,
 )
@@ -124,6 +126,94 @@ def _collapse_unicode_whitespace(value: str, field_name: str) -> str:
     if not isinstance(value, str):
         raise TypeError(f"{field_name} must be a string")
     return " ".join(value.split())
+
+
+_EMBEDDING_EMAIL_RE = re.compile(
+    r"(?i)(?<![A-Z0-9._%+\-])[A-Z0-9][A-Z0-9._%+\-]*"
+    r"@[A-Z0-9-]+(?:\.[A-Z0-9-]+)+"
+)
+_EMBEDDING_URL_RE = re.compile(r"(?i)(?:https?://|www\.)\S+")
+_EMBEDDING_MOBILE_RE = re.compile(
+    r"(?<!\d)(?:\+?86[\s.-]?)?1[3-9](?:[\s.-]?\d){9}(?!\d)"
+)
+_EMBEDDING_FORMATTED_PHONE_RE = re.compile(
+    r"(?<!\d)(?:\+\d{1,3}[\s.-]?)?"
+    r"(?:\(\d{2,4}\)[\s.-]?)?\d{3,4}[\s.-]\d{3,4}[\s.-]\d{3,4}(?!\d)"
+)
+_EMBEDDING_PHONE_LABEL_RE = re.compile(
+    r"(?i)(?:phone|telephone|mobile|tel|电话|手机|联系电话|电话号码)"
+    r"\s*[:：=\-]?\s*[+()\d][\d\s().\-]{5,}\d"
+)
+_EMBEDDING_LANDLINE_RE = re.compile(
+    r"(?<!\d)0\d{2,3}[\s.-]\d{7,8}(?!\d)"
+)
+_EMBEDDING_RAW_LABEL_RE = re.compile(
+    r"(?ix)(?<![a-z])(?:"
+    r"jd|job\s+description|resume|curriculum\s+vitae|"
+    r"candidate\s+(?:answer|response|reply)|"
+    r"职位描述|岗位描述|职位说明|简历|候选人回答|候选人答复|候选人回复"
+    r")(?![a-z])"
+)
+_EMBEDDING_ANSWER_LABEL_RE = re.compile(
+    r"(?ix)(?<![a-z])(?:answer|回答|答复)(?![a-z])"
+)
+
+
+def _embedding_label_has_raw_tail(value: str) -> bool:
+    """Recognize a source-label prefix followed by copied source prose."""
+
+    def has_tail(tail: str) -> bool:
+        if re.match(r"[ \t]*[\r\n]", tail):
+            return True
+        if re.match(r"\s*[:：=|>\-–—/;；]", tail):
+            return True
+        return len(re.sub(r"\s+", "", tail)) >= 24
+
+    for match in _EMBEDDING_RAW_LABEL_RE.finditer(value):
+        if has_tail(value[match.end() :]):
+            return True
+
+    # A bare answer label is only trusted at a label boundary.  This keeps a
+    # normal technical question such as “what is the answer to …” admissible.
+    for match in _EMBEDDING_ANSWER_LABEL_RE.finditer(value):
+        prefix = value[: match.start()].rstrip()
+        if prefix and prefix[-1] not in ":：=|>-–—/;；":
+            continue
+        if has_tail(value[match.end() :]):
+            return True
+    return False
+
+
+def validate_embedding_text_value(value: Any, field_name: str) -> str:
+    """Normalize one projection value and reject unsafe copied/PII content.
+
+    Embedding projections are deliberately stricter than the canonical record
+    schema.  The message names only the fixed field, never the rejected value,
+    so callers cannot accidentally echo candidate data in diagnostics.
+    """
+
+    if not isinstance(value, str):
+        raise TypeError(f"{field_name} must be a string")
+    normalized = _collapse_unicode_whitespace(value, field_name)
+    if not normalized:
+        return normalized
+
+    # Scan both forms: the normalized value is what gets embedded, while the
+    # original preserves newline delimiters for source-label detection.
+    probe = f"{value}\n{normalized}"
+    unsafe = (
+        _EMBEDDING_EMAIL_RE.search(probe) is not None
+        or _EMBEDDING_URL_RE.search(probe) is not None
+        or _EMBEDDING_MOBILE_RE.search(probe) is not None
+        or _EMBEDDING_FORMATTED_PHONE_RE.search(probe) is not None
+        or _EMBEDDING_PHONE_LABEL_RE.search(probe) is not None
+        or _EMBEDDING_LANDLINE_RE.search(probe) is not None
+        or _embedding_label_has_raw_tail(value)
+        or _embedding_label_has_raw_tail(normalized)
+    )
+    if unsafe:
+        raise ValueError(f"{field_name} contains unsafe embedding content")
+    return normalized
 
 
 class InterviewQuestionRecord(BaseModel):
@@ -285,6 +375,66 @@ class QuestionEmbeddingProjection(BaseModel):
     primary_mode: QuestionMode
     compatible_modes: list[QuestionMode] = Field(default_factory=list)
 
+    @classmethod
+    def _sanitized_unsafe_error(cls) -> ValidationError:
+        return ValidationError.from_exception_data(
+            cls.__name__,
+            [
+                {
+                    "type": "value_error",
+                    "loc": (),
+                    "input": None,
+                    "ctx": {"error": "embedding projection contains unsafe content"},
+                }
+            ],
+        )
+
+    def __init__(self, **data: Any) -> None:
+        """Keep unsafe-value diagnostics from exposing the rejected value."""
+
+        try:
+            super().__init__(**data)
+        except ValidationError as exc:
+            if any(
+                "unsafe embedding content" in str(error.get("msg", ""))
+                for error in exc.errors()
+            ):
+                raise self._sanitized_unsafe_error() from None
+            raise
+
+    @classmethod
+    def model_validate(cls, obj: Any, *args: Any, **kwargs: Any) -> "QuestionEmbeddingProjection":
+        """Apply the same non-echoing boundary to Pydantic mapping calls."""
+
+        try:
+            return super().model_validate(obj, *args, **kwargs)
+        except ValidationError as exc:
+            if any(
+                "unsafe embedding content" in str(error.get("msg", ""))
+                for error in exc.errors()
+            ):
+                raise cls._sanitized_unsafe_error() from None
+            raise
+
+    @classmethod
+    def model_validate_json(
+        cls,
+        json_data: Any,
+        *args: Any,
+        **kwargs: Any,
+    ) -> "QuestionEmbeddingProjection":
+        """Keep JSON validation errors non-echoing for unsafe projection data."""
+
+        try:
+            return super().model_validate_json(json_data, *args, **kwargs)
+        except ValidationError as exc:
+            if any(
+                "unsafe embedding content" in str(error.get("msg", ""))
+                for error in exc.errors()
+            ):
+                raise cls._sanitized_unsafe_error() from None
+            raise
+
     @property
     def question_text(self) -> str:
         """Compatibility alias matching :class:`InterviewQuestionRecord`."""
@@ -294,7 +444,7 @@ class QuestionEmbeddingProjection(BaseModel):
     @field_validator("question", "business_constraint", mode="before")
     @classmethod
     def normalize_projection_text(cls, value: str, info: Any) -> str:
-        return _collapse_unicode_whitespace(value, info.field_name)
+        return validate_embedding_text_value(value, info.field_name)
 
     @field_validator("skills", "dimension_terms", "compatible_modes", mode="before")
     @classmethod
@@ -305,12 +455,20 @@ class QuestionEmbeddingProjection(BaseModel):
             raise TypeError(f"{info.field_name} must be a sequence")
         try:
             normalized = [
-                _collapse_unicode_whitespace(value, f"{info.field_name}[{index}]")
+                validate_embedding_text_value(
+                    value,
+                    f"{info.field_name}[{index}]",
+                )
                 for index, value in enumerate(values)
             ]
         except TypeError:
             raise TypeError(f"{info.field_name} must be a sequence") from None
         return [value for value in normalized if value]
+
+    @field_validator("primary_mode", mode="before")
+    @classmethod
+    def validate_projection_primary_mode(cls, value: Any, info: Any) -> str:
+        return validate_embedding_text_value(value, info.field_name)
 
     @model_validator(mode="after")
     def normalize_projection_order(self) -> "QuestionEmbeddingProjection":
@@ -320,6 +478,19 @@ class QuestionEmbeddingProjection(BaseModel):
 
     def to_text(self) -> str:
         """Render the projection using the frozen six-line field order."""
+
+        # ``model_construct`` and other trusted-internal escape hatches can
+        # bypass Pydantic validators.  Recheck every rendered field so the
+        # formatter itself remains a fail-closed boundary.
+        validate_embedding_text_value(self.question, "question")
+        validate_embedding_text_value(self.business_constraint, "business_constraint")
+        for index, value in enumerate(self.skills):
+            validate_embedding_text_value(value, f"skills[{index}]")
+        for index, value in enumerate(self.dimension_terms):
+            validate_embedding_text_value(value, f"dimension_terms[{index}]")
+        validate_embedding_text_value(self.primary_mode, "primary_mode")
+        for index, value in enumerate(self.compatible_modes):
+            validate_embedding_text_value(value, f"compatible_modes[{index}]")
 
         return "\n".join(
             (

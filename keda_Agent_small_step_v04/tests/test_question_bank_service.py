@@ -48,6 +48,9 @@ V2_FIXTURE_PATH = (
 LEGACY_CHECKPOINT_FIXTURE_PATH = (
     Path(__file__).parent / "fixtures" / "question_rag" / "legacy_checkpoint.json"
 )
+LEGACY_MANIFEST_FIXTURE_PATH = (
+    Path(__file__).parent / "fixtures" / "question_rag" / "legacy_v1_manifest.json"
+)
 PUBLIC_PROJECTION_FIXTURE_PATH = (
     Path(__file__).parent / "fixtures" / "question_rag" / "public_projection.json"
 )
@@ -250,6 +253,110 @@ class QuestionBankServiceTests(unittest.TestCase):
         self.assertEqual(build_question_embedding_text(payload), baseline)
         self.assertNotIn("metadata-only", baseline)
         self.assertNotIn("company-secret", baseline)
+
+    def test_embedding_projection_rejects_sensitive_values_in_every_section(self) -> None:
+        record = self._v2_fixture()
+        unsafe_values = {
+            "question_text": "请联系 candidate@example.com",
+            "business_constraint": "电话：13800138000",
+            "skills": ["https://private.example/skill"],
+            "dimension_terms": ["职位描述：这是必须拒绝的长文本原文。"],
+            "primary_mode": "resume: candidate history and personal details",
+            "compatible_modes": ["www.private.example/resume"],
+        }
+
+        for field_name, unsafe_value in unsafe_values.items():
+            with self.subTest(field=field_name):
+                payload = record.model_dump(mode="python")
+                payload[field_name] = unsafe_value
+                with self.assertRaises((TypeError, ValueError)) as raised:
+                    build_question_embedding_text(payload)
+                self.assertNotIn("candidate@example.com", str(raised.exception))
+                self.assertNotIn("13800138000", str(raised.exception))
+                self.assertNotIn("private.example", str(raised.exception))
+                self.assertNotIn("personal details", str(raised.exception))
+
+    def test_embedding_projection_accepts_technical_tokens(self) -> None:
+        projection = QuestionEmbeddingProjection(
+            question="设计 OAuth 与 Qdrant 的失败恢复边界",
+            business_constraint="保持 candidate 体验可解释",
+            skills=["Qdrant", "OAuth", "candidate"],
+            dimension_terms=["resume token", "JWT"],
+            primary_mode="scenario",
+            compatible_modes=["follow_up"],
+        )
+
+        text = projection.to_text()
+
+        self.assertIn("OAuth", text)
+        self.assertIn("Qdrant", text)
+        self.assertIn("candidate", text)
+        self.assertIn("resume token", text)
+
+    def test_embedding_projection_constructor_rejects_sensitive_values_without_echo(self) -> None:
+        unsafe_values = {
+            "question": "联系 candidate@example.com",
+            "business_constraint": "telephone: +1 415-555-1212",
+            "skills": ["https://private.example/skill"],
+            "dimension_terms": ["简历：候选人经历和联系方式原文"],
+            "primary_mode": "JD: copied job description text",
+            "compatible_modes": ["候选人回答：这是回答原文"],
+        }
+
+        for field_name, unsafe_value in unsafe_values.items():
+            with self.subTest(field=field_name):
+                values = {
+                    "question": "安全技术问题",
+                    "business_constraint": "安全边界",
+                    "skills": ["OAuth"],
+                    "dimension_terms": ["失败恢复"],
+                    "primary_mode": "scenario",
+                    "compatible_modes": [],
+                }
+                values[field_name] = unsafe_value
+                with self.assertRaises(ValueError) as raised:
+                    QuestionEmbeddingProjection(**values)
+                self.assertNotIn("candidate@example.com", str(raised.exception))
+                self.assertNotIn("private.example", str(raised.exception))
+                self.assertNotIn("415-555-1212", str(raised.exception))
+                self.assertNotIn("联系方式原文", str(raised.exception))
+
+    def test_embedding_projection_formatter_rechecks_constructed_values(self) -> None:
+        projection = QuestionEmbeddingProjection.model_construct(
+            question="安全技术问题",
+            business_constraint="安全边界",
+            skills=["OAuth"],
+            dimension_terms=["https://private.example/term"],
+            primary_mode="scenario",
+            compatible_modes=[],
+        )
+
+        with self.assertRaises(ValueError) as raised:
+            projection.to_text()
+
+        self.assertNotIn("private.example", str(raised.exception))
+
+    def test_runtime_identity_accepts_legacy_v1_manifest_without_new_manifest_object(self) -> None:
+        payload = json.loads(LEGACY_V1_FIXTURE_PATH.read_text(encoding="utf-8"))
+        payload["test_only"] = False
+        payload["questions"][0]["source_type"] = "public_interview_experience"
+        bank_path = self._write_bank(payload)
+        manifest_path = bank_path.with_name("QuestionBankManifest.json")
+        manifest_path.write_text(
+            LEGACY_MANIFEST_FIXTURE_PATH.read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        records = load_question_bank(bank_path)
+
+        from profile_agent.services.question_bank_service import (
+            load_question_bank_runtime_identity,
+        )
+
+        identity = load_question_bank_runtime_identity(records, bank_path=bank_path)
+
+        self.assertIsNone(identity.bank_manifest)
+        self.assertTrue(identity.manifest_hash.startswith("sha256:"))
+        self.assertEqual(set(identity.catalog), {"q_fixture_v1"})
 
     def test_record_hash_separates_embedding_text_from_non_embedding_metadata(self) -> None:
         record = self._v2_fixture()

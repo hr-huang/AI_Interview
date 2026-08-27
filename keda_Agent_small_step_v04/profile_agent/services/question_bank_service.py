@@ -27,6 +27,7 @@ from profile_agent.schemas.question_rag_schema import (
     QuestionSourceRegistry,
     QuestionRetrievalResult,
     RetrievedQuestion,
+    validate_embedding_text_value,
 )
 
 
@@ -319,11 +320,53 @@ def _canonical_embedding_list(values: Sequence[Any], field_name: str) -> list[st
     return sorted(normalized, key=lambda value: (value.casefold(), value))
 
 
+def _validate_embedding_projection_inputs(
+    record: InterviewQuestionRecord | Mapping[str, Any],
+) -> None:
+    """Apply the projection safety policy before any mode/schema normalization."""
+
+    if isinstance(record, InterviewQuestionRecord):
+        get_value = lambda name, default=None: getattr(record, name, default)
+    elif isinstance(record, Mapping):
+        get_value = lambda name, default=None: record.get(name, default)
+    else:
+        return
+
+    validate_embedding_text_value(get_value("question_text"), "question")
+    validate_embedding_text_value(
+        get_value("business_constraint", ""),
+        "business_constraint",
+    )
+
+    def validate_list(values: Any, field_name: str) -> None:
+        if values is None:
+            return
+        if isinstance(values, (str, bytes, bytearray)):
+            if isinstance(values, str):
+                validate_embedding_text_value(values, field_name)
+            return
+        try:
+            iterator = enumerate(values)
+        except TypeError:
+            return
+        for index, value in iterator:
+            validate_embedding_text_value(value, f"{field_name}[{index}]")
+
+    validate_list(get_value("skills", ()), "skills")
+    validate_list(get_value("dimension_terms", ()), "dimension_terms")
+    primary_mode = get_value("primary_mode")
+    if primary_mode is None:
+        primary_mode = get_value("question_mode")
+    validate_embedding_text_value(primary_mode, "primary_mode")
+    validate_list(get_value("compatible_modes", ()), "compatible_modes")
+
+
 def _embedding_projection(
     record: InterviewQuestionRecord | Mapping[str, Any],
 ) -> QuestionEmbeddingProjection:
     """Build the six-section projection without carrying record metadata."""
 
+    _validate_embedding_projection_inputs(record)
     validated = _validated_record(record, normalize_modes=True)
     primary_mode = normalize_project_mode(validated.primary_mode or validated.question_mode)
     compatible_modes = [
@@ -1446,14 +1489,15 @@ def load_question_bank_runtime_identity(
             # A v1 manifest is an explicit compatibility read.  It is not
             # allowed to populate a new v2 projection or hash field.
             bank_manifest = None
-        if (
-            bank_manifest.question_count != len(normalized_records)
-            or set(bank_manifest.question_ids)
-            != {record.question_id for record in normalized_records}
-        ):
-            raise ValueError("question bank manifest does not match records")
-        if bank_manifest.mode_policy_version != normalized_policy.mode_policy_version:
-            raise ValueError("question bank manifest mode policy does not match")
+        if bank_manifest is not None:
+            if (
+                bank_manifest.question_count != len(normalized_records)
+                or set(bank_manifest.question_ids)
+                != {record.question_id for record in normalized_records}
+            ):
+                raise ValueError("question bank manifest does not match records")
+            if bank_manifest.mode_policy_version != normalized_policy.mode_policy_version:
+                raise ValueError("question bank manifest mode policy does not match")
     manifest_hash = compute_question_bank_manifest_hash(
         normalized_records,
         registry,

@@ -916,7 +916,14 @@ def _validate_records_for_embedding(
         )
     # Every writer path must use the candidate-safe six-section projection;
     # the raw question_text is a canonical field, not an embedding contract.
-    return [build_question_embedding_text(record) for record in records]
+    try:
+        return [build_question_embedding_text(record) for record in records]
+    except (TypeError, ValueError) as exc:
+        # Treat an unsafe projection exactly like any other bank preflight
+        # failure.  Do not expose the rejected value through CLI diagnostics.
+        raise QuestionBankValidationError(
+            "question bank embedding projection is invalid"
+        ) from exc
 
 
 def _normalise_vectors(
