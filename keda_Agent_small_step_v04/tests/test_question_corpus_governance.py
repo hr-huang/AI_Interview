@@ -472,13 +472,15 @@ class QuestionCorpusGovernanceTests(unittest.TestCase):
             if entry.source_type == "public_interview_experience"
         ]
         independent = [entry for entry in registry.entries if entry.source_type != "public_interview_experience"]
-        self.assertGreaterEqual(len(interviews), 10)
-        self.assertGreaterEqual(len(independent), 10)
+        self.assertEqual(len(interviews), 10)
+        self.assertEqual(sum(entry.source_type == "official_technical_doc" for entry in independent), 5)
+        self.assertEqual(sum(entry.source_type == "current_enterprise_jd" for entry in independent), 5)
         recent_180 = [entry for entry in interviews if entry.published_at and entry.published_at >= date(2026, 2, 28)]
         recent_365 = [entry for entry in interviews if entry.published_at and entry.published_at >= date(2025, 8, 27)]
-        self.assertGreaterEqual(len(recent_180), 6)
-        self.assertGreaterEqual(len(recent_365), 9)
+        self.assertEqual(len(recent_180), 8)
+        self.assertEqual(len(recent_365), 10)
         self.assertEqual(len({entry.canonical_url for entry in registry.entries}), len(registry.entries))
+        self.assertTrue(all(entry.date_evidence.strip() for entry in registry.entries))
 
     def test_validator_rejects_source_taxonomy_and_unsafe_source_page(self) -> None:
         snapshot = self._complete_snapshot()

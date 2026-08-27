@@ -1212,8 +1212,9 @@ class QuestionSourceRegistryEntry(BaseModel):
     next_review_at: date | None = None
     rights_status: Literal["approved", "rejected", "pending"] = "pending"
     notes: str = ""
+    date_evidence: str = ""
 
-    @field_validator("source_id", "title", "publisher", "human_summary", "role_level", "notes")
+    @field_validator("source_id", "title", "publisher", "human_summary", "role_level", "notes", "date_evidence")
     @classmethod
     def validate_source_text(cls, value: str, info: Any) -> str:
         if value:

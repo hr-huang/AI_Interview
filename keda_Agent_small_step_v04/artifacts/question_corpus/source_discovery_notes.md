@@ -6,16 +6,16 @@ Corpus as-of: 2026-08-27. The 20 accepted records were opened as direct pages on
 
 | source_id | type | direct URL | observed date cue / locator |
 |---|---|---|---|
-| src_interview_linkedin_2026 | public interview | https://leetcode.com/discuss/post/7421217/ | page publication metadata; Round 2 heading |
-| src_interview_amazon_genai_2026 | public interview | https://leetcode.com/discuss/post/8098488/amazon-interview-experience-sde-1-intern-dsa-round-srof2/ | page publication metadata; Round 2 GenAI |
-| src_interview_amazon_sde1_2026 | public interview | https://leetcode.com/discuss/post/8014509/ | page publication metadata; Round 3 Gen-AI |
-| src_interview_safe_security_2026 | public interview | https://leetcode.com/discuss/post/8378004/ | page publication metadata; Technical Questions |
-| src_interview_google_grad_2026 | public interview | https://leetcode.com/discuss/post/7371064/ | page publication metadata; Round 1/2 headings |
-| src_interview_microsoft_sweii_2026 | public interview | https://leetcode.com/discuss/post/7619101/microsoft-swe-ii-by-anonymous_user-a37z/ | page publication metadata; Round headings |
-| src_interview_microsoft_senior_2026 | public interview | https://leetcode.com/discuss/post/8300781/ | page publication metadata; R1-R4 headings |
-| src_interview_uber_sde2_2026 | public interview | https://leetcode.com/discuss/post/7619138/uber-sde2-by-anonymous_user-1g2h/ | page publication metadata; Round 1 heading |
-| src_interview_amazon_sde2_feb_2026 | public interview | https://leetcode.com/discuss/post/7710904/ | page publication metadata; Virtual Onsite headings |
-| src_interview_foundit_sde2_2026 | public interview | https://leetcode.com/discuss/post/7652787/found-it-sde-2-interview-experience-feb-y4zp2/ | page publication metadata; Round 1 heading |
+| src_interview_ai_engineer_15_2026 | public interview | https://www.reddit.com/r/deeplearning/comments/1swxb2k/i_did_15_ai_engineer_interviews_in_the_last_6/ | Reddit visible post date; title/body firsthand retrospective |
+| src_interview_jpmorgan_ai_2026 | public interview | https://www.reddit.com/r/OfferEngineering/comments/1vgc8zk/jpmorgan_ai_engineer_phone_screen_interview/ | Reddit visible post date; title/phone-screen body |
+| src_interview_google_mle_2026 | public interview | https://www.reddit.com/r/OfferEngineering/comments/1vt74g5/google_senior_mle_interview_experience_feb_2026/ | Reddit visible post date; completed interview body |
+| src_interview_roblox_mle_2026 | public interview | https://www.reddit.com/r/OfferEngineering/comments/1tvu06m/roblox_mle_new_grad_interview/ | Reddit visible post date; interview body |
+| src_interview_tcs_2026 | public interview | https://www.reddit.com/r/developersIndia/comments/1tyfnup/tcs_interview_experience_it_was_brutal_and_not/ | Reddit visible post date; firsthand retrospective body |
+| src_interview_telus_ai_2026 | public interview | https://medium.com/@sumitpardhiya/telus-digital-ai-engineer-interview-experience-c18523996ed5 | Medium visible Published Jun 8, 2026; author/interview section |
+| src_interview_guvi_ai_2026 | public interview | https://www.guvi.in/blog/ai-engineer-interview-experience/ | GUVI visible Published Feb 18, 2026; byline/interview rounds |
+| src_interview_teradata_ai_2026 | public interview | https://interviewexperiences.in/experience/teradata/teradata-senior-ai-engineer-interview-experience | visible March 6, 2026; Summary/Full Experience |
+| src_interview_amazon_devto_2026 | public interview | https://dev.to/saloni_jain_aba5e8c508f8a/amazon-sde-i-6-months-2026-interview-experience-off-campus-4ago | DEV visible Posted on May 30; firsthand 2026 rounds |
+| src_interview_amazon_sde2_2025 | public interview | https://leetcode.com/discuss/post/7160827/ | LeetCode visible Sep 06, 2025; Round headings |
 | src_official_azure_agentic_retrieval | official technical doc | https://learn.microsoft.com/en-us/azure/search/agentic-retrieval-overview | updated 2026-06-12; Why use agentic retrieval |
 | src_official_azure_rag_architecture | official technical doc | https://learn.microsoft.com/en-us/azure/architecture/ai-ml/guide/rag/rag-agentic | article sections When to use / Evaluate agentic RAG |
 | src_official_azure_search_intro | official technical doc | https://learn.microsoft.com/en-us/azure/search/search-what-is-azure-search | What is agentic retrieval; Choose your path |
