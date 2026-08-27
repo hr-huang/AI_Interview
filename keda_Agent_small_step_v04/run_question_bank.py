@@ -29,12 +29,19 @@ from profile_agent.knowledge.qdrant_question_store import (
     IndexFingerprint,
     QdrantQuestionStore,
 )
-from profile_agent.schemas.question_rag_schema import InterviewQuestionRecord
+from profile_agent.schemas.question_rag_schema import (
+    InterviewQuestionRecord,
+    MODE_POLICY_VERSION,
+)
 from profile_agent.services.question_bank_service import (
+    EMBEDDING_TEXT_VERSION,
+    UNAVAILABLE_QUESTION_BANK_MANIFEST_HASH,
     SUPPORTED_SCHEMA_VERSIONS,
     SUPPORTED_ROLE,
     audit_question_bank,
     build_question_content_hash,
+    build_question_embedding_text,
+    load_question_bank_runtime_identity,
     load_question_bank,
 )
 from profile_agent.services.siliconflow_embedding_service import (
@@ -98,9 +105,11 @@ class QuestionBankDependencies:
 class QuestionIndexConfig:
     """Canonical identity/configuration shared by index writers and readers.
 
-    The runtime reader's contract is provider/model/dimension/index_version.
-    CLI-specific overrides are resolved into this value before any client is
-    constructed, so the manifest identity cannot silently drift from defaults.
+    Provider/model/dimension/index_version are resolved here; the embedding
+    text, bank manifest and mode-policy components are added to the persisted
+    ``IndexFingerprint`` after the validated bank is available.  CLI-specific
+    overrides are resolved before any client is constructed, so the manifest
+    identity cannot silently drift from defaults.
     """
 
     provider: str
@@ -210,6 +219,22 @@ def _build_parser() -> argparse.ArgumentParser:
                 help="提前多少天标记即将过期，默认 30",
             )
         if action in {"rebuild", "sync"}:
+            subparser.add_argument(
+                "--source-registry",
+                "--question-source-registry",
+                dest="source_registry",
+                type=_parse_path,
+                default=None,
+                help="可选的 QuestionSourceRegistry.json 路径",
+            )
+            subparser.add_argument(
+                "--manifest",
+                "--question-bank-manifest",
+                dest="manifest_path",
+                type=_parse_path,
+                default=None,
+                help="可选的 QuestionBankManifest.json 路径",
+            )
             subparser.add_argument(
                 "--apply",
                 action="store_true",
@@ -889,7 +914,9 @@ def _validate_records_for_embedding(
         raise QuestionBankConfigurationError(
             "question bank has no records to embed"
         )
-    return [record.question_text for record in records]
+    # Every writer path must use the candidate-safe six-section projection;
+    # the raw question_text is a canonical field, not an embedding contract.
+    return [build_question_embedding_text(record) for record in records]
 
 
 def _normalise_vectors(
@@ -974,7 +1001,12 @@ def _build_fingerprint(
     configured_dimension: int,
     configured_index_version: str,
     fingerprint_factory: Callable[..., Any] | None,
+    question_bank_manifest_hash: str = UNAVAILABLE_QUESTION_BANK_MANIFEST_HASH,
+    embedding_text_version: str = EMBEDDING_TEXT_VERSION,
+    mode_policy_version: str = MODE_POLICY_VERSION,
 ) -> IndexFingerprint:
+    """Build and validate all seven persisted index identity fields."""
+
     _validate_embedding_identity(
         embedding,
         configured_provider=configured_provider,
@@ -1002,24 +1034,35 @@ def _build_fingerprint(
         configured_index_version,
         "index version",
     )
+    question_bank_manifest_hash = _require_non_blank(
+        question_bank_manifest_hash,
+        "question bank manifest hash",
+    )
+    embedding_text_version = _require_non_blank(
+        embedding_text_version,
+        "embedding text version",
+    )
+    mode_policy_version = _require_non_blank(
+        mode_policy_version,
+        "mode policy version",
+    )
+    fingerprint_kwargs = {
+        "provider": provider,
+        "model": model,
+        "dimension": dimension,
+        "index_version": configured_index_version,
+        "embedding_text_version": embedding_text_version,
+        "question_bank_manifest_hash": question_bank_manifest_hash,
+        "mode_policy_version": mode_policy_version,
+    }
     if fingerprint_factory is not None:
         fingerprint = _call_with_supported_kwargs(
             fingerprint_factory,
             (),
-            {
-                "provider": provider,
-                "model": model,
-                "dimension": dimension,
-                "index_version": configured_index_version,
-            },
+            fingerprint_kwargs,
         )
     else:
-        fingerprint = IndexFingerprint(
-            provider=provider,
-            model=model,
-            dimension=dimension,
-            index_version=configured_index_version,
-        )
+        fingerprint = IndexFingerprint(**fingerprint_kwargs)
     if not isinstance(fingerprint, IndexFingerprint):
         try:
             fingerprint = IndexFingerprint.model_validate(fingerprint)
@@ -1030,6 +1073,9 @@ def _build_fingerprint(
         or fingerprint.model != model
         or fingerprint.dimension != dimension
         or fingerprint.index_version != configured_index_version
+        or fingerprint.embedding_text_version != embedding_text_version
+        or fingerprint.question_bank_manifest_hash != question_bank_manifest_hash
+        or fingerprint.mode_policy_version != mode_policy_version
     ):
         raise QuestionBankConfigurationError(
             "fingerprint identity does not match embedding/index configuration"
@@ -1099,8 +1145,13 @@ def _default_store_factory(
     *,
     index_path: Path,
     fingerprint: IndexFingerprint,
+    authoritative_catalog: Mapping[str, InterviewQuestionRecord] | None = None,
 ) -> QdrantQuestionStore:
-    return QdrantQuestionStore(path=index_path, fingerprint=fingerprint)
+    return QdrantQuestionStore(
+        path=index_path,
+        fingerprint=fingerprint,
+        authoritative_catalog=authoritative_catalog,
+    )
 
 
 def _close_owned(resource: Any) -> None:
@@ -1263,6 +1314,11 @@ def _summary_for_applied(
         "provider": _public_model(fingerprint.provider),
         "model": _public_model(fingerprint.model),
         "index_version": _public_model(fingerprint.index_version),
+        "embedding_text_version": _public_model(fingerprint.embedding_text_version),
+        "question_bank_manifest_hash": _public_model(
+            fingerprint.question_bank_manifest_hash
+        ),
+        "mode_policy_version": _public_model(fingerprint.mode_policy_version),
         "collection": COLLECTION_NAME,
         "writes": {
             "manifest": 1,
@@ -1289,6 +1345,9 @@ def _render_summary(summary: Mapping[str, Any], *, output_format: str) -> str:
         "model",
         "collection",
         "index_version",
+        "embedding_text_version",
+        "question_bank_manifest_hash",
+        "mode_policy_version",
     ):
         if key in summary and summary[key] is not None:
             fields.append(f"{key}={summary[key]}")
@@ -1658,6 +1717,22 @@ def main(
             if explicit_index_path is not None
             else None
         )
+        source_registry_path = getattr(args, "source_registry", None)
+        if source_registry_path is not None:
+            try:
+                source_registry_path = Path(source_registry_path)
+            except (TypeError, ValueError, OSError) as exc:
+                raise QuestionBankConfigurationError(
+                    "source registry path is invalid"
+                ) from exc
+        manifest_path = getattr(args, "manifest_path", None)
+        if manifest_path is not None:
+            try:
+                manifest_path = Path(manifest_path)
+            except (TypeError, ValueError, OSError) as exc:
+                raise QuestionBankConfigurationError(
+                    "manifest path is invalid"
+                ) from exc
         expected_dimension = getattr(args, "dimension", None)
         if expected_dimension is not None and (
             isinstance(expected_dimension, bool)
@@ -1721,6 +1796,18 @@ def main(
             index_path=index_path,
             dimension=expected_dimension,
         )
+        try:
+            runtime_identity = load_question_bank_runtime_identity(
+                records,
+                bank_path=args.bank,
+                source_registry_path=source_registry_path,
+                manifest_path=manifest_path,
+                environment=env_value,
+            )
+        except (TypeError, ValueError, OSError) as exc:
+            raise QuestionBankConfigurationError(
+                "question bank manifest inputs are invalid"
+            ) from exc
         model = config.model
         index_version = config.index_version
         index_path = config.index_path
@@ -1780,6 +1867,9 @@ def main(
                     configured_dimension=config.dimension,
                     configured_index_version=config.index_version,
                     fingerprint_factory=fingerprint_impl,
+                    question_bank_manifest_hash=runtime_identity.manifest_hash,
+                    embedding_text_version=EMBEDDING_TEXT_VERSION,
+                    mode_policy_version=runtime_identity.policy.mode_policy_version,
                 )
             except (TypeError, ValueError, KeyError) as exc:
                 raise QuestionBankConfigurationError(
@@ -1790,6 +1880,7 @@ def main(
                 "path": config.index_path,
                 "fingerprint": fingerprint,
                 "collection_name": COLLECTION_NAME,
+                "authoritative_catalog": runtime_identity.catalog,
             }
             store = _call_with_supported_kwargs(store_impl, (), store_kwargs)
             store_owned = using_default_store

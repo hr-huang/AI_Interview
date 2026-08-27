@@ -12,6 +12,11 @@ from unittest.mock import patch
 
 import run_question_bank
 from run_question_bank import QuestionBankDependencies, build_question_index_config
+from profile_agent.services.question_bank_service import (
+    EMBEDDING_TEXT_VERSION,
+    build_question_embedding_text,
+    load_question_bank,
+)
 
 
 FIXTURE_PATH = (
@@ -302,6 +307,36 @@ class RunQuestionBankTests(unittest.TestCase):
         self.assertEqual(fingerprint.dimension, 3)
         self.assertFalse(embedding.closed)
         self.assertFalse(store.closed)
+        self.assertEqual(stderr, "")
+
+    def test_apply_embedding_spy_receives_canonical_six_section_projection(self) -> None:
+        bank = self._write_bank()
+        embedding = FakeEmbedding()
+        store = FakeStore()
+
+        code, stdout, stderr = self._run(
+            ["rebuild", "--bank", str(bank), "--apply"],
+            env={
+                "QUESTION_RAG_EMBEDDING_PROVIDER": "fake-provider",
+                "QUESTION_RAG_EMBEDDING_MODEL": "fake-model",
+                "QUESTION_RAG_EMBEDDING_DIMENSION": "3",
+            },
+            embedding_factory=lambda **_: embedding,
+            store_factory=lambda **_: store,
+        )
+
+        self.assertEqual(code, 0)
+        records = load_question_bank(bank)
+        self.assertEqual(
+            embedding.calls,
+            [[build_question_embedding_text(record) for record in records]],
+        )
+        self.assertTrue(all(text.count("\n") == 5 for text in embedding.calls[0]))
+        fingerprint = store.rebuild_calls[0][2]
+        self.assertEqual(fingerprint.embedding_text_version, EMBEDDING_TEXT_VERSION)
+        self.assertTrue(fingerprint.question_bank_manifest_hash.startswith("sha256:"))
+        self.assertEqual(fingerprint.mode_policy_version, "2026-H2")
+        self.assertEqual(stdout.count("APPLIED"), 1)
         self.assertEqual(stderr, "")
 
     def test_sync_apply_passes_explicit_today_and_calls_only_sync(self) -> None:

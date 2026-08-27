@@ -22,6 +22,7 @@ from pydantic import ValidationError
 from profile_agent.schemas.question_rag_schema import (
     InterviewQuestionRecord,
     QuestionEmbeddingProjection,
+    QuestionBankManifest,
     QuestionModePolicy,
     QuestionSourceRegistry,
     QuestionRetrievalResult,
@@ -56,6 +57,7 @@ SUPPORTED_SCHEMA_VERSIONS = frozenset(
 DEFAULT_EXPIRING_WITHIN_DAYS = 30
 EMBEDDING_TEXT_VERSION = "six-section-v1"
 QUESTION_CONTENT_HASH_VERSION = "question-content-v2"
+UNAVAILABLE_QUESTION_BANK_MANIFEST_HASH = "unavailable:canonical-question-bank"
 
 _V1_RECORD_FIELDS: tuple[str, ...] = (
     "question_id",
@@ -1049,6 +1051,425 @@ def load_question_bank(
 
 
 @dataclass(frozen=True)
+class QuestionBankRuntimeIdentity:
+    """Verified local inputs shared by index writers and persistent readers.
+
+    The vector index is disposable, but its fingerprint must be derived from
+    the same validated records, source registry and frozen mode policy on both
+    sides of the boundary.  ``catalog`` is intentionally the complete
+    canonical record map; Qdrant payloads are only a retrieval projection.
+    """
+
+    catalog: dict[str, InterviewQuestionRecord]
+    source_registry: QuestionSourceRegistry
+    policy: QuestionModePolicy
+    manifest_hash: str
+    bank_manifest: QuestionBankManifest | None = None
+
+
+_RUNTIME_SOURCE_REGISTRY_ENV_NAMES: tuple[str, ...] = (
+    "QUESTION_RAG_SOURCE_REGISTRY_PATH",
+    "QUESTION_RAG_SOURCE_REGISTRY",
+    "QUESTION_RAG_QUESTION_SOURCE_REGISTRY_PATH",
+    "QUESTION_SOURCE_REGISTRY_PATH",
+)
+_RUNTIME_MANIFEST_ENV_NAMES: tuple[str, ...] = (
+    "QUESTION_RAG_MANIFEST_PATH",
+    "QUESTION_RAG_MANIFEST",
+    "QUESTION_RAG_BANK_MANIFEST_PATH",
+    "QUESTION_RAG_QUESTION_BANK_MANIFEST_PATH",
+    "QUESTION_BANK_MANIFEST_PATH",
+)
+
+
+def _runtime_environment_path(
+    environment: Mapping[str, Any] | None,
+    names: Sequence[str],
+) -> Path | None:
+    if environment is None:
+        return None
+    for name in names:
+        value = environment.get(name)
+        if value is None:
+            continue
+        text = value if isinstance(value, str) else str(value)
+        if text.strip():
+            return Path(text.strip())
+    return None
+
+
+def _runtime_source_entries(raw: Any) -> list[Mapping[str, Any]]:
+    if isinstance(raw, Mapping):
+        if "entries" in raw:
+            raw = raw["entries"]
+        elif "sources" in raw:
+            raw = raw["sources"]
+        elif any(
+            key in raw
+            for key in ("source_id", "id", "canonical_url", "url")
+        ):
+            raw = [raw]
+    if isinstance(raw, (str, bytes, bytearray)) or not isinstance(raw, Sequence):
+        raise ValueError("question source registry must contain entries")
+    entries: list[Mapping[str, Any]] = []
+    for entry in raw:
+        if not isinstance(entry, Mapping):
+            raise ValueError("question source registry entries must be objects")
+        entries.append(entry)
+    if not entries:
+        raise ValueError("question source registry must contain entries")
+    return entries
+
+
+def _runtime_registry_from_records(
+    records: Sequence[InterviewQuestionRecord],
+) -> QuestionSourceRegistry:
+    """Build an explicit compatibility registry from validated v1 records.
+
+    Older banks predate a source-registry sidecar.  Their source URL/title and
+    verification dates are already validated by ``load_question_bank``; using
+    those fields as a grouped registry is a deterministic compatibility path,
+    not a fabricated manifest.  Unsupported/ambiguous source metadata fails
+    closed so production readers cannot silently bless it.
+    """
+
+    grouped: dict[str, dict[str, Any]] = {}
+    for record in records:
+        if record.source_type == "test_only_synthetic":
+            raise ValueError("test-only records cannot build a production source registry")
+        if record.source_type not in {
+            "public_interview_experience",
+            "official_technical_doc",
+            "current_enterprise_jd",
+        }:
+            raise ValueError("question source type is not supported by the runtime registry")
+        source_id = record.source_id
+        source_ids = record.source_ids or [record.source_id]
+        for referenced_id in source_ids:
+            if referenced_id != source_id:
+                # A sidecar is required to resolve additional v2 sources.  Do
+                # not guess their metadata from the primary source.
+                raise ValueError("additional source_ids require a source registry sidecar")
+        entry = grouped.get(source_id)
+        values = {
+            "source_id": source_id,
+            "source_type": record.source_type,
+            "canonical_url": record.source_url,
+            "title": record.source_title,
+            "publisher": "",
+            "published_at": record.published_at,
+            "verified_at": record.verified_at,
+            "accessed_at": record.verified_at,
+            "trust": record.trust_level,
+            "lifecycle": "active" if record.status == "active" else record.status,
+            "question_ids": [record.question_id],
+        }
+        if entry is None:
+            grouped[source_id] = values
+            continue
+        for field_name in (
+            "source_type",
+            "canonical_url",
+            "title",
+            "published_at",
+            "verified_at",
+            "trust",
+        ):
+            if entry[field_name] != values[field_name]:
+                raise ValueError("records disagree on source registry metadata")
+        entry["question_ids"].append(record.question_id)
+        if record.status == "active":
+            entry["lifecycle"] = "active"
+    return QuestionSourceRegistry.model_validate({"entries": list(grouped.values())})
+
+
+def _runtime_normalize_registry(
+    raw: Any,
+    records: Sequence[InterviewQuestionRecord],
+) -> QuestionSourceRegistry:
+    entries: list[dict[str, Any]] = []
+    record_ids_by_source: dict[str, list[str]] = {}
+    for record in records:
+        for source_id in (record.source_ids or [record.source_id]):
+            record_ids_by_source.setdefault(source_id, []).append(record.question_id)
+
+    for raw_entry in _runtime_source_entries(raw):
+        entry = dict(raw_entry)
+        accepted_keys = {
+            "source_id",
+            "id",
+            "source_type",
+            "source_class",
+            "canonical_url",
+            "url",
+            "source_url",
+            "title",
+            "source_title",
+            "publisher",
+            "published_at",
+            "verified_at",
+            "accessed_at",
+            "retrieved_at",
+            "trust",
+            "trust_level",
+            "lifecycle",
+            "question_ids",
+            "human_summary",
+            "review_class",
+            "date_basis",
+            "role_level",
+            "dimension_ids",
+            "supports_dimension_ids",
+            "access_status",
+            "next_review_at",
+            "rights_status",
+            "notes",
+        }
+        if set(entry).difference(accepted_keys):
+            raise ValueError("question source registry contains unknown fields")
+        source_id = entry.get("source_id", entry.get("id"))
+        canonical_url = entry.get(
+            "canonical_url",
+            entry.get("url", entry.get("source_url")),
+        )
+        title = entry.get("title", entry.get("source_title"))
+        published_at = entry.get("published_at")
+        verified_at = entry.get("verified_at")
+        accessed_at = entry.get("accessed_at", entry.get("retrieved_at"))
+        date_fallback = date(2026, 8, 27)
+        if verified_at is None:
+            verified_at = accessed_at or published_at or date_fallback
+        if accessed_at is None:
+            accessed_at = verified_at
+        entries.append(
+            {
+                "source_id": source_id,
+                "canonical_url": canonical_url,
+                "title": title,
+                "publisher": entry.get("publisher", ""),
+                "published_at": published_at,
+                "verified_at": verified_at,
+                "accessed_at": accessed_at,
+                "source_type": entry.get(
+                    "source_type", entry.get("source_class", "public_interview_experience")
+                ),
+                "trust": entry.get("trust", entry.get("trust_level", "medium")),
+                "lifecycle": entry.get("lifecycle", "draft"),
+                "question_ids": entry.get(
+                    "question_ids", record_ids_by_source.get(source_id, [])
+                ),
+                "human_summary": entry.get("human_summary", ""),
+                "review_class": entry.get("review_class", "dynamic"),
+                "date_basis": entry.get(
+                    "date_basis",
+                    "published_at" if published_at is not None else "retrieved_at",
+                ),
+                "role_level": entry.get("role_level", ""),
+                "dimension_ids": entry.get(
+                    "dimension_ids", entry.get("supports_dimension_ids", [])
+                ),
+                "access_status": entry.get("access_status", "accessible"),
+                "next_review_at": entry.get("next_review_at"),
+                "rights_status": entry.get("rights_status", "pending"),
+                "notes": entry.get("notes", ""),
+            }
+        )
+    registry = QuestionSourceRegistry.model_validate({"entries": entries})
+    by_id = {entry.source_id: entry for entry in registry.entries}
+    for record in records:
+        for source_id in (record.source_ids or [record.source_id]):
+            entry = by_id.get(source_id)
+            if entry is None:
+                raise ValueError("question source registry is missing a referenced source")
+            if entry.question_ids and record.question_id not in entry.question_ids:
+                raise ValueError("question source registry question_ids do not match records")
+    return registry
+
+
+def _runtime_read_json(path: Path) -> Any:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError("question source registry could not be read") from exc
+
+
+def _runtime_source_registry_payload(
+    bank_path: str | Path | None,
+    source_registry_path: str | Path | None,
+    environment: Mapping[str, Any] | None,
+) -> tuple[Any | None, bool]:
+    explicit_path: Path | None
+    if source_registry_path is not None:
+        explicit_path = Path(source_registry_path)
+    else:
+        explicit_path = _runtime_environment_path(
+            environment,
+            _RUNTIME_SOURCE_REGISTRY_ENV_NAMES,
+        )
+    if explicit_path is not None:
+        return _runtime_read_json(explicit_path), True
+
+    if bank_path is None:
+        return None, False
+    path = Path(bank_path)
+    try:
+        root = _runtime_read_json(path)
+    except ValueError:
+        root = None
+    if isinstance(root, Mapping):
+        for key in ("source_registry", "sources"):
+            if key in root:
+                return root[key], True
+
+    candidates = (
+        path.with_name("QuestionSourceRegistry.json"),
+        path.with_name("question_source_registry.json"),
+        path.with_name("sources.json"),
+        path.with_name(f"{path.stem}.sources.json"),
+        path.with_name(f"{path.stem}_sources.json"),
+    )
+    for candidate in candidates:
+        if candidate == path:
+            continue
+        try:
+            if candidate.is_file():
+                return _runtime_read_json(candidate), True
+        except OSError:
+            continue
+    return None, False
+
+
+def _runtime_bank_manifest_payload(
+    bank_path: str | Path | None,
+    manifest_path: str | Path | None,
+    environment: Mapping[str, Any] | None,
+) -> Any | None:
+    explicit_path: Path | None
+    if manifest_path is not None:
+        explicit_path = Path(manifest_path)
+    else:
+        explicit_path = _runtime_environment_path(
+            environment,
+            _RUNTIME_MANIFEST_ENV_NAMES,
+        )
+    if explicit_path is not None:
+        return _runtime_read_json(explicit_path)
+    if bank_path is None:
+        return None
+    path = Path(bank_path)
+    try:
+        root = _runtime_read_json(path)
+    except ValueError:
+        root = None
+    if isinstance(root, Mapping):
+        for key in ("manifest", "bank_manifest", "question_bank_manifest"):
+            if key in root:
+                return root[key]
+    candidates = (
+        path.with_name("QuestionBankManifest.json"),
+        path.with_name("question_bank_manifest.json"),
+        path.with_name(f"{path.stem}.manifest.json"),
+        path.with_name(f"{path.stem}_manifest.json"),
+    )
+    for candidate in candidates:
+        try:
+            if candidate.is_file():
+                return _runtime_read_json(candidate)
+        except OSError:
+            continue
+    return None
+
+
+def load_question_bank_runtime_identity(
+    records: Sequence[InterviewQuestionRecord],
+    *,
+    bank_path: str | Path | None = None,
+    source_registry_path: str | Path | None = None,
+    manifest_path: str | Path | None = None,
+    environment: Mapping[str, Any] | None = None,
+    policy: QuestionModePolicy | Mapping[str, Any] | None = None,
+) -> QuestionBankRuntimeIdentity:
+    """Resolve the verified catalog and manifest inputs for a local runtime.
+
+    ``records`` must have already passed ``load_question_bank``.  A missing
+    sidecar is accepted only through the explicit v1 compatibility projection
+    above; no new hash is invented when the records themselves cannot provide
+    a complete, validated source identity.
+    """
+
+    if isinstance(records, (str, bytes, bytearray)):
+        raise TypeError("records must be a sequence")
+    normalized_records = list(records)
+    if not normalized_records or not all(
+        isinstance(record, InterviewQuestionRecord) for record in normalized_records
+    ):
+        raise ValueError("records must contain validated interview question records")
+    if policy is None:
+        normalized_policy = QuestionModePolicy.default()
+    elif isinstance(policy, QuestionModePolicy):
+        normalized_policy = policy
+    elif isinstance(policy, Mapping):
+        normalized_policy = QuestionModePolicy.model_validate(policy)
+    else:
+        raise TypeError("policy must be a QuestionModePolicy or mapping")
+    raw_registry, has_sidecar = _runtime_source_registry_payload(
+        bank_path,
+        source_registry_path,
+        environment,
+    )
+    registry = (
+        _runtime_normalize_registry(raw_registry, normalized_records)
+        if has_sidecar
+        else _runtime_registry_from_records(normalized_records)
+    )
+    raw_manifest = _runtime_bank_manifest_payload(
+        bank_path,
+        manifest_path,
+        environment,
+    )
+    bank_manifest: QuestionBankManifest | None = None
+    if raw_manifest is not None:
+        try:
+            bank_manifest = QuestionBankManifest.model_validate(raw_manifest)
+        except Exception as exc:
+            schema_marker = (
+                raw_manifest.get("schema_version", raw_manifest.get("version"))
+                if isinstance(raw_manifest, Mapping)
+                else None
+            )
+            legacy_manifest = schema_marker in {1, "1", "v1", "question_bank.v1"}
+            if not (
+                legacy_manifest
+                and all(classify_question_record(record) == "v1" for record in normalized_records)
+            ):
+                raise ValueError("question bank manifest is invalid") from exc
+            # A v1 manifest is an explicit compatibility read.  It is not
+            # allowed to populate a new v2 projection or hash field.
+            bank_manifest = None
+        if (
+            bank_manifest.question_count != len(normalized_records)
+            or set(bank_manifest.question_ids)
+            != {record.question_id for record in normalized_records}
+        ):
+            raise ValueError("question bank manifest does not match records")
+        if bank_manifest.mode_policy_version != normalized_policy.mode_policy_version:
+            raise ValueError("question bank manifest mode policy does not match")
+    manifest_hash = compute_question_bank_manifest_hash(
+        normalized_records,
+        registry,
+        normalized_policy,
+    )
+    catalog = {record.question_id: record for record in normalized_records}
+    return QuestionBankRuntimeIdentity(
+        catalog=catalog,
+        source_registry=registry,
+        policy=normalized_policy,
+        manifest_hash=manifest_hash,
+        bank_manifest=bank_manifest,
+    )
+
+
+@dataclass(frozen=True)
 class QuestionBankAudit(Mapping[str, object]):
     """Read-only lifecycle findings for a loaded question bank.
 
@@ -1278,8 +1699,10 @@ def audit_question_bank(
 __all__ = [
     "DEFAULT_EXPIRING_WITHIN_DAYS",
     "EMBEDDING_TEXT_VERSION",
+    "UNAVAILABLE_QUESTION_BANK_MANIFEST_HASH",
     "QUESTION_CONTENT_HASH_VERSION",
     "QuestionBankAudit",
+    "QuestionBankRuntimeIdentity",
     "SUPPORTED_DIMENSION_IDS",
     "SUPPORTED_ROLE",
     "SUPPORTED_SOURCE_TYPES",
@@ -1289,6 +1712,7 @@ __all__ = [
     "classify_question_record",
     "compute_question_bank_manifest_hash",
     "compute_question_content_hash",
+    "load_question_bank_runtime_identity",
     "load_question_bank",
     "normalize_project_mode",
     "normalize_question_text",

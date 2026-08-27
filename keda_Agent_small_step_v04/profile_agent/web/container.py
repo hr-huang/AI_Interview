@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -20,12 +21,30 @@ from profile_agent.schemas.question_rag_schema import (
     QuestionRetrievalResult,
 )
 from profile_agent.services.role_profile_service import load_role_profile
+from profile_agent.services.question_bank_service import (
+    EMBEDDING_TEXT_VERSION,
+    UNAVAILABLE_QUESTION_BANK_MANIFEST_HASH,
+    load_question_bank,
+    load_question_bank_runtime_identity,
+)
 from profile_agent.web.document_ingestion import DocumentExtractor
 from profile_agent.web.repository import SqliteAssessmentRepository
 
 
 QuestionRetrieverFactory = Callable[[], object | None]
 _UNINITIALIZED = object()
+
+_QUESTION_BANK_ENV_NAMES: tuple[str, ...] = (
+    "QUESTION_RAG_QUESTION_BANK_PATH",
+    "QUESTION_RAG_QUESTION_BANK",
+    "QUESTION_RAG_CANONICAL_QUESTION_BANK_PATH",
+    "QUESTION_RAG_CANONICAL_BANK_PATH",
+    "QUESTION_RAG_BANK_PATH",
+    "QUESTION_RAG_BANK",
+    "QUESTION_BANK_PATH",
+    "QUESTION_BANK",
+    "QUESTION_RAG_CORPUS_DIR",
+)
 
 
 class LazyQuestionRetriever:
@@ -84,6 +103,32 @@ class LazyQuestionRetriever:
                 pass
 
 
+def _configured_question_bank_path() -> Path | None:
+    """Resolve the local canonical bank path without touching the network."""
+
+    for name in _QUESTION_BANK_ENV_NAMES:
+        value = os.getenv(name, "").strip()
+        if not value:
+            continue
+        path = Path(value)
+        if path.is_dir():
+            path = path / "questions.json"
+        return path
+    packaged_path = (
+        Path(__file__).resolve().parents[1]
+        / "knowledge"
+        / "question_banks"
+        / "ai_agent_engineer_2026_h2"
+        / "questions.json"
+    )
+    try:
+        if packaged_path.is_file():
+            return packaged_path
+    except OSError:
+        pass
+    return None
+
+
 def _question_retriever_factory_from_env(
     *,
     question_mode_policy: QuestionModePolicy | Any | None = None,
@@ -97,6 +142,7 @@ def _question_retriever_factory_from_env(
     )
     if not index_path:
         return None
+    question_bank_path = _configured_question_bank_path()
 
     def factory() -> object:
         # Keep optional dependencies and all provider/client construction out
@@ -112,6 +158,33 @@ def _question_retriever_factory_from_env(
         from profile_agent.services.question_retrieval_service import (
             QuestionRetriever,
         )
+        if question_bank_path is None:
+            # A durable index without its authoritative bank cannot produce a
+            # canonical RetrievedQuestion.  Keep the reader constructible so
+            # the graph remains askable, but use an explicit unavailable
+            # identity; any persisted index with another hash becomes an
+            # honest index_mismatch rather than a fabricated hit.
+            catalog: dict[str, object] = {}
+            manifest_hash = UNAVAILABLE_QUESTION_BANK_MANIFEST_HASH
+            runtime_policy = (
+                QuestionModePolicy.default()
+                if question_mode_policy is None
+                else QuestionModePolicy.model_validate(question_mode_policy)
+            )
+        else:
+            records = load_question_bank(question_bank_path)
+            runtime_identity = load_question_bank_runtime_identity(
+                records,
+                bank_path=question_bank_path,
+                environment=os.environ,
+                policy=question_mode_policy,
+            )
+            catalog = runtime_identity.catalog
+            manifest_hash = runtime_identity.manifest_hash
+            runtime_policy = runtime_identity.policy
+            loaded_bank_manifest = runtime_identity.bank_manifest
+        if question_bank_path is None:
+            loaded_bank_manifest = None
         config = resolve_embedding_config()
         embedding = SiliconFlowEmbeddingClient.from_env()
         try:
@@ -122,15 +195,23 @@ def _question_retriever_factory_from_env(
                     model=config.model,
                     dimension=config.dimension,
                     index_version=config.index_version,
+                    embedding_text_version=EMBEDDING_TEXT_VERSION,
+                    question_bank_manifest_hash=manifest_hash,
+                    mode_policy_version=runtime_policy.mode_policy_version,
                 ),
+                authoritative_catalog=catalog,
             )
             return QuestionRetriever(
                 embedding_client=embedding,
                 store=store,
                 owns_embedding_client=True,
                 owns_store=True,
-                question_mode_policy=question_mode_policy,
-                question_bank_manifest=question_bank_manifest,
+                question_mode_policy=runtime_policy,
+                question_bank_manifest=(
+                    question_bank_manifest
+                    if question_bank_manifest is not None
+                    else loaded_bank_manifest
+                ),
             )
         except Exception:
             # The embedding client is owned by the retriever we intended to

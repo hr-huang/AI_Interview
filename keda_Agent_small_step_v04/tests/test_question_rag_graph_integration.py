@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timezone
 import inspect
+import json
 import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -40,6 +41,7 @@ from profile_agent.web.container import (
 )
 from profile_agent.web.interview_service import InterviewService
 from tests.report_test_helpers import make_test_report
+import run_question_bank
 
 
 def make_plan() -> InterviewPlan:
@@ -680,6 +682,204 @@ class QuestionRagGraphIntegrationTests(unittest.TestCase):
                     factory()
 
         self.assertEqual(embedding.close_calls, 1)
+
+    def test_env_factory_loads_verified_catalog_and_full_fingerprint(self) -> None:
+        fixture_path = (
+            Path(__file__).parent
+            / "fixtures"
+            / "question_rag"
+            / "minimal_question_bank.json"
+        )
+        with TemporaryDirectory() as root:
+            root_path = Path(root)
+            bank_path = root_path / "questions.json"
+            payload = json.loads(fixture_path.read_text(encoding="utf-8"))
+            payload["test_only"] = False
+            for question in payload["questions"]:
+                question["source_type"] = "public_interview_experience"
+            bank_path.write_text(
+                json.dumps(payload, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            env = self._default_env(root, index_path=str(root_path / "index"))
+            env.update(
+                {
+                    "QUESTION_RAG_BANK_PATH": str(bank_path),
+                    "QUESTION_RAG_EMBEDDING_PROVIDER": "fake-provider",
+                    "QUESTION_RAG_EMBEDDING_MODEL": "fake-model",
+                    "QUESTION_RAG_EMBEDDING_DIMENSION": "3",
+                    "QUESTION_RAG_INDEX_VERSION": "questions-v2",
+                    "SILICONFLOW_API_KEY": "fake-key",
+                }
+            )
+            embedding = CloseSpy()
+            with (
+                patch.dict(os.environ, env, clear=False),
+                patch(
+                    "profile_agent.services.siliconflow_embedding_service.SiliconFlowEmbeddingClient.from_env",
+                    return_value=embedding,
+                ),
+                patch(
+                    "profile_agent.knowledge.qdrant_question_store.QdrantQuestionStore",
+                    return_value=object(),
+                ) as store_cls,
+                patch(
+                    "profile_agent.services.question_retrieval_service.QuestionRetriever",
+                    return_value=object(),
+                ),
+            ):
+                factory = _question_retriever_factory_from_env()
+                self.assertIsNotNone(factory)
+                factory()
+
+            store_kwargs = store_cls.call_args.kwargs
+            catalog = store_kwargs["authoritative_catalog"]
+            self.assertEqual(len(catalog), 6)
+            fingerprint = store_kwargs["expected_fingerprint"]
+            self.assertEqual(
+                {
+                    "provider",
+                    "model",
+                    "dimension",
+                    "index_version",
+                    "embedding_text_version",
+                    "question_bank_manifest_hash",
+                    "mode_policy_version",
+                },
+                set(fingerprint.model_dump()),
+            )
+            self.assertEqual(fingerprint.embedding_text_version, "six-section-v1")
+            self.assertTrue(fingerprint.question_bank_manifest_hash.startswith("sha256:"))
+            self.assertEqual(fingerprint.mode_policy_version, "2026-H2")
+
+    def test_env_factory_without_catalog_keeps_persisted_reader_honest(self) -> None:
+        with TemporaryDirectory() as root:
+            env = self._default_env(root, index_path=str(Path(root) / "questions"))
+            env.update(
+                {
+                    "QUESTION_RAG_EMBEDDING_PROVIDER": "fake-provider",
+                    "QUESTION_RAG_EMBEDDING_MODEL": "fake-model",
+                    "QUESTION_RAG_EMBEDDING_DIMENSION": "3",
+                    "SILICONFLOW_API_KEY": "fake-key",
+                }
+            )
+            with (
+                patch.dict(os.environ, env, clear=False),
+                patch(
+                    "profile_agent.services.siliconflow_embedding_service.SiliconFlowEmbeddingClient.from_env",
+                    return_value=CloseSpy(),
+                ),
+                patch(
+                    "profile_agent.knowledge.qdrant_question_store.QdrantQuestionStore",
+                    return_value=object(),
+                ) as store_cls,
+                patch(
+                    "profile_agent.services.question_retrieval_service.QuestionRetriever",
+                    return_value=object(),
+                ),
+            ):
+                factory = _question_retriever_factory_from_env()
+                self.assertIsNotNone(factory)
+                factory()
+
+            self.assertEqual(store_cls.call_args.kwargs["authoritative_catalog"], {})
+            fingerprint = store_cls.call_args.kwargs["expected_fingerprint"]
+            self.assertEqual(fingerprint.embedding_text_version, "six-section-v1")
+            self.assertEqual(
+                fingerprint.question_bank_manifest_hash,
+                "unavailable:canonical-question-bank",
+            )
+
+    def test_web_restart_recovers_persisted_hit_from_authoritative_catalog(self) -> None:
+        fixture_path = (
+            Path(__file__).parent
+            / "fixtures"
+            / "question_rag"
+            / "minimal_question_bank.json"
+        )
+
+        class StableEmbedding:
+            provider = "fake-provider"
+            model = "fake-model"
+            dimension = 3
+
+            def embed(self, texts):
+                return [[1.0, 0.0, 0.0] for _ in texts]
+
+        with TemporaryDirectory() as root:
+            root_path = Path(root)
+            bank_path = root_path / "questions.json"
+            payload = json.loads(fixture_path.read_text(encoding="utf-8"))
+            payload["test_only"] = False
+            for question in payload["questions"]:
+                question["source_type"] = "public_interview_experience"
+            bank_path.write_text(
+                json.dumps(payload, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            index_path = root_path / "index"
+            env = self._default_env(root, index_path=str(index_path))
+            env.update(
+                {
+                    "QUESTION_RAG_BANK_PATH": str(bank_path),
+                    "QUESTION_RAG_EMBEDDING_PROVIDER": "fake-provider",
+                    "QUESTION_RAG_EMBEDDING_MODEL": "fake-model",
+                    "QUESTION_RAG_EMBEDDING_DIMENSION": "3",
+                    "QUESTION_RAG_INDEX_VERSION": "questions-v2",
+                }
+            )
+
+            write_code = run_question_bank.main(
+                ["rebuild", "--bank", str(bank_path), "--apply"],
+                env=env,
+                embedding_factory=lambda **_: StableEmbedding(),
+            )
+            self.assertEqual(write_code, 0)
+
+            intent = QuestionRetrievalIntent(
+                query_text="验证 Agent 的失败恢复",
+                role="ai_agent_engineer",
+                dimension_id="role_dim_01",
+                question_mode="scenario",
+                difficulty="intermediate",
+            )
+            with patch.dict(os.environ, env, clear=False), patch(
+                "profile_agent.services.siliconflow_embedding_service.SiliconFlowEmbeddingClient.from_env",
+                side_effect=lambda: StableEmbedding(),
+            ):
+                first_factory = _question_retriever_factory_from_env()
+                self.assertIsNotNone(first_factory)
+                first_retriever = first_factory()
+                first_result = first_retriever.retrieve(intent, today=date(2026, 8, 26))
+                self.assertEqual(first_result.status, "hit")
+                self.assertEqual(
+                    first_result.selected_question.record.question_id,
+                    "q_agent_001",
+                )
+                self.assertEqual(
+                    first_result.selected_question.record.expected_signals,
+                    ["状态机", "重试边界"],
+                )
+                first_retriever.close()
+
+                # A second reader has only the persisted vectors/manifest plus
+                # the freshly validated bank; it must recover the full record,
+                # rather than treating clipped Qdrant payload as canonical.
+                second_factory = _question_retriever_factory_from_env()
+                self.assertIsNotNone(second_factory)
+                second_retriever = second_factory()
+                try:
+                    second_result = second_retriever.retrieve(
+                        intent,
+                        today=date(2026, 8, 26),
+                    )
+                    self.assertEqual(second_result.status, "hit")
+                    self.assertEqual(
+                        second_result.selected_question.record.question_text,
+                        payload["questions"][0]["question_text"],
+                    )
+                finally:
+                    second_retriever.close()
 
     def test_default_container_factory_and_retrieval_errors_degrade_safely(self) -> None:
         class RaisingRetriever:
