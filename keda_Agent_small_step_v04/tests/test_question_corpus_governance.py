@@ -489,6 +489,8 @@ class QuestionCorpusGovernanceTests(unittest.TestCase):
         self.assertTrue(all(entry.published_at and entry.published_at >= date(2026, 1, 1) for entry in independent if entry.source_type == "current_enterprise_jd"))
         forbidden_locator_terms = ("Why use agentic retrieval", "When to use agentic RAG", "What is agentic retrieval", "Security and privacy considerations", "Vector search concepts")
         self.assertFalse(any(term in entry.date_evidence_locator for entry in registry.entries for term in forbidden_locator_terms))
+        bigtech = next(entry for entry in interviews if entry.source_id == "src_cn_nowcoder_bigtech_agent_04")
+        self.assertEqual(bigtech.canonical_url, "https://www.nowcoder.com/discuss/919673484509184000?sourceSSR=post")
         self.assertEqual(len({entry.canonical_url for entry in registry.entries}), len(registry.entries))
         self.assertTrue(all(entry.date_evidence.strip() for entry in registry.entries))
         self.assertTrue(all(entry.date_evidence_locator.strip() for entry in registry.entries))
@@ -507,8 +509,11 @@ class QuestionCorpusGovernanceTests(unittest.TestCase):
         for expected in fixture["entries"]:
             actual = by_id[expected["source_id"]]
             self.assertEqual(actual.title, expected["observed_title"])
-            self.assertEqual(str(actual.published_at or ""), expected["observed_date"])
+            self.assertEqual(str(actual.published_at or ""), expected["observed_publishDate"])
+            expected_update = expected["observed_updateDate"]
+            self.assertEqual(expected_update, str(actual.published_at or "") if actual.source_type == "official_technical_doc" else "")
             self.assertEqual(str(actual.accessed_at), expected["observed_accessed"])
+            self.assertTrue(expected["isValid"])
             self.assertEqual(actual.provenance_kind, expected["provenance_kind"])
             self.assertEqual("?" in actual.canonical_url, expected["query_required"])
             self.assertEqual(actual.date_evidence_locator, expected["locator"])
