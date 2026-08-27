@@ -37,6 +37,7 @@ from qdrant_client.models import (
 
 from profile_agent.schemas.question_rag_schema import (
     InterviewQuestionRecord,
+    MODE_POLICY_VERSION,
     QuestionRetrievalIntent,
     RetrievedQuestion,
 )
@@ -48,6 +49,9 @@ _QUESTION_RECORD_TYPE = "question"
 _MANIFEST_KEY = "__interview_question_index_manifest__"
 _NAMESPACE = uuid5(NAMESPACE_URL, "keda-profile-agent/interview-questions")
 _SEARCH_STATUSES = Literal["hit", "no_match", "unavailable", "index_mismatch"]
+DEFAULT_EMBEDDING_TEXT_VERSION = "legacy-v1"
+DEFAULT_QUESTION_BANK_MANIFEST_HASH = "legacy-v1"
+DEFAULT_MODE_POLICY_VERSION = MODE_POLICY_VERSION
 logger = logging.getLogger(__name__)
 
 
@@ -64,13 +68,45 @@ class IndexFingerprint(BaseModel):
         min_length=1,
         validation_alias=AliasChoices("model", "embedding_model"),
     )
-    dimension: int = Field(gt=0)
+    dimension: int = Field(
+        gt=0,
+        validation_alias=AliasChoices("dimension", "vector_dimension"),
+    )
     index_version: str = Field(
         min_length=1,
         validation_alias=AliasChoices("index_version", "version"),
     )
+    embedding_text_version: str = Field(
+        default=DEFAULT_EMBEDDING_TEXT_VERSION,
+        min_length=1,
+        validation_alias=AliasChoices(
+            "embedding_text_version",
+            "text_version",
+            "embedding_contract_version",
+        ),
+    )
+    question_bank_manifest_hash: str = Field(
+        default=DEFAULT_QUESTION_BANK_MANIFEST_HASH,
+        min_length=1,
+        validation_alias=AliasChoices(
+            "question_bank_manifest_hash",
+            "manifest_hash",
+        ),
+    )
+    mode_policy_version: str = Field(
+        default=DEFAULT_MODE_POLICY_VERSION,
+        min_length=1,
+        validation_alias=AliasChoices("mode_policy_version", "policy_version"),
+    )
 
-    @field_validator("provider", "model", "index_version")
+    @field_validator(
+        "provider",
+        "model",
+        "index_version",
+        "embedding_text_version",
+        "question_bank_manifest_hash",
+        "mode_policy_version",
+    )
     @classmethod
     def validate_non_blank(cls, value: str) -> str:
         if not value.strip():
@@ -93,6 +129,12 @@ class IndexFingerprint(BaseModel):
     @property
     def embedding_model(self) -> str:
         return self.model
+
+    @property
+    def vector_dimension(self) -> int:
+        """Descriptive alias for the vector size in the fingerprint."""
+
+        return self.dimension
 
     @property
     def version(self) -> str:
@@ -852,7 +894,11 @@ class QdrantQuestionStore:
                 "provider": fingerprint.provider,
                 "model": fingerprint.model,
                 "dimension": fingerprint.dimension,
+                "vector_dimension": fingerprint.dimension,
                 "index_version": fingerprint.index_version,
+                "embedding_text_version": fingerprint.embedding_text_version,
+                "question_bank_manifest_hash": fingerprint.question_bank_manifest_hash,
+                "mode_policy_version": fingerprint.mode_policy_version,
             },
         )
 
@@ -876,8 +922,22 @@ class QdrantQuestionStore:
                 {
                     "provider": payload.get("embedding_provider", payload.get("provider")),
                     "model": payload.get("embedding_model", payload.get("model")),
-                    "dimension": payload.get("dimension"),
+                    "dimension": payload.get(
+                        "dimension", payload.get("vector_dimension")
+                    ),
                     "index_version": payload.get("index_version", payload.get("version")),
+                    "embedding_text_version": payload.get(
+                        "embedding_text_version",
+                        payload.get("text_version", DEFAULT_EMBEDDING_TEXT_VERSION),
+                    ),
+                    "question_bank_manifest_hash": payload.get(
+                        "question_bank_manifest_hash",
+                        payload.get("manifest_hash", DEFAULT_QUESTION_BANK_MANIFEST_HASH),
+                    ),
+                    "mode_policy_version": payload.get(
+                        "mode_policy_version",
+                        payload.get("policy_version", DEFAULT_MODE_POLICY_VERSION),
+                    ),
                 }
             )
         except Exception:

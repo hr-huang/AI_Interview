@@ -118,6 +118,14 @@ def _require_non_blank(value: str, field_name: str) -> str:
     return value
 
 
+def _collapse_unicode_whitespace(value: str, field_name: str) -> str:
+    """Collapse every Unicode whitespace run to one ordinary space."""
+
+    if not isinstance(value, str):
+        raise TypeError(f"{field_name} must be a string")
+    return " ".join(value.split())
+
+
 class InterviewQuestionRecord(BaseModel):
     """One reviewed interview question in the versioned question bank.
 
@@ -255,6 +263,93 @@ class InterviewQuestionRecord(BaseModel):
         if "primary_mode" not in self.model_fields_set:
             payload.pop("primary_mode", None)
         return payload
+
+
+class QuestionEmbeddingProjection(BaseModel):
+    """Candidate-safe, deterministic six-section embedding projection.
+
+    The projection is deliberately narrower than :class:`InterviewQuestionRecord`.
+    It is the only object that formatters should serialize as an embedding input;
+    provenance, lifecycle, rubric and identifier fields are not represented here.
+    """
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    question: str = Field(
+        min_length=1,
+        validation_alias=AliasChoices("question", "question_text"),
+    )
+    business_constraint: str = ""
+    skills: list[str] = Field(default_factory=list)
+    dimension_terms: list[str] = Field(default_factory=list)
+    primary_mode: QuestionMode
+    compatible_modes: list[QuestionMode] = Field(default_factory=list)
+
+    @property
+    def question_text(self) -> str:
+        """Compatibility alias matching :class:`InterviewQuestionRecord`."""
+
+        return self.question
+
+    @field_validator("question", "business_constraint", mode="before")
+    @classmethod
+    def normalize_projection_text(cls, value: str, info: Any) -> str:
+        return _collapse_unicode_whitespace(value, info.field_name)
+
+    @field_validator("skills", "dimension_terms", "compatible_modes", mode="before")
+    @classmethod
+    def normalize_projection_lists(cls, values: Any, info: Any) -> list[str]:
+        if values is None:
+            return []
+        if isinstance(values, (str, bytes)):
+            raise TypeError(f"{info.field_name} must be a sequence")
+        try:
+            normalized = [
+                _collapse_unicode_whitespace(value, f"{info.field_name}[{index}]")
+                for index, value in enumerate(values)
+            ]
+        except TypeError:
+            raise TypeError(f"{info.field_name} must be a sequence") from None
+        return [value for value in normalized if value]
+
+    @model_validator(mode="after")
+    def normalize_projection_order(self) -> "QuestionEmbeddingProjection":
+        self.skills.sort(key=lambda value: (value.casefold(), value))
+        self.dimension_terms.sort(key=lambda value: (value.casefold(), value))
+        return self
+
+    def to_text(self) -> str:
+        """Render the projection using the frozen six-line field order."""
+
+        return "\n".join(
+            (
+                f"question={self.question}",
+                f"business_constraint={self.business_constraint}",
+                f"skills={','.join(self.skills)}",
+                f"dimension_terms={','.join(self.dimension_terms)}",
+                f"primary_mode={self.primary_mode}",
+                f"compatible_modes={','.join(self.compatible_modes)}",
+            )
+        )
+
+    @property
+    def text(self) -> str:
+        """Short alias for callers treating a projection as text."""
+
+        return self.to_text()
+
+    def as_text(self) -> str:
+        """Compatibility alias for :meth:`to_text`."""
+
+        return self.to_text()
+
+    def to_embedding_text(self) -> str:
+        """Explicit embedding-oriented alias for :meth:`to_text`."""
+
+        return self.to_text()
+
+    def __str__(self) -> str:
+        return self.to_text()
 
 
 class QuestionRetrievalIntent(BaseModel):

@@ -1,0 +1,39 @@
+{
+  "embedding_text_version": "six-section-v1",
+  "record": {
+    "question_id": "fixture-question-id",
+    "question_text": "  如何设计 Agent 的失败恢复边界？  ",
+    "role": "ai_agent_engineer",
+    "role_version": "2026-H2",
+    "dimension_id": "role_dim_01",
+    "skills": ["  失败恢复\n", "Agent"],
+    "question_mode": "scenario",
+    "business_constraint": "延迟\t预算和权限边界",
+    "dimension_terms": ["失败恢复", "任务编排"],
+    "primary_mode": "scenario",
+    "compatible_modes": ["foundation", "project_deep_dive"],
+    "difficulty": "advanced",
+    "expected_signals": [
+      "expected signal",
+      "JD marker",
+      "resume marker",
+      "candidate@example.com",
+      "score=0.9"
+    ],
+    "critical_errors": ["critical error"],
+    "follow_up_seeds": ["follow-up answer"],
+    "company_tags": ["company-secret"],
+    "source_id": "fixture-source-id",
+    "source_url": "https://example.com/source",
+    "source_title": "Fixture source title",
+    "source_type": "test_only_synthetic",
+    "published_at": "2026-07-01",
+    "verified_at": "2026-08-01",
+    "valid_until": "2027-02-26",
+    "trust_level": "low",
+    "status": "active",
+    "version": 1,
+    "content_hash": "sha256:fixture"
+  },
+  "expected_text": "question=如何设计 Agent 的失败恢复边界？\nbusiness_constraint=延迟 预算和权限边界\nskills=Agent,失败恢复\ndimension_terms=任务编排,失败恢复\nprimary_mode=scenario\ncompatible_modes=project_deep_dive,foundation"
+}

@@ -29,6 +29,7 @@ from profile_agent.schemas.interview_schema import (
 from profile_agent.schemas.job_schema import JobProfile
 from profile_agent.schemas.question_rag_schema import (
     InterviewQuestionRecord,
+    QuestionEmbeddingProjection,
     QuestionBankManifest,
     QuestionModePolicy,
     QuestionRetrievalIntent,
@@ -195,6 +196,40 @@ _QUERY_SECTION_BUDGETS = {
 class EmbeddingClient(Protocol):
     def embed(self, texts: Sequence[str]) -> list[list[float]]:
         """Embed the supplied texts in input order."""
+
+
+def build_query_embedding_text(
+    intent: QuestionRetrievalIntent,
+    role_terms: Sequence[str],
+) -> str:
+    """Render a retrieval intent through the same six-section projection.
+
+    The query has no source record, so this function constructs the projection
+    directly from the validated runtime intent and role-pack terms.  In
+    particular, excluded IDs and the intent's difficulty remain runtime
+    controls and are never copied into the embedding input.
+    """
+
+    if not isinstance(intent, QuestionRetrievalIntent):
+        raise TypeError("intent must be QuestionRetrievalIntent")
+    if isinstance(role_terms, (str, bytes, bytearray)):
+        raise TypeError("role_terms must be a sequence")
+    try:
+        normalized_terms = [" ".join(value.split()) for value in role_terms]
+    except (AttributeError, TypeError):
+        raise TypeError("role_terms must be a sequence of strings") from None
+    if any(not value for value in normalized_terms):
+        raise ValueError("role_terms must not contain blank values")
+    normalized_terms.sort(key=lambda value: (value.casefold(), value))
+    projection = QuestionEmbeddingProjection(
+        question=intent.query_text,
+        business_constraint="",
+        skills=normalized_terms,
+        dimension_terms=[intent.dimension_id],
+        primary_mode=intent.question_mode,
+        compatible_modes=[],
+    )
+    return projection.to_text()
 
 
 class RetrievalScoreBreakdown:
@@ -862,7 +897,7 @@ class QuestionRetriever:
             return self._result("unavailable", as_of=as_of)
 
         try:
-            query_vector = self._embed(intent.query_text)
+            query_vector = self._embed(build_query_embedding_text(intent, ()))
         except Exception:
             return self._result("unavailable", as_of=as_of)
 
@@ -1092,5 +1127,6 @@ __all__ = [
     "RetrievalScoreBreakdown",
     "TRUST_WEIGHT",
     "VECTOR_WEIGHT",
+    "build_query_embedding_text",
     "build_question_retrieval_intent",
 ]

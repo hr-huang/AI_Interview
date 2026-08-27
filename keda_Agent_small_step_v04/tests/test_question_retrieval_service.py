@@ -20,11 +20,13 @@ from profile_agent.schemas.runtime_schema import InterviewTurn
 from profile_agent.schemas.question_rag_schema import (
     InterviewQuestionRecord,
     QuestionModePolicy,
+    QuestionRetrievalIntent,
     QuestionRetrievalResult,
     RetrievedQuestion,
 )
 from profile_agent.services.question_retrieval_service import (
     QuestionRetriever,
+    build_query_embedding_text,
     build_question_retrieval_intent,
 )
 
@@ -197,6 +199,32 @@ class FakeStore:
 
 
 class IntentBuilderTests(unittest.TestCase):
+    def test_query_embedding_projection_uses_intent_and_role_terms(self) -> None:
+        intent = QuestionRetrievalIntent(
+            query_text="  如何设计 Agent 的失败恢复边界？\u00a0",
+            role="ai_agent_engineer",
+            dimension_id="role_dim_01",
+            question_mode="scenario",
+            difficulty="advanced",
+            excluded_question_ids=["q-secret"],
+        )
+
+        text = build_query_embedding_text(intent, ["  Zed\n", "alpha"])
+
+        self.assertEqual(
+            text.splitlines(),
+            [
+                "question=如何设计 Agent 的失败恢复边界？",
+                "business_constraint=",
+                "skills=alpha,Zed",
+                "dimension_terms=role_dim_01",
+                "primary_mode=scenario",
+                "compatible_modes=",
+            ],
+        )
+        self.assertNotIn("q-secret", text)
+        self.assertNotIn("advanced", text)
+
     def test_resolves_target_requirement_and_uses_bounded_safe_anchors(self) -> None:
         intent = build_question_retrieval_intent(
             action=make_action(),
@@ -368,7 +396,10 @@ class IntentBuilderTests(unittest.TestCase):
                 embedding = FakeEmbedding()
                 store = FakeStore(QuestionStoreSearchResult(status="no_match"))
                 QuestionRetriever(embedding, store, today=TODAY).retrieve(intent)
-                self.assertEqual(embedding.inputs, [intent.query_text])
+                self.assertEqual(
+                    embedding.inputs,
+                    [build_query_embedding_text(intent, ())],
+                )
                 self.assertNotIn(secret_value, embedding.inputs[0])
 
     def test_builder_redacts_pii_adjacent_to_chinese_text(self) -> None:

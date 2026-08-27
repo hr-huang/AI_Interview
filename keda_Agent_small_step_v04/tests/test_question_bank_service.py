@@ -11,6 +11,10 @@ from pydantic import BaseModel, ConfigDict
 
 from profile_agent.schemas.question_rag_schema import (
     InterviewQuestionRecord,
+    QuestionEmbeddingProjection,
+    QuestionModePolicy,
+    QuestionSourceRegistry,
+    QuestionSourceRegistryEntry,
     QuestionRetrievalResult,
     QuestionRetrievalTrace,
     RetrievedQuestion,
@@ -19,7 +23,10 @@ from profile_agent.state.checkpoint_serialization import InterviewCheckpointSeri
 from profile_agent.services.question_bank_service import (
     audit_question_bank,
     build_question_content_hash,
+    build_question_embedding_text,
     classify_question_record,
+    compute_question_bank_manifest_hash,
+    compute_question_content_hash,
     load_question_bank,
     normalize_question_text,
     normalize_project_mode,
@@ -160,6 +167,180 @@ class QuestionBankServiceTests(unittest.TestCase):
         self.assertEqual(
             normalize_question_text("  Agent  \n  失败恢复  "),
             "Agent 失败恢复",
+        )
+
+    def test_embedding_contract_fixture_is_exact_and_metadata_safe(self) -> None:
+        fixture_path = (
+            Path(__file__).parent
+            / "fixtures"
+            / "question_corpus_v2"
+            / "embedding_contract.json"
+        )
+        fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+        record = InterviewQuestionRecord.model_validate(fixture["record"])
+
+        self.assertIsInstance(
+            QuestionEmbeddingProjection(
+                question="question",
+                business_constraint="",
+                skills=[],
+                dimension_terms=[],
+                primary_mode="scenario",
+                compatible_modes=[],
+            ),
+            QuestionEmbeddingProjection,
+        )
+        self.assertEqual(
+            build_question_embedding_text(record), fixture["expected_text"]
+        )
+        self.assertEqual(len(fixture["expected_text"].splitlines()), 6)
+        self.assertEqual(
+            [line.split("=", 1)[0] for line in fixture["expected_text"].splitlines()],
+            [
+                "question",
+                "business_constraint",
+                "skills",
+                "dimension_terms",
+                "primary_mode",
+                "compatible_modes",
+            ],
+        )
+        for forbidden in (
+            "fixture-question-id",
+            "advanced",
+            "https://example.com",
+            "Fixture source title",
+            "company-secret",
+            "expected signal",
+            "critical error",
+            "follow-up answer",
+            "candidate@example.com",
+            "resume marker",
+            "JD marker",
+            "score=0.9",
+        ):
+            self.assertNotIn(forbidden, fixture["expected_text"])
+
+    def test_embedding_text_is_stable_for_record_key_order_whitespace_and_metadata(self) -> None:
+        record = self._v2_fixture()
+        baseline = build_question_embedding_text(record)
+        payload = record.model_dump(mode="python")
+        payload = {
+            key: payload[key]
+            for key in reversed(list(payload))
+        }
+        payload.update(
+            {
+                "question_text": f"  {record.question_text}\u00a0\n",
+                "business_constraint": f" {record.business_constraint}\t\n",
+                "skills": ["  失败恢复  ", "任务编排"],
+                "dimension_terms": [" 任务编排\n", "失败恢复"],
+                "compatible_modes": [" foundation "],
+                "difficulty": "advanced",
+                "source_url": "https://example.com/metadata-only",
+                "source_title": "metadata-only title",
+                "company_tags": ["company-secret"],
+                "question_id": "metadata-only-id",
+                "expected_signals": ["expected signal"],
+                "critical_errors": ["critical error"],
+                "follow_up_seeds": ["follow-up answer"],
+            }
+        )
+
+        self.assertEqual(build_question_embedding_text(payload), baseline)
+        self.assertNotIn("metadata-only", baseline)
+        self.assertNotIn("company-secret", baseline)
+
+    def test_record_hash_separates_embedding_text_from_non_embedding_metadata(self) -> None:
+        record = self._v2_fixture()
+        baseline_text = build_question_embedding_text(record)
+        baseline_hash = compute_question_content_hash(record)
+        for field, value in {
+            "question_text": "changed question",
+            "business_constraint": "changed constraint",
+            "skills": ["changed skill"],
+            "dimension_terms": ["changed dimension term"],
+            "compatible_modes": [],
+            "difficulty": "advanced",
+            "source_title": "changed source title",
+            "company_tags": ["changed company tag"],
+            "question_id": "changed-id",
+        }.items():
+            with self.subTest(field=field):
+                changed = record.model_copy(update={field: value})
+                self.assertNotEqual(
+                    compute_question_content_hash(changed), baseline_hash
+                )
+                if field in {
+                    "difficulty",
+                    "source_title",
+                    "company_tags",
+                    "question_id",
+                }:
+                    self.assertEqual(build_question_embedding_text(changed), baseline_text)
+                else:
+                    self.assertNotEqual(build_question_embedding_text(changed), baseline_text)
+
+        changed_mode = record.model_copy(
+            update={
+                "primary_mode": "project_deep_dive",
+                "question_mode": "project_deep_dive",
+            }
+        )
+        self.assertNotEqual(compute_question_content_hash(changed_mode), baseline_hash)
+        self.assertNotEqual(build_question_embedding_text(changed_mode), baseline_text)
+
+    def test_manifest_hash_is_stable_for_input_order_and_changes_with_registry_or_policy(self) -> None:
+        record = self._v2_fixture()
+        source = QuestionSourceRegistryEntry(
+            source_id="source-a",
+            source_type="official_technical_doc",
+            canonical_url="https://example.com/source-a",
+            title="Source A",
+            published_at=date(2026, 7, 1),
+            verified_at=date(2026, 8, 1),
+            accessed_at=date(2026, 8, 1),
+            trust="high",
+        )
+        registry = QuestionSourceRegistry(entries=[source])
+        policy = QuestionModePolicy.default()
+        baseline = compute_question_bank_manifest_hash([record], registry, policy)
+        self.assertEqual(
+            baseline,
+            compute_question_bank_manifest_hash([record], registry, policy),
+        )
+        reordered_source = source.model_copy(update={"source_id": "source-b"})
+        reordered_registry = QuestionSourceRegistry(entries=[reordered_source, source])
+        reordered_records = [record.model_copy(update={"question_id": "q-agent-002"}), record]
+        self.assertEqual(
+            compute_question_bank_manifest_hash(
+                reordered_records,
+                reordered_registry,
+                policy,
+            ),
+            compute_question_bank_manifest_hash(
+                list(reversed(reordered_records)),
+                QuestionSourceRegistry(entries=list(reversed(reordered_registry.entries))),
+                policy,
+            ),
+        )
+        self.assertNotEqual(
+            baseline,
+            compute_question_bank_manifest_hash(
+                [record],
+                QuestionSourceRegistry(
+                    entries=[source.model_copy(update={"human_summary": "changed"})]
+                ),
+                policy,
+            ),
+        )
+        self.assertNotEqual(
+            baseline,
+            compute_question_bank_manifest_hash(
+                [record],
+                registry,
+                policy.model_copy(update={"mode_policy_version": "2027-H1"}),
+            ),
         )
 
     def test_v1_record_projects_to_explicit_v2_defaults(self) -> None:

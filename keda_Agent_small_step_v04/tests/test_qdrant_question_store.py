@@ -176,6 +176,50 @@ class QdrantQuestionStoreTests(unittest.TestCase):
         self.assertEqual(result.status, "hit")
         self.assertEqual(result.hits[0].record.question_id, "q-good")
 
+    def test_extended_fingerprint_is_persisted_and_each_component_mismatch_is_safe(self) -> None:
+        fingerprint = IndexFingerprint(
+            provider="fake-embeddings",
+            model="fake-model-v2",
+            dimension=3,
+            index_version="questions-v2",
+            embedding_text_version="six-section-v1",
+            question_bank_manifest_hash="sha256:manifest",
+            mode_policy_version="2026-H2",
+        )
+        store = self.make_store(fingerprint=fingerprint)
+        store.rebuild([self.record("q-fingerprint")], [[1.0, 0.0, 0.0]], fingerprint)
+        self.assertEqual(store.get_manifest(), fingerprint)
+
+        points, _ = store.client.scroll(
+            collection_name=COLLECTION_NAME,
+            limit=10,
+            with_payload=True,
+            with_vectors=False,
+        )
+        manifest = next(
+            point.payload for point in points if point.payload["record_type"] == "manifest"
+        )
+        self.assertEqual(manifest["embedding_text_version"], "six-section-v1")
+        self.assertEqual(manifest["question_bank_manifest_hash"], "sha256:manifest")
+        self.assertEqual(manifest["mode_policy_version"], "2026-H2")
+
+        for field, value in {
+            "provider": "other-provider",
+            "model": "other-model",
+            "dimension": 4,
+            "index_version": "questions-v3",
+            "embedding_text_version": "six-section-v2",
+            "question_bank_manifest_hash": "sha256:other",
+            "mode_policy_version": "2027-H1",
+        }.items():
+            with self.subTest(field=field):
+                different = fingerprint.model_copy(update={field: value})
+                reader = QdrantQuestionStore(
+                    client=store.client,
+                    fingerprint=different,
+                )
+                self.assertEqual(self.search(reader).status, "index_mismatch")
+
     def test_search_excludes_wrong_role_dimension_mode_status_date_and_ids(self) -> None:
         store = self.make_store(fingerprint=self.fingerprint)
         records = [

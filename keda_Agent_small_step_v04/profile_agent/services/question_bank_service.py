@@ -8,7 +8,7 @@ disposable retrieval index later.
 
 from __future__ import annotations
 
-from collections.abc import Collection, Iterable, Iterator, Mapping
+from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 import hashlib
@@ -21,7 +21,9 @@ from pydantic import ValidationError
 
 from profile_agent.schemas.question_rag_schema import (
     InterviewQuestionRecord,
+    QuestionEmbeddingProjection,
     QuestionModePolicy,
+    QuestionSourceRegistry,
     QuestionRetrievalResult,
     RetrievedQuestion,
 )
@@ -52,6 +54,8 @@ SUPPORTED_SCHEMA_VERSIONS = frozenset(
     }
 )
 DEFAULT_EXPIRING_WITHIN_DAYS = 30
+EMBEDDING_TEXT_VERSION = "six-section-v1"
+QUESTION_CONTENT_HASH_VERSION = "question-content-v2"
 
 _V1_RECORD_FIELDS: tuple[str, ...] = (
     "question_id",
@@ -293,6 +297,61 @@ def _validated_record(
         return InterviewQuestionRecord.model_validate(payload)
     except ValidationError as exc:
         raise ValueError(f"invalid interview question record: {exc}") from exc
+
+
+def _canonical_embedding_list(values: Sequence[Any], field_name: str) -> list[str]:
+    """Normalize and casefold-sort one list used by the embedding contract."""
+
+    if isinstance(values, (str, bytes, bytearray)):
+        raise TypeError(f"{field_name} must be a sequence")
+    try:
+        normalized = [normalize_question_text(value) for value in values]
+    except TypeError:
+        raise TypeError(f"{field_name} must be a sequence") from None
+    if any(not value for value in normalized):
+        raise ValueError(f"{field_name} must not contain blank values")
+    # Include the canonical spelling as a deterministic tie-breaker.  This
+    # keeps values such as ``A`` and ``a`` independent of source list order.
+    return sorted(normalized, key=lambda value: (value.casefold(), value))
+
+
+def _embedding_projection(
+    record: InterviewQuestionRecord | Mapping[str, Any],
+) -> QuestionEmbeddingProjection:
+    """Build the six-section projection without carrying record metadata."""
+
+    validated = _validated_record(record, normalize_modes=True)
+    primary_mode = normalize_project_mode(validated.primary_mode or validated.question_mode)
+    compatible_modes = [
+        normalize_project_mode(value) for value in validated.compatible_modes
+    ]
+    policy = QuestionModePolicy.default()
+    mode_order = policy.compatible_order_for(validated.dimension_id)
+    compatible_modes.sort(key=mode_order.index)
+    policy.validate_mode_assignment(
+        validated.dimension_id,
+        primary_mode,
+        compatible_modes,
+    )
+    return QuestionEmbeddingProjection(
+        question=normalize_question_text(validated.question_text),
+        business_constraint=normalize_question_text(validated.business_constraint),
+        skills=_canonical_embedding_list(validated.skills, "skills"),
+        dimension_terms=_canonical_embedding_list(
+            validated.dimension_terms,
+            "dimension_terms",
+        ),
+        primary_mode=primary_mode,
+        compatible_modes=compatible_modes,
+    )
+
+
+def build_question_embedding_text(
+    record: InterviewQuestionRecord | Mapping[str, Any],
+) -> str:
+    """Render a question as the frozen, candidate-safe six-line text."""
+
+    return _embedding_projection(record).to_text()
 
 
 def _v1_hash_payload(record: InterviewQuestionRecord | Mapping[str, Any]) -> dict[str, Any]:
@@ -626,11 +685,12 @@ def _record_validation_issues(
     if record.dimension_id not in dimensions:
         issues.append(f"dimension_id: unsupported value {record.dimension_id!r}")
     try:
-        computed_hash = build_question_content_hash(record)
+        legacy_hash = build_question_content_hash(record)
+        computed_hash = compute_question_content_hash(record)
     except (TypeError, ValueError, AttributeError) as exc:
         issues.append(f"content_hash: unable to compute canonical hash ({exc})")
     else:
-        if record.content_hash != computed_hash:
+        if record.content_hash not in {legacy_hash, computed_hash}:
             issues.append(
                 "content_hash mismatch: stored value does not match canonical hash"
             )
@@ -653,6 +713,115 @@ def build_question_content_hash(
     """
 
     return _canonical_hash(record)
+
+
+def _canonical_hash_value(value: Any, *, sort_lists: bool = True) -> Any:
+    """Normalize nested JSON values before hashing a complete record."""
+
+    if isinstance(value, str):
+        return normalize_question_text(value)
+    if isinstance(value, Mapping):
+        return {
+            str(key): _canonical_hash_value(item, sort_lists=sort_lists)
+            for key, item in sorted(value.items(), key=lambda item: str(item[0]))
+        }
+    if isinstance(value, (list, tuple)):
+        normalized = [
+            _canonical_hash_value(item, sort_lists=sort_lists) for item in value
+        ]
+        if not sort_lists:
+            return normalized
+        # Lists in a question record are sets of labels/IDs rather than ordered
+        # prose.  Sorting them makes JSON source ordering immaterial while
+        # retaining duplicate entries for the schema/audit layer to reject.
+        return sorted(
+            normalized,
+            key=lambda item: json.dumps(item, ensure_ascii=False, sort_keys=True),
+        )
+    return value
+
+
+def _complete_v2_hash_payload(record: InterviewQuestionRecord) -> dict[str, Any]:
+    """Return every v2 record field except its self-referential content hash."""
+
+    payload = record.model_dump(mode="json", warnings=False)
+    payload.pop("content_hash", None)
+    payload["hash_version"] = QUESTION_CONTENT_HASH_VERSION
+    return _canonical_hash_value(payload)
+
+
+def compute_question_content_hash(
+    record: InterviewQuestionRecord | Mapping[str, Any],
+) -> str:
+    """Compute the versioned full record identity used by corpus manifests.
+
+    v1 records retain the historical hash payload so old banks, checkpoints
+    and public projections continue to validate.  A v2 record hashes all
+    canonical fields (including non-embedding metadata) except ``content_hash``
+    itself; its embedding text remains the narrower six-section projection.
+    """
+
+    normalized = _validated_record(record, normalize_modes=True)
+    if classify_question_record(record) == "v1":
+        return _build_v1_hash(normalized)
+    return _hash_payload(_complete_v2_hash_payload(normalized))
+
+
+def compute_question_bank_manifest_hash(
+    records: Sequence[InterviewQuestionRecord | Mapping[str, Any]],
+    source_registry: QuestionSourceRegistry | Mapping[str, Any],
+    policy: QuestionModePolicy | Mapping[str, Any],
+) -> str:
+    """Compute a stable hash for the records, source summaries and mode policy."""
+
+    try:
+        normalized_records = [
+            _validated_record(record, normalize_modes=True) for record in records
+        ]
+    except TypeError as exc:
+        raise TypeError("records must be a sequence") from exc
+    if isinstance(source_registry, QuestionSourceRegistry):
+        normalized_registry = source_registry
+    elif isinstance(source_registry, Mapping):
+        try:
+            normalized_registry = QuestionSourceRegistry.model_validate(source_registry)
+        except Exception as exc:
+            raise ValueError("invalid question source registry") from exc
+    else:
+        raise TypeError("source_registry must be a QuestionSourceRegistry or mapping")
+    if isinstance(policy, QuestionModePolicy):
+        normalized_policy = policy
+    elif isinstance(policy, Mapping):
+        try:
+            normalized_policy = QuestionModePolicy.model_validate(policy)
+        except Exception as exc:
+            raise ValueError("invalid question mode policy") from exc
+    else:
+        raise TypeError("policy must be a QuestionModePolicy or mapping")
+
+    record_payload = [
+        {
+            "question_id": record.question_id,
+            "content_hash": compute_question_content_hash(record),
+            "embedding_text": build_question_embedding_text(record),
+        }
+        for record in normalized_records
+    ]
+    record_payload.sort(key=lambda value: value["question_id"])
+    source_payload = [
+        _canonical_hash_value(entry.model_dump(mode="json", warnings=False))
+        for entry in normalized_registry.entries
+    ]
+    source_payload.sort(key=lambda value: value.get("source_id", ""))
+    payload = {
+        "records": record_payload,
+        "sources": source_payload,
+        "mode_policy": _canonical_hash_value(
+            normalized_policy.model_dump(mode="json", warnings=False),
+            sort_lists=False,
+        ),
+    }
+    return _hash_payload(payload)
 
 
 def _read_question_bank(path: str | Path) -> Mapping[str, Any]:
@@ -812,7 +981,10 @@ def load_question_bank(
         if record.question_id in seen_question_ids:
             raise ValueError(f"duplicate question_id: {record.question_id}")
 
-        computed_hash = _canonical_hash(record)
+        # New v2 records include the full canonical record identity in their
+        # content hash.  The historical v1 hash remains accepted above for
+        # migration fixtures and old checkpoint/public-output round trips.
+        computed_hash = compute_question_content_hash(record)
         if computed_hash in seen_content_hashes:
             raise ValueError(
                 "duplicate content_hash: "
@@ -1055,13 +1227,18 @@ def audit_question_bank(
 
 __all__ = [
     "DEFAULT_EXPIRING_WITHIN_DAYS",
+    "EMBEDDING_TEXT_VERSION",
+    "QUESTION_CONTENT_HASH_VERSION",
     "QuestionBankAudit",
     "SUPPORTED_DIMENSION_IDS",
     "SUPPORTED_ROLE",
     "SUPPORTED_SOURCE_TYPES",
     "audit_question_bank",
     "build_question_content_hash",
+    "build_question_embedding_text",
     "classify_question_record",
+    "compute_question_bank_manifest_hash",
+    "compute_question_content_hash",
     "load_question_bank",
     "normalize_project_mode",
     "normalize_question_text",
