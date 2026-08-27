@@ -8,7 +8,7 @@
 
 本规格只服务一个岗位：**AI Agent 应用工程师（校招/初级）**，岗位版本为 2026-H2。目标语料库为 30 道经人工审核的、候选人可直接作答的原创情景题。每道题必须同时具备：
 
-1. 至少一条 2025—2026 年公开面试经验信号；
+1. 每题至少一条公开面试经验信号；按 corpus_as_of=2026-08-27 计算，全库至少 18/30 道使用近 180 天信号、至少 27/30 道使用近 365 天信号，最多 3/30 道可回溯到 2025-01-01 且只能用于配额/能力覆盖缺口；
 2. 至少一条官方技术文档或当前企业 JD 的交叉验证；
 3. 可定位、可复核、无版权和隐私越界的离线来源记录。
 
@@ -123,8 +123,8 @@ business_constraint 是候选人安全的约束摘要，例如数据新鲜度、
 
 每道题在进入 active 前必须关联至少两类证据：
 
-1. **近期公开面经信号**：来源发布日期或可确认的公开发布时间必须满足 `2025-01-01 <= published_at <= corpus_as_of`；首版 `corpus_as_of=2026-08-27`，不得接受未来日期。内容只记录“考察了什么能力/约束/故障/取舍”的人工摘要，不复制原问题或答案；
-2. **技术交叉验证**：至少一条官方技术文档，或一份当前企业 JD。它用来验证题目中的工程事实、能力边界或岗位相关性，不是用来补齐答案。
+1. **近期公开面经信号**：每条面经信号的 published_at 必须满足 `2025-01-01 <= published_at <= corpus_as_of`；按 `corpus_as_of=2026-08-27` 计算，近 180 天定义为 `0 <= (corpus_as_of - published_at).days <= 180`，近 365 天定义为 `0 <= (corpus_as_of - published_at).days <= 365`；全库至少 18/30 道信号在近 180 天、至少 27/30 道在近 365 天。最多 3/30 道可使用早于近 365 天窗口的信号，但仅限配额/能力覆盖缺口，必须在 review.json 写 exception_reason，并额外使用近 180 天的当前 JD 或官方更新做交叉验证。公开面经必须有可确认的 published_at，按最近发布日期优先选择，不得接受 `published_at > corpus_as_of` 的未来日期。内容只记录“考察了什么能力/约束/故障/取舍”的人工摘要，不复制原问题或答案；
+2. **技术交叉验证**：至少一条官方技术文档，或一份当前企业 JD。官方 evergreen 技术依据的 published_at 可以较早，但必须在近 180 天重新验证，并记录 retrieved_at 与 verified_at；当前企业 JD 必须在近 180 天验证。交叉验证用来验证题目中的工程事实、能力边界或岗位相关性，不是用来补齐答案。
 
 两条证据应分别登记 source_id。同一 URL 不能靠重复登记同时制造独立性；若一个来源同时提供两类信息，仍需再找到另一条独立 URL 才能满足本门槛。
 
@@ -134,7 +134,7 @@ business_constraint 是候选人安全的约束摘要，例如数据新鲜度、
 
 - 官方技术资料：OpenAI、Anthropic、MCP、A2A、Google、Microsoft、AWS、OWASP、NIST 等官方文档或工程文章；
 - 当前企业 JD：百度、OPPO 等企业的公开招聘页面；
-- 公开面经信号：牛客等平台在 2025—2026 年公开可访问的近期面经页面。
+- 公开面经信号：牛客等平台在 corpus_as_of 前公开可访问的近期面经页面，来源选择按最近发布日期优先。
 
 实际发布时，每个 URL 都必须在 QuestionSourceRegistry 中有规范化记录、抓取/查看日期、信任等级和权益结论。搜索结果页、无法定位的转载、需要绕过登录/验证码/付费墙的内容不能作为发布证据。
 
@@ -142,6 +142,7 @@ business_constraint 是候选人安全的约束摘要，例如数据新鲜度、
 
 - 全库至少 12 个独立 canonical URL；独立性按规范化后的 scheme + host + path + 非追踪 query 计数，fragment 和常见追踪参数不制造新 URL；
 - 同一 canonical URL 最多支撑 3 道题，按全库所有题的引用总数计，不按维度拆分规避；
+- 面经信号时间分布必须满足近 180 天至少 18/30、近 365 天至少 27/30；最多 3/30 的 2025-01-01 回溯例外只能用于配额/能力覆盖缺口，且必须有 review.json 的 exception_reason 和额外近 180 天当前 JD/官方更新交叉验证；
 - source_id、canonical URL、题目关联关系必须互相一致；来源被撤回或无法复核时，相关题不能继续保持 active；
 - active 题的所有关键来源 trust 只能是 medium 或 high。low 可暂存供人工复核，但不得入索引或被检索返回。
 
@@ -224,7 +225,7 @@ sidecar 是与题目 JSON 一同版本化的审核事实，不是运行时可见
 - question_count=30、有序 question_ids；
 - 六维配额、primary mode 配额、mode_policy_version；
 - min_independent_urls=12、max_questions_per_url=3；
-- corpus_as_of=2026-08-27、required_signal_from=2025-01-01、dynamic_review_days=180、evergreen_review_days=365；所有来源日期必须不晚于 corpus_as_of；
+- corpus_as_of=2026-08-27、signal_near_180_min_count=18、signal_near_365_min_count=27、signal_fallback_start=2025-01-01、signal_fallback_max_count=3、dynamic_review_days=180、evergreen_review_days=365、evergreen_revalidation_days=180、current_jd_validation_days=180；公开面经 published_at 必须不晚于 corpus_as_of，按最近发布日期优先，未来日期拒绝；
 - active_count、active_trust_levels、生成/复核日期、发布状态；
 - 题目集合 hash、sidecar 集合 hash、embedding contract version。
 
@@ -235,7 +236,7 @@ Manifest 的数量和配额必须由校验器重新计算，不能只相信手�
 每个 source_id 一条记录，至少包括：
 
 - source_id、canonical URL、publisher、title、source class；
-- published_at；若官方文档或 JD 页面无明确发布日期，可使用 retrieved_at 并显式标记 date_basis=retrieved_at，但公开面经信号必须有可确认且不晚于 corpus_as_of 的公开时间；
+- published_at、retrieved_at、verified_at；官方文档或 JD 页面无明确发布日期时可使用 retrieved_at 并显式标记 date_basis=retrieved_at，但公开面经信号必须有可确认且不晚于 corpus_as_of 的 published_at；官方 evergreen 技术依据即使 published_at 较早，也必须在近 180 天重新 retrieved/verified；当前企业 JD 必须在近 180 天 retrieved/verified；
 - role_level、支持的维度、source trust、当前可访问状态；
 - review_class：dynamic 或 evergreen；
 - 权益状态、是否允许人工摘要、最后验证日期和下一次复核日期；
@@ -248,11 +249,11 @@ source class 只允许公开面试经验、官方技术文档/工程文章、当
 每道题一条审核记录，至少关联：
 
 - question_id、审核状态、审核者/复核者标识和时间；
-- signal_source_ids：至少一条 2025—2026 公开面经信号；
-- cross_validation_source_ids：至少一条官方文档或当前企业 JD，且与 signal 来源 URL 独立；
+- signal_source_ids：每题至少一条按 corpus_as_of 计算的公开面经信号；全库至少 18/30 在近 180 天、至少 27/30 在近 365 天，最多 3/30 可回溯至 2025-01-01，回溯题必须写 exception_reason 且仅用于配额/能力覆盖缺口；
+- cross_validation_source_ids：至少一条官方文档或当前企业 JD，且与 signal 来源 URL 独立；回溯题还必须关联近 180 天当前 JD 或官方更新；官方 evergreen 依据需记录近 180 天 retrieved_at/verified_at，当前 JD 需记录近 180 天验证；
 - 对能力信号、业务约束、角色包维度、primary/compatible mode 的人工判断摘要；
 - 原创改写确认、PII 扫描结果、版权/权益结论、难度一致性结论；
-- review_class、review_due_at、退回/停用理由（若有）。
+- review_class、review_due_at、exception_reason（仅回溯题必填）、退回/停用理由（若有）。
 
 摘要只描述判断，不粘贴来源连续句子。没有完整双重证据或任一安全检查未通过，状态不能变为 approved/active。
 
@@ -272,9 +273,9 @@ source class 只允许公开面试经验、官方技术文档/工程文章、当
 
 ### 9.1 复核窗口
 
-- dynamic：公开面经信号、当前 JD 或快速变化的工程页面，next_review_at = verified_at + 180 days；
-- evergreen：变化较慢的官方协议/概念文档，next_review_at = verified_at + 365 days，但若官方页面标记版本变化，提前复核；
-- 每道题的 valid_until 取其必需来源和权益约束中最早的有效截止日。由于每题都必须有近期面经信号，题目发布后的复核上限受 180 天窗口约束；官方文档仍按 365 天保存自己的来源复核记录。
+- dynamic：公开面经信号、当前 JD 或快速变化的工程页面，next_review_at = verified_at + 180 days；当前 JD 的 retrieved_at/verified_at 必须距 corpus_as_of 不超过 180 天；
+- evergreen：变化较慢的官方协议/概念文档，next_review_at = verified_at + 365 days，但若官方页面标记版本变化，提前复核；即使 published_at 较早，也必须在距 corpus_as_of 不超过 180 天内重新 retrieved/verified；
+- 每道题的 valid_until 取其必需来源和权益约束中最早的有效截止日。由于每题都必须有近期面经信号，题目发布后的复核上限受 180 天窗口约束；官方文档的常规复核仍按 365 天，但其本次交叉验证必须满足近 180 天重新验证。
 
 到达复核日、来源撤回、权益变化、岗位版本变化或题面/标签 hash 变化时，题目转为 needs_review，立即排除出运行时索引，直到重新审核。确认不再适用或不可合法使用时转为 retired；不物理删除，以保留历史报告的审计依据。
 
@@ -338,7 +339,7 @@ difficulty 在本规格仍是显式标注和一致性约束，不能被测试误
 以下任一条件失败，构建停止且不写入可用索引：
 
 - 题数不是 30，六维或 primary mode 配额不精确；
-- 任一题缺少双重证据、2025—2026 面经信号、官方文档/JD 交叉验证、locator 或权益决定；
+- 任一题缺少双重证据、要求时间窗口内的面经信号、官方文档/JD 交叉验证、locator 或权益决定，或回溯例外缺少 exception_reason/额外近 180 天交叉验证；
 - 独立 URL 少于 12，或某 URL 支撑题数超过 3；
 - active 记录 trust 为 low、来源/role/version/status/日期非法、重复 ID/hash 或未裁决近重复；
 - PII、原文/答案相似复制、付费内容、来源失效或 sidecar 外键不一致；
@@ -459,9 +460,9 @@ artifacts/question_corpus/        # 生成物，可删除后重建，不是权�
 | --- | --- |
 | schema/迁移 | v1 question_mode 仍可读；v2 primary/compatible 正确投影；未知字段、mode、维度和非法日期 fail closed |
 | 配额/Manifest | 总数 30；六维 6/5/6/4/6/3；primary mode 4/5/8/4/3/6；policy hash 和题目 hash 一致 |
-| 来源治理 | 每题一条 2025—2026 公开面经信号和一条官方文档/JD；至少 12 独立 URL；每 URL ≤3；active 无 low trust |
+| 来源治理 | 每题一条公开面经信号和一条官方文档/JD；近 180 天面经信号至少 18/30、近 365 天至少 27/30；最多 3/30 可回溯至 2025-01-01 且仅限配额/能力覆盖缺口、写明 exception_reason 并额外有近 180 天当前 JD/官方更新；按最近发布日期优先且拒绝未来日期；官方 evergreen 记录近 180 天 retrieved/verified，当前 JD 近 180 天验证；至少 12 独立 URL；每 URL ≤3；active 无 low trust |
 | 原创/安全 | embedding text 仅六段 allowlist；不存在原文/答案/PII/付费内容；sidecar 不含网页全文和秘密 |
-| 生命周期 | dynamic 180 天、evergreen 365 天；到期转 needs_review 并从索引排除；retired 不物理删除 |
+| 生命周期 | dynamic 180 天、evergreen 365 天；官方 evergreen 交叉验证仍需近 180 天 retrieved/verified，当前 JD 需近 180 天验证；到期转 needs_review 并从索引排除；retired 不物理删除 |
 | mode policy | exact 优先，空 exact 才 compatible，再空才 no_match；兼容项不得跨维度；缺格不伪造结果 |
 | store/retrieval | role/dimension/status/date/排除 ID 硬过滤；index fingerprint 不一致拒绝；difficulty 现状不会被误报为硬过滤 |
 | 评测 | 30 labeled intents、gold/acceptable/hard negatives；Recall/MRR/分维度门槛；invalid/duplicate=0；trace 100% 一致 |
@@ -474,7 +475,7 @@ artifacts/question_corpus/        # 生成物，可删除后重建，不是权�
 本语料项目只有在以下条件全部满足时才可称为完成：
 
 1. Git 权威题库恰好有 30 道原创题，严格满足六维和 primary mode 配额；
-2. 每题有合格的 2025—2026 公开面经信号、官方文档/JD 交叉验证、定位、rights、review、dedupe 记录；全库至少 12 个独立 URL，单 URL 不超过 3 题，active trust 只有 medium/high；
+2. 每题有合格的公开面经信号、官方文档/JD 交叉验证、定位、rights、review、dedupe 记录；按 corpus_as_of=2026-08-27 计算，近 180 天面经信号至少 18/30、近 365 天至少 27/30，最多 3/30 可回溯至 2025-01-01 且仅限配额/能力覆盖缺口、写有 exception_reason 并有额外近 180 天当前 JD/官方更新交叉验证；公开面经按最近发布日期优先且无未来日期；官方 evergreen 已在近 180 天 retrieved/verified，当前 JD 已在近 180 天验证；全库至少 12 个独立 URL，单 URL 不超过 3 题，active trust 只有 medium/high；
 3. QuestionBankManifest、QuestionSourceRegistry、review/dedupe/rights/locator sidecars 可独立校验，过期/撤回/重复/版权/PII 记录均能阻止发布；
 4. deterministic fake/local Qdrant dry-run 全部通过，30 条 intent 的 gold/acceptable/hard-negative 标注、指标、逐维度召回和 trace 门禁通过；
 5. 用户再次批准后唯一一次 BGE-M3 建库和约 60 输入评测完成，索引 fingerprint、精确/兼容/无命中路径和运行时降级均通过；
@@ -502,7 +503,6 @@ artifacts/question_corpus/        # 生成物，可删除后重建，不是权�
 - 30 题不覆盖 36 格的现实已通过维度内 mode policy、compatible 和真实 no_match 明确处理；
 - 证据、来源、版权、PII、生命周期、运行时数据流、文件责任、测试和批准边界均有独立条款；
 - 代表性来源仅用于说明允许的来源类别，没有声称真实采集已完成；
+- 时间门禁一致：corpus_as_of=2026-08-27，近 180 天至少 18/30、近 365 天至少 27/30，最多 3/30 回溯至 2025-01-01 且写有 exception_reason；未来日期拒绝，evergreen 与当前 JD 的近 180 天验证均有记录要求；
 - 没有把当前 difficulty、embedding 或 schema 缺口写成已经解决的事实，也没有用跨维度 fallback 掩盖缺口；
 - 运行时降级、人工审核、索引重建和候选人可见/不可见字段均保持单向、可审计边界。
-
-
