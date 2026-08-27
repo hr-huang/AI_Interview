@@ -944,6 +944,10 @@ class QuestionSourceRegistryEntry(BaseModel):
             raise ValueError("published_at must not be after accessed_at")
         if self.accessed_at > self.verified_at:
             raise ValueError("accessed_at must not be after verified_at")
+        if self.accessed_at > CORPUS_AS_OF:
+            raise ValueError("accessed_at must not be after corpus_as_of")
+        if self.verified_at > CORPUS_AS_OF:
+            raise ValueError("verified_at must not be after corpus_as_of")
         return self
 
     @property

@@ -501,6 +501,18 @@ class QuestionCorpusSchemaTests(unittest.TestCase):
         evergreen["date_basis"] = "retrieved_at"
         self.assertIsNotNone(QuestionSourceRegistryEntry(**evergreen))
 
+    def test_source_dates_reject_access_or_verification_after_corpus_as_of(self) -> None:
+        future_access = valid_source_kwargs()
+        future_access["accessed_at"] = date(2026, 8, 28)
+        future_access["verified_at"] = date(2026, 8, 29)
+        with self.assertRaises(ValidationError):
+            QuestionSourceRegistryEntry(**future_access)
+
+        future_verification = valid_source_kwargs()
+        future_verification["verified_at"] = date(2026, 8, 28)
+        with self.assertRaises(ValidationError):
+            QuestionSourceRegistryEntry(**future_verification)
+
     def test_snapshot_requires_exactly_thirty_unique_manifest_ids(self) -> None:
         snapshot = valid_snapshot()
 
