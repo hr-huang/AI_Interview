@@ -582,7 +582,7 @@ class QuestionCorpusSchemaTests(unittest.TestCase):
                 with self.assertRaises(ValidationError):
                     QuestionReviewRecord(**invalid)
 
-    def test_approved_review_requires_explicit_human_approval_record(self) -> None:
+    def test_approved_review_does_not_treat_corpus_human_fields_as_trust(self) -> None:
         values = valid_review_kwargs()
         values.update(
             {
@@ -601,15 +601,21 @@ class QuestionCorpusSchemaTests(unittest.TestCase):
             ("reviewer_type", "agent"),
             ("reviewer_type", "model"),
             ("reviewer_type", "luna"),
-            ("approval_actor", "Luna-1"),
-            ("approval_actor", "Luna-2"),
-            ("approval_timestamp", None),
         ):
             with self.subTest(field=field, bad_value=bad_value):
                 invalid = deepcopy(values)
                 invalid[field] = bad_value
                 with self.assertRaises(ValidationError):
                     QuestionReviewRecord(**invalid)
+
+        without_corpus_approval_fields = deepcopy(values)
+        without_corpus_approval_fields.pop("approval_actor")
+        without_corpus_approval_fields.pop("approval_timestamp")
+        review_without_trusted_fields = QuestionReviewRecord(
+            **without_corpus_approval_fields
+        )
+        self.assertIsNone(review_without_trusted_fields.approval_actor)
+        self.assertIsNone(review_without_trusted_fields.approval_timestamp)
 
     def test_fallback_reason_code_is_a_strict_coverage_gap_enum(self) -> None:
         values = valid_review_kwargs()

@@ -416,6 +416,45 @@ class RunQuestionBankTests(unittest.TestCase):
         self.assertEqual(preview["status"], "invalid")
         self.assertFalse(preview["structure_valid"])
 
+    def test_corpus_malformed_snapshot_writes_real_artifacts_without_writer_patch(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "malformed-corpus"
+            root.mkdir()
+            (root / "questions.json").write_text(
+                MALFORMED_CORPUS_JSON_FIXTURE_PATH.read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            original_cwd = os.getcwd()
+            os.chdir(temp)
+            try:
+                code, stdout, stderr = self._run(
+                    [
+                        "audit-corpus",
+                        "--corpus-dir",
+                        str(root),
+                        "--as-of",
+                        "2026-08-27",
+                        "--dry-run",
+                        "--format",
+                        "json",
+                    ]
+                )
+            finally:
+                os.chdir(original_cwd)
+
+            self.assertNotEqual(code, 0)
+            self.assertIn("audit-corpus", stdout)
+            self.assertEqual(stderr, "")
+            report_path = Path(temp) / "artifacts" / "question_corpus" / "validation_report.json"
+            preview_path = Path(temp) / "artifacts" / "question_corpus" / "manifest_preview.json"
+            self.assertTrue(report_path.is_file())
+            self.assertTrue(preview_path.is_file())
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            preview = json.loads(preview_path.read_text(encoding="utf-8"))
+            self.assertEqual(report["stage"], "structure")
+            self.assertEqual(report["issues"][0]["code"], "structure_invalid_json")
+            self.assertFalse(preview["structure_valid"])
+
     def test_apply_embedding_spy_receives_canonical_six_section_projection(self) -> None:
         bank = self._write_bank()
         embedding = FakeEmbedding()

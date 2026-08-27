@@ -1513,6 +1513,8 @@ def _corpus_structure_failure_code(error: BaseException) -> str:
         details.append(str(current).casefold())
         current = current.__cause__ or current.__context__
     detail = " ".join(details)
+    if "manifest required" in detail or "manifest schema_version is required" in detail:
+        return "manifest_required_field"
     if "missing" in detail or "unavailable" in detail:
         return "sidecar_missing"
     if "unknown" in detail or "extra" in detail:

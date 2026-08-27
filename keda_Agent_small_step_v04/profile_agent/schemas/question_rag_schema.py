@@ -71,17 +71,37 @@ QuestionNearDuplicateDecision = Literal[
 QuestionRightsDecision = Literal["approved", "rejected", "pending_human"]
 
 
-def _looks_like_non_human_reviewer(value: Any) -> bool:
-    """Reject automation identities at the approval boundary."""
+class QuestionApprovalReceipt(BaseModel):
+    """Immutable receipt that an external trust boundary can verify."""
 
-    if not isinstance(value, str):
-        return False
-    normalized = re.sub(r"[^a-z0-9]+", "-", value.casefold()).strip("-")
-    if normalized in {"agent", "model", "bot", "assistant", "system"}:
-        return True
-    return normalized.startswith(("luna-", "agent-", "model-")) or normalized.endswith(
-        "-agent"
-    )
+    model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=True)
+
+    question_id: str = Field(min_length=1)
+    actor_id: str = Field(min_length=1)
+    approved_at: date | datetime
+    corpus_hash: str | None = None
+    sidecar_hash: str | None = None
+    nonce: str | None = None
+
+    @field_validator("question_id", "actor_id")
+    @classmethod
+    def validate_receipt_identity(cls, value: str, info: Any) -> str:
+        return _require_non_blank(value, info.field_name)
+
+    @field_validator("corpus_hash", "sidecar_hash", "nonce")
+    @classmethod
+    def validate_receipt_optional_text(cls, value: str | None, info: Any) -> str | None:
+        if value is not None:
+            return _require_non_blank(value, info.field_name)
+        return value
+
+    @model_validator(mode="after")
+    def require_receipt_binding(self) -> "QuestionApprovalReceipt":
+        if not any((self.corpus_hash, self.sidecar_hash, self.nonce)):
+            raise ValueError(
+                "approval receipt requires corpus_hash, sidecar_hash, or nonce"
+            )
+        return self
 
 QUESTION_MODES: tuple[QuestionMode, ...] = (
     "foundation",
@@ -1311,6 +1331,13 @@ class QuestionReviewRecord(BaseModel):
             "approval_record",
         ),
     )
+    approval_receipt: QuestionApprovalReceipt | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "approval_receipt",
+            "human_approval_receipt",
+        ),
+    )
     reviewed_at: date
     signal_source_ids: list[str] = Field(default_factory=list)
     cross_validation_source_ids: list[str] = Field(default_factory=list)
@@ -1382,34 +1409,14 @@ class QuestionReviewRecord(BaseModel):
 
     @model_validator(mode="after")
     def validate_approved_review(self) -> "QuestionReviewRecord":
-        reviewer_values = [*self.reviewer_ids]
-        if self.reviewer:
-            reviewer_values.append(self.reviewer)
-        reviewer_values.extend(
-            value
-            for value in (self.approval_actor,)
-            if value is not None
-        )
-        automated_reviewer = self.reviewer_type in {"agent", "model", "luna"} or any(
-            _looks_like_non_human_reviewer(value) for value in reviewer_values
-        )
-        if automated_reviewer and self.decision != "pending_human":
+        if self.reviewer_type in {"agent", "model", "luna"} and self.decision != "pending_human":
             raise ValueError(
                 "automated reviewers may only leave a pending_human decision"
             )
         if self.decision != "approved":
             return self
-        if self.reviewer_type != "human":
-            raise ValueError("approved review requires a human reviewer_type")
-        actor = self.approval_actor
-        if not isinstance(actor, str) or not actor.strip():
-            raise ValueError("approved review requires an explicit approval_actor")
-        if any(_looks_like_non_human_reviewer(value) for value in reviewer_values):
-            raise ValueError("agent, model, or Luna reviewers cannot approve")
-        if self.approval_timestamp is None and not self.approval_record_id:
-            raise ValueError(
-                "approved review requires an approval timestamp or approval record"
-            )
+        if not self.reviewer_ids and not (self.reviewer and self.reviewer.strip()):
+            raise ValueError("approved review requires reviewer identity")
         if not self.signal_source_ids:
             raise ValueError("approved review requires signal evidence")
         if not self.cross_validation_source_ids:

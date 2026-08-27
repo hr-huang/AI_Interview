@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import FrozenInstanceError
 from datetime import date
 import json
 from pathlib import Path
@@ -9,7 +10,9 @@ import unittest
 
 from profile_agent.services.question_bank_service import compute_question_content_hash
 from profile_agent.services.question_corpus_governance import (
+    ApprovalReceipt,
     CorpusIssue,
+    V2_MANIFEST_REQUIRED_FIELDS,
     build_manifest_preview,
     compute_question_set_hash,
     compute_sidecar_set_hash,
@@ -46,6 +49,19 @@ from tests.test_question_corpus_schema import (
 
 
 class QuestionCorpusGovernanceTests(unittest.TestCase):
+    class FakeTrustedApprovalVerifier:
+        def __init__(self) -> None:
+            self.receipts: list[ApprovalReceipt] = []
+
+        def verify(self, receipt: ApprovalReceipt) -> bool:
+            self.receipts.append(receipt)
+            return (
+                receipt.question_id.startswith("q_agent_")
+                and receipt.actor_id == f"trusted:{receipt.question_id}"
+                and receipt.nonce == f"receipt:{receipt.question_id}"
+                and receipt.approved_at == date(2026, 8, 27)
+            )
+
     def _complete_snapshot(self) -> QuestionCorpusSnapshot:
         dimensions = (
             ["role_dim_01"] * 6
@@ -108,6 +124,12 @@ class QuestionCorpusGovernanceTests(unittest.TestCase):
                     reviewer_type="human",
                     approval_actor="human:reviewer-1",
                     approval_timestamp=date(2026, 8, 27),
+                    approval_receipt={
+                        "question_id": question_id,
+                        "actor_id": f"trusted:{question_id}",
+                        "approved_at": date(2026, 8, 27),
+                        "nonce": f"receipt:{question_id}",
+                    },
                     reviewed_at=date(2026, 8, 27),
                     signal_source_ids=[interview_id],
                     cross_validation_source_ids=[official_id],
@@ -241,6 +263,7 @@ class QuestionCorpusGovernanceTests(unittest.TestCase):
             )
             records.append(values)
         manifest = valid_manifest_kwargs()
+        manifest["published_at"] = None
         source = valid_source_kwargs()
         review = valid_review_kwargs()
         dedupe = valid_dedupe_kwargs()
@@ -303,11 +326,107 @@ class QuestionCorpusGovernanceTests(unittest.TestCase):
             )
         )
 
-        issues = validate_question_corpus(snapshot, role_pack, date(2026, 8, 27))
+        verifier = self.FakeTrustedApprovalVerifier()
+        issues = validate_question_corpus(
+            snapshot,
+            role_pack,
+            date(2026, 8, 27),
+            approval_verifier=verifier,
+        )
 
         self.assertEqual(issues, [])
+        self.assertEqual(len(verifier.receipts), 30)
+        self.assertTrue(all(isinstance(item, ApprovalReceipt) for item in verifier.receipts))
+        with self.assertRaises(FrozenInstanceError):
+            verifier.receipts[0].actor_id = "tampered"
         preview = build_manifest_preview(snapshot, issues)
         self.assertTrue(str(preview["manifest_hash"]).startswith("sha256:"))
+
+    def test_active_approved_review_is_denied_without_external_verifier(self) -> None:
+        snapshot = self._complete_snapshot()
+        role_pack = json.loads(
+            Path("profile_agent/knowledge/role_packs/ai_application_engineer_2026_h2.json").read_text(
+                encoding="utf-8"
+            )
+        )
+
+        issues = validate_question_corpus(snapshot, role_pack, CORPUS_AS_OF)
+
+        self.assertIn("human_approval_required", {issue.code for issue in issues})
+
+    def test_corpus_human_fields_and_forged_luna_receipts_cannot_approve(self) -> None:
+        snapshot = self._complete_snapshot()
+        role_pack = json.loads(
+            Path("profile_agent/knowledge/role_packs/ai_application_engineer_2026_h2.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        verifier = self.FakeTrustedApprovalVerifier()
+
+        for actor in ("Luna3", "luna3", "human:alice"):
+            with self.subTest(actor=actor):
+                forged_review = snapshot.review.records[0].model_copy(
+                    update={
+                        "reviewer_type": "human",
+                        "approval_actor": actor,
+                        "approval_receipt": {
+                            "question_id": "q_agent_001",
+                            "actor_id": actor,
+                            "approved_at": CORPUS_AS_OF,
+                            "nonce": "forged-corpus-text",
+                        },
+                    }
+                )
+                malformed = snapshot.model_copy(
+                    update={
+                        "review": snapshot.review.model_copy(
+                            update={"records": [forged_review, *snapshot.review.records[1:]]}
+                        )
+                    }
+                )
+                issues = validate_question_corpus(
+                    malformed,
+                    role_pack,
+                    CORPUS_AS_OF,
+                    approval_verifier=verifier,
+                )
+
+                self.assertIn("human_approval_required", {issue.code for issue in issues})
+
+    def test_v2_manifest_requires_each_frozen_raw_field_before_pydantic_defaults(self) -> None:
+        for missing_field in V2_MANIFEST_REQUIRED_FIELDS:
+            with self.subTest(missing_field=missing_field), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                self._write_snapshot(root)
+                manifest_path = root / "QuestionBankManifest.json"
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                manifest.pop(missing_field, None)
+                manifest_path.write_text(
+                    json.dumps(manifest, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+
+                with self.assertRaises(ValueError) as raised:
+                    load_question_corpus_snapshot(root, CORPUS_AS_OF)
+                self.assertIsNotNone(raised.exception.__cause__)
+                self.assertIn("required", str(raised.exception.__cause__))
+
+    def test_legacy_v1_manifest_does_not_enter_v2_loader_implicitly(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self._write_snapshot(root)
+            manifest_path = root / "QuestionBankManifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["schema_version"] = 1
+            manifest_path.write_text(
+                json.dumps(manifest, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ValueError) as raised:
+                load_question_corpus_snapshot(root, CORPUS_AS_OF)
+            self.assertIsNotNone(raised.exception.__cause__)
+            self.assertRegex(str(raised.exception.__cause__), "legacy|schema")
 
     def test_validator_reports_active_low_trust_and_missing_sidecars(self) -> None:
         snapshot = self._complete_snapshot()
@@ -539,7 +658,7 @@ class QuestionCorpusGovernanceTests(unittest.TestCase):
 
         codes = {issue.code for issue in validate_question_corpus(malformed, role_pack, CORPUS_AS_OF)}
 
-        self.assertIn("human_approval", codes)
+        self.assertIn("human_approval_required", codes)
 
     def test_validator_requires_canonical_semantic_hash_and_duplicate_group_fk(self) -> None:
         snapshot = self._complete_snapshot()

@@ -17,7 +17,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
-from typing import Any, Iterable, Literal, Mapping, Sequence
+from typing import Any, Callable, Iterable, Literal, Mapping, Protocol, Sequence
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from pydantic import ValidationError
@@ -33,6 +33,7 @@ from profile_agent.schemas.question_rag_schema import (
     QUESTION_MODES,
     InterviewQuestionRecord,
     QuestionBankManifest,
+    QuestionApprovalReceipt,
     QuestionCorpusSnapshot,
     QuestionDedupeRecord,
     QuestionDedupeSidecar,
@@ -61,6 +62,43 @@ DEFAULT_CORPUS_DIR = Path(
 )
 MANIFEST_SCHEMA_VERSION = "2"
 EMBEDDING_CONTRACT_VERSION = EMBEDDING_TEXT_VERSION
+V2_MANIFEST_REQUIRED_FIELDS = frozenset(
+    {
+        "schema_version",
+        "embedding_contract_version",
+        "corpus_as_of",
+        "bank_id",
+        "role",
+        "role_version",
+        "manifest_version",
+        "question_count",
+        "question_ids",
+        "dimension_quotas",
+        "primary_mode_quotas",
+        "mode_policy_version",
+        "min_independent_urls",
+        "max_questions_per_url",
+        "signal_near_180_min_count",
+        "signal_near_365_min_count",
+        "signal_fallback_start",
+        "signal_fallback_max_count",
+        "dynamic_review_days",
+        "evergreen_review_days",
+        "evergreen_revalidation_days",
+        "current_jd_validation_days",
+        "active_count",
+        "active_trust_levels",
+        "generated_at",
+        "reviewed_at",
+        "published_at",
+        "publication_status",
+        "question_set_hash",
+        "sidecar_set_hash",
+    }
+)
+_LEGACY_V1_MANIFEST_SCHEMA_VALUES = frozenset(
+    {1, "1", "v1", "question_bank.v1", "question_bank/v1"}
+)
 SOURCE_TYPES = frozenset(
     {
         "public_interview_experience",
@@ -127,11 +165,6 @@ _FORBIDDEN_FALLBACK_REASON_RE = re.compile(
     r"方便|便利|省事|凑数|临时|无法获取|不可得"
     r")"
 )
-_NON_HUMAN_REVIEWER_RE = re.compile(
-    r"(?ix)(?:^|[^a-z0-9])(?:luna(?:[-_ ]?[12])?|agent|model|bot|assistant|system)(?:$|[^a-z0-9])"
-)
-
-
 @dataclass(frozen=True, slots=True)
 class CorpusIssue:
     """One stable, non-mutating governance finding.
@@ -154,6 +187,31 @@ class CorpusIssue:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class ApprovalReceipt:
+    """Immutable approval fact handed to an external trusted verifier."""
+
+    question_id: str
+    actor_id: str
+    approved_at: date | datetime
+    corpus_hash: str | None = None
+    sidecar_hash: str | None = None
+    nonce: str | None = None
+
+    def __getitem__(self, key: str) -> Any:
+        return getattr(self, key)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return getattr(self, key, default)
+
+
+class ApprovalVerifier(Protocol):
+    """Trusted boundary for validating immutable approval receipts."""
+
+    def verify(self, receipt: ApprovalReceipt) -> bool:
+        """Return true only for a receipt issued by the trusted registry."""
+
+
 def _ensure_date(value: Any, field_name: str) -> date:
     if isinstance(value, datetime) or not isinstance(value, date):
         raise TypeError(f"{field_name} must be a date")
@@ -172,6 +230,30 @@ def _read_object(path: Path) -> Mapping[str, Any]:
     if not isinstance(payload, Mapping):
         raise ValueError(f"question corpus sidecar root must be an object: {path.name}")
     return payload
+
+
+def _validate_manifest_raw(root: Mapping[str, Any]) -> None:
+    """Reject omitted v2 contract fields before model defaults can apply."""
+
+    schema_version = root.get("schema_version")
+    if isinstance(schema_version, bool) or not isinstance(schema_version, (int, str)):
+        raise ValueError("question corpus manifest schema_version is required")
+    if schema_version in _LEGACY_V1_MANIFEST_SCHEMA_VALUES:
+        raise ValueError(
+            "legacy v1 manifest requires an explicit compatibility branch"
+        )
+    if schema_version != MANIFEST_SCHEMA_VERSION:
+        raise ValueError("question corpus manifest schema_version is invalid")
+    missing = sorted(
+        field_name
+        for field_name in V2_MANIFEST_REQUIRED_FIELDS
+        if field_name not in root
+    )
+    if missing:
+        raise ValueError(
+            "question corpus manifest required fields are missing: "
+            + ", ".join(missing)
+        )
 
 
 def _find_file(root: Path, *names: str) -> Path:
@@ -246,9 +328,16 @@ def load_question_corpus_snapshot(
         raise ValueError("question corpus questions are invalid") from exc
 
     try:
-        manifest = QuestionBankManifest.model_validate(
-            _read_object(_find_file(root, "QuestionBankManifest.json", "question_bank_manifest.json", "manifest.json"))
+        manifest_root = _read_object(
+            _find_file(
+                root,
+                "QuestionBankManifest.json",
+                "question_bank_manifest.json",
+                "manifest.json",
+            )
         )
+        _validate_manifest_raw(manifest_root)
+        manifest = QuestionBankManifest.model_validate(manifest_root)
         source_registry = QuestionSourceRegistry.model_validate(
             _read_object(_find_file(root, "QuestionSourceRegistry.json", "question_source_registry.json", "sources.json"))
         )
@@ -658,52 +747,94 @@ def _source_published_date(entry: Any) -> date | None:
     return _date(_value(entry, "accessed_at", _value(entry, "retrieved_at")))
 
 
-def _looks_like_non_human_reviewer(value: Any) -> bool:
-    return isinstance(value, str) and _NON_HUMAN_REVIEWER_RE.search(value) is not None
-
-
-def _has_human_approval(review: Any, as_of: date) -> bool:
-    if _value(review, "reviewer_type") != "human":
-        return False
-    actor = _value(
+def _approval_receipt_from_review(
+    review: Any,
+    question_id: str,
+) -> ApprovalReceipt | None:
+    raw_receipt = _value(
         review,
-        "approval_actor",
-        _value(review, "human_approval_actor", _value(review, "approved_by")),
+        "approval_receipt",
+        _value(review, "human_approval_receipt"),
     )
-    if not isinstance(actor, str) or not actor.strip():
-        return False
-    reviewers = _value(review, "reviewer_ids", _value(review, "reviewers", ())) or ()
-    if isinstance(reviewers, (str, bytes, bytearray)):
-        reviewers = ()
     try:
-        reviewer_values = list(reviewers)
-    except TypeError:
-        reviewer_values = []
-    reviewer_values.extend(
-        value
-        for value in (_value(review, "reviewer"), actor)
-        if value is not None
-    )
-    if any(_looks_like_non_human_reviewer(value) for value in reviewer_values):
+        if isinstance(raw_receipt, ApprovalReceipt):
+            receipt = raw_receipt
+        elif isinstance(raw_receipt, QuestionApprovalReceipt):
+            receipt = ApprovalReceipt(
+                question_id=raw_receipt.question_id,
+                actor_id=raw_receipt.actor_id,
+                approved_at=raw_receipt.approved_at,
+                corpus_hash=raw_receipt.corpus_hash,
+                sidecar_hash=raw_receipt.sidecar_hash,
+                nonce=raw_receipt.nonce,
+            )
+        elif isinstance(raw_receipt, Mapping):
+            parsed = QuestionApprovalReceipt.model_validate(raw_receipt)
+            receipt = ApprovalReceipt(
+                question_id=parsed.question_id,
+                actor_id=parsed.actor_id,
+                approved_at=parsed.approved_at,
+                corpus_hash=parsed.corpus_hash,
+                sidecar_hash=parsed.sidecar_hash,
+                nonce=parsed.nonce,
+            )
+        else:
+            return None
+    except (TypeError, ValueError, ValidationError):
+        return None
+    if receipt.question_id != question_id:
+        return None
+    if not isinstance(receipt.actor_id, str) or not receipt.actor_id.strip():
+        return None
+    if not isinstance(receipt.approved_at, (date, datetime)):
+        return None
+    if not any((receipt.corpus_hash, receipt.sidecar_hash, receipt.nonce)):
+        return None
+    return receipt
+
+
+def _call_approval_verifier(
+    approval_verifier: ApprovalVerifier | Callable[[ApprovalReceipt], bool],
+    receipt: ApprovalReceipt,
+) -> bool:
+    verifier = getattr(approval_verifier, "verify", None)
+    if not callable(verifier) and callable(approval_verifier):
+        verifier = approval_verifier
+    if not callable(verifier):
         return False
-    approval_timestamp = _value(
-        review,
-        "approval_timestamp",
-        _value(review, "approval_at", _value(review, "approved_at")),
-    )
+    try:
+        return verifier(receipt) is True
+    except Exception:
+        return False
+
+
+def _has_human_approval(
+    review: Any,
+    question_id: str,
+    as_of: date,
+    approval_verifier: ApprovalVerifier | Callable[[ApprovalReceipt], bool] | None,
+    expected_question_set_hash: str | None,
+    expected_sidecar_set_hash: str | None,
+) -> bool:
+    """Accept only a receipt verified outside the corpus data boundary."""
+
+    if approval_verifier is None:
+        return False
+    receipt = _approval_receipt_from_review(review, question_id)
+    if receipt is None:
+        return False
     approval_date = (
-        approval_timestamp.date()
-        if isinstance(approval_timestamp, datetime)
-        else _date(approval_timestamp)
+        receipt.approved_at.date()
+        if isinstance(receipt.approved_at, datetime)
+        else receipt.approved_at
     )
-    approval_record_id = _value(
-        review,
-        "approval_record_id",
-        _value(review, "human_approval_record_id", _value(review, "approval_record")),
-    )
-    if approval_date is not None:
-        return approval_date <= as_of
-    return isinstance(approval_record_id, str) and bool(approval_record_id.strip())
+    if approval_date > as_of:
+        return False
+    if receipt.corpus_hash is not None and receipt.corpus_hash != expected_question_set_hash:
+        return False
+    if receipt.sidecar_hash is not None and receipt.sidecar_hash != expected_sidecar_set_hash:
+        return False
+    return _call_approval_verifier(approval_verifier, receipt)
 
 
 def _non_blank_text(value: Any) -> bool:
@@ -771,6 +902,10 @@ def validate_question_corpus(
     snapshot: QuestionCorpusSnapshot,
     role_pack: Any,
     as_of: date,
+    *,
+    approval_verifier: ApprovalVerifier
+    | Callable[[ApprovalReceipt], bool]
+    | None = None,
 ) -> Sequence[CorpusIssue]:
     """Validate structure, evidence, lifecycle and quotas without side effects.
 
@@ -1413,13 +1548,20 @@ def validate_question_corpus(
             review_is_gated = _is_active_record(record) or _is_release(manifest, records)
             if review_is_gated and decision != "approved":
                 _append_issue(issues, seen, "review_decision", f"review.json[{question_id}].decision", "active questions require an approved review")
-            if review_is_gated and decision == "approved" and not _has_human_approval(review, as_of):
+            if review_is_gated and decision == "approved" and not _has_human_approval(
+                review,
+                question_id,
+                as_of,
+                approval_verifier,
+                expected_question_set_hash,
+                expected_sidecar_set_hash,
+            ):
                 _append_issue(
                     issues,
                     seen,
-                    "human_approval",
+                    "human_approval_required",
                     f"review.json[{question_id}]",
-                    "approved active reviews require an explicit human approval actor and timestamp or record",
+                    "approved active reviews require an externally verified immutable approval receipt",
                 )
             if review_is_gated and any(
                 not _non_blank_text(_value(review, field_name))
@@ -1766,9 +1908,12 @@ def build_manifest_preview(
 
 __all__ = [
     "ACTIVE_TRUST_LEVELS",
+    "ApprovalReceipt",
+    "ApprovalVerifier",
     "DEFAULT_CORPUS_DIR",
     "EMBEDDING_CONTRACT_VERSION",
     "MANIFEST_SCHEMA_VERSION",
+    "V2_MANIFEST_REQUIRED_FIELDS",
     "CorpusIssue",
     "SOURCE_TYPES",
     "build_manifest_preview",
