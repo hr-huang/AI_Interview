@@ -33,8 +33,8 @@ describe('NewAssessmentPage', () => {
     renderPage()
 
     expect(screen.getByRole('button', { name: '创建评估' })).toBeVisible()
-    expect(screen.getByRole('combobox', { name: '目标岗位' })).toHaveValue('AI Agent / AI应用工程师')
-    expect(screen.getByRole('option')).toHaveTextContent('AI Agent / AI应用工程师')
+    expect(screen.getByRole('combobox', { name: '目标岗位' })).toHaveValue('AI Agent应用工程师（校招/初级）')
+    expect(screen.getByRole('option')).toHaveTextContent('AI Agent应用工程师（校招/初级）')
     expect(screen.getByRole('link', { name: /查看演示示例/ })).toHaveAttribute(
       'href',
       '/demo/assessment',
@@ -47,7 +47,7 @@ describe('NewAssessmentPage', () => {
     await waitFor(() => expect(api.createAssessment).toHaveBeenCalledTimes(1))
     const form = vi.mocked(api.createAssessment).mock.calls[0][0]
     expect(form).toBeInstanceOf(FormData)
-    expect(form.get('target_role')).toBe('AI Agent / AI应用工程师')
+    expect(form.get('target_role')).toBe('AI Agent应用工程师（校招/初级）')
     expect(form.get('jd_text')).toBe('负责 Agent Workflow')
     expect(form.get('resume_text')).toBe('候选人有 LangGraph 项目')
     expect(form.get('resume_file')).toBeNull()
@@ -66,6 +66,11 @@ describe('NewAssessmentPage', () => {
     const jd = screen.getByLabelText('岗位描述 JD')
     expect((jd as HTMLTextAreaElement).value.length).toBeGreaterThan(0)
     expect((jd as HTMLTextAreaElement).value).toContain('AI Agent')
+    expect((jd as HTMLTextAreaElement).value).toContain('Context/Memory')
+    expect((jd as HTMLTextAreaElement).value).toContain('MCP')
+    expect((jd as HTMLTextAreaElement).value).toContain('Trace/Metric/Log')
+    expect((jd as HTMLTextAreaElement).value).toContain('故障恢复')
+    expect((jd as HTMLTextAreaElement).value).toContain('可复现验收')
     expect(jd).toBeEnabled()
     await user.clear(jd)
     await user.type(jd, '改写后的 JD')

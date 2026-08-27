@@ -3,19 +3,19 @@ import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../../api/client'
 import './assessment.css'
 
-export const SUPPORTED_ROLE = 'AI Agent / AI应用工程师'
+export const SUPPORTED_ROLE = 'AI Agent应用工程师（校招/初级）'
 export const MAX_RESUME_BYTES = 5 * 1024 * 1024
 
 const SAMPLE_JD = `AI Agent 应用工程师（校招/初级）｜2026-H2
 
 岗位职责
-负责 Agent Workflow、工具调用和检索增强应用的设计、开发与迭代；参与从需求拆解、状态管理到评测上线的完整链路。
+负责 Agent Workflow、Context/Memory 状态管理、MCP 或 Skills 工具 Schema 的应用设计与迭代；参与从需求拆解到评测上线的完整链路。
 
 岗位要求
-熟悉 Python 或 TypeScript，理解大模型应用开发、Prompt 组织、RAG、函数调用和基础服务工程；能够用可复现的测试与监控定位问题，并在不确定时主动升级风险。
+熟悉 Python 或 TypeScript，理解大模型应用开发、RAG、函数调用和基础服务工程；能够用评测集、Trace/Metric/Log 定位质量问题，设计故障恢复路径，并以可复现验收记录结果。
 
 加分项
-有 LangGraph、工作流编排、Agent 评测、异步任务或生产系统稳定性实践。`
+有 LangGraph、工作流编排、AI 协作审查、工具安全边界或生产系统稳定性实践。`
 
 const ALLOWED_EXTENSIONS = new Set(['pdf', 'docx', 'txt'])
 
@@ -186,7 +186,7 @@ export function NewAssessmentPage() {
     <section className="assessment-page new-assessment-page" aria-labelledby="new-assessment-title">
       <div className="assessment-page-heading">
         <div>
-          <p className="eyebrow">ASSESSMENT / INTAKE 01</p>
+          <p className="eyebrow">评估准备 / 01</p>
           <h1 id="new-assessment-title">创建岗位胜任力评估</h1>
           <p className="page-lead">
             从岗位要求与候选人材料出发，建立一条可审计、可复核的验证路径。
@@ -194,8 +194,8 @@ export function NewAssessmentPage() {
         </div>
         <div className="audit-stamp" aria-label="评估输入审计信息">
           <span>岗位标准</span>
-          <strong>AI APPLICATION</strong>
-          <small>ai_application_engineering / 2026-H2</small>
+          <strong>AI Agent应用工程师（校招/初级）</strong>
+          <small>岗位标准 · 2026-H2</small>
         </div>
       </div>
 
@@ -296,8 +296,8 @@ export function NewAssessmentPage() {
 
         <aside className="submission-panel" aria-label="提交评估">
           <div className="submission-panel-header">
-            <span className="panel-code">INPUT CONTROL</span>
-            <span className="panel-status">READY TO ANALYZE</span>
+            <span className="panel-code">材料控制</span>
+            <span className="panel-status">准备就绪</span>
           </div>
           <h2>提交材料</h2>
           <p>服务器将依次执行文件提取、简历画像、岗位理解、能力建模与计划生成。</p>

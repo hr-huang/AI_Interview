@@ -1,0 +1,64 @@
+[
+  {
+    "id": "jd-agent-2026-219868",
+    "publisher": "京东招聘",
+    "title": "国际产研 AI Agent算法/工程专家",
+    "url": "https://zhaopin.jd.com/web/job-info-detail?requementId=219868",
+    "published_at": "2026-06-29",
+    "retrieved_at": "2026-08-25",
+    "role_level": "社会招聘/工程岗位",
+    "supports_dimension_ids": [
+      "role_dim_01",
+      "role_dim_03",
+      "role_dim_04",
+      "role_dim_05",
+      "role_dim_06"
+    ]
+  },
+  {
+    "id": "shlab-agent-intern-2026-04-28",
+    "publisher": "上海人工智能实验室",
+    "title": "【27届留用实习生】-Agent研发-工程平台中心",
+    "url": "https://www.shlab.org.cn/joinus/detail/7631158899357649171?mode=campus&subject=7619221867426433326",
+    "published_at": "2026-04-28",
+    "retrieved_at": "2026-08-25",
+    "role_level": "校园招聘/实习",
+    "supports_dimension_ids": [
+      "role_dim_01",
+      "role_dim_02",
+      "role_dim_03",
+      "role_dim_04",
+      "role_dim_05",
+      "role_dim_06"
+    ]
+  },
+  {
+    "id": "anthropic-writing-tools-for-agents-2025-09-11",
+    "publisher": "Anthropic",
+    "title": "Writing effective tools for AI agents — with agents",
+    "url": "https://www.anthropic.com/engineering/writing-tools-for-agents",
+    "published_at": "2025-09-11",
+    "retrieved_at": "2026-08-25",
+    "role_level": "工程实践参考",
+    "supports_dimension_ids": [
+      "role_dim_01",
+      "role_dim_03",
+      "role_dim_04",
+      "role_dim_06"
+    ]
+  },
+  {
+    "id": "anthropic-demystifying-evals-2026-01-09",
+    "publisher": "Anthropic",
+    "title": "Demystifying evals for AI agents",
+    "url": "https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents",
+    "published_at": "2026-01-09",
+    "retrieved_at": "2026-08-25",
+    "role_level": "工程实践参考",
+    "supports_dimension_ids": [
+      "role_dim_04",
+      "role_dim_05",
+      "role_dim_06"
+    ]
+  }
+]

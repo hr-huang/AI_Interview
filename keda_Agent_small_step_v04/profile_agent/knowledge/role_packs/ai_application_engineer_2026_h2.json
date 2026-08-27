@@ -1,51 +1,72 @@
 {
   "role_family": "ai_application_engineering",
-  "display_name": "AI Agent / AI应用工程师",
+  "display_name": "AI Agent应用工程师（校招/初级）",
   "version": "2026-H2",
   "valid_from": "2026-07-01",
-  "knowledge_as_of": "2026-08-21",
+  "knowledge_as_of": "2026-08-25",
   "source_refs": [
-    "WEF-Future-of-Jobs-2025",
-    "Microsoft-Work-Trend-Index-2025",
-    "LinkedIn-Labor-Market-Report-2026",
-    "curated-enterprise-jd-sample-2026-h2"
+    "jd-agent-2026-219868",
+    "shlab-agent-intern-2026-04-28",
+    "anthropic-writing-tools-for-agents-2025-09-11",
+    "anthropic-demystifying-evals-2026-01-09"
   ],
   "dimensions": [
     {
       "id": "role_dim_01",
-      "name": "AI应用与Agent编排",
-      "weight": 0.25,
+      "name": "Agent架构与任务编排",
+      "weight": 0.20,
       "is_gating": true,
       "minimum_criteria": [
         {
           "id": "d01_min_01",
-          "text": "拆分节点/状态/工具边界"
+          "text": "拆分任务、状态、工具和人工介入边界"
         },
         {
           "id": "d01_min_02",
-          "text": "解释状态流转/路由/人工介入"
+          "text": "解释状态流转、路由和失败恢复"
         }
       ],
       "excellence_signals": [
         {
           "id": "d01_exc_01",
-          "text": "比较单Agent/Workflow/多Agent",
+          "text": "基于约束比较单Agent、Workflow和多Agent方案",
           "score_adjustment": 2
         },
         {
           "id": "d01_exc_02",
-          "text": "新场景迁移优化",
+          "text": "用任务结果和失败轨迹驱动编排迭代",
           "score_adjustment": 3
         }
       ],
       "critical_errors": [
         {
           "id": "d01_err_01",
-          "text": "无差别拆成多Agent",
+          "text": "无任务边界或风险分级就无差别拆成多Agent",
           "score_adjustment": -5
         }
       ],
-      "accepted_alternatives": []
+      "accepted_alternatives": [
+        {
+          "id": "d01_alt_course",
+          "text": "课程项目：实现可运行的Agent工作流，并提交节点、状态和工具边界说明"
+        },
+        {
+          "id": "d01_alt_competition",
+          "text": "竞赛：完成多步骤任务分解，提供路由、重试或人工介入的复盘事实"
+        },
+        {
+          "id": "d01_alt_open_source",
+          "text": "开源：为Agent或工作流项目提交可复现的编排、工具或缺陷修复贡献"
+        },
+        {
+          "id": "d01_alt_internship",
+          "text": "实习：实现或维护真实Agent流程，提供上线记录和故障处理事实"
+        },
+        {
+          "id": "d01_alt_repro",
+          "text": "可复现实验：在固定任务集上对比单Agent、Workflow或多Agent方案并报告结果"
+        }
+      ]
     },
     {
       "id": "role_dim_02",
@@ -55,177 +76,282 @@
       "minimum_criteria": [
         {
           "id": "d02_min_01",
-          "text": "澄清目标/输入/输出/约束"
+          "text": "澄清业务目标、输入、输出、约束和使用者"
         },
         {
           "id": "d02_min_02",
-          "text": "定义成功标准和失败边界"
+          "text": "定义成功标准、失败边界和验收方式"
         }
       ],
       "excellence_signals": [
         {
           "id": "d02_exc_01",
-          "text": "识别不适合LLM的步骤",
+          "text": "识别不适合LLM的步骤并提出确定性替代方案",
           "score_adjustment": 2
         },
         {
           "id": "d02_exc_02",
-          "text": "模糊需求转可交付规格",
+          "text": "将模糊需求转化为可交付规格和验证样例",
           "score_adjustment": 3
         }
       ],
       "critical_errors": [
         {
           "id": "d02_err_01",
-          "text": "无验收标准直接选模型",
+          "text": "没有验收标准就直接选择模型或框架",
           "score_adjustment": -5
         }
       ],
-      "accepted_alternatives": []
+      "accepted_alternatives": [
+        {
+          "id": "d02_alt_course",
+          "text": "课程项目：把课程需求拆成用户、输入输出、约束和验收样例"
+        },
+        {
+          "id": "d02_alt_competition",
+          "text": "竞赛：说明如何从题目目标建立任务定义、指标和失败边界"
+        },
+        {
+          "id": "d02_alt_open_source",
+          "text": "开源：通过Issue、设计文档或Pull Request展示需求澄清与范围取舍"
+        },
+        {
+          "id": "d02_alt_internship",
+          "text": "实习：提供一次真实需求评审、规格确认或验收结果的可核验记录"
+        },
+        {
+          "id": "d02_alt_repro",
+          "text": "可复现实验：用公开任务集定义指标、基线、失败样例和验收阈值"
+        }
+      ]
     },
     {
       "id": "role_dim_03",
-      "name": "Context、RAG与工具集成",
-      "weight": 0.15,
+      "name": "Context、RAG、Memory与工具工程",
+      "weight": 0.20,
       "is_gating": false,
       "minimum_criteria": [
         {
           "id": "d03_min_01",
-          "text": "区分上下文/检索/状态/记忆"
+          "text": "区分上下文、检索、状态、记忆及其生命周期"
         },
         {
           "id": "d03_min_02",
-          "text": "校验工具参数/权限/结果"
+          "text": "校验工具参数、权限、返回结果和副作用"
         }
       ],
       "excellence_signals": [
         {
           "id": "d03_exc_01",
-          "text": "设计检索评测与引用",
+          "text": "设计检索、引用和工具调用的可验证评测",
           "score_adjustment": 2
         },
         {
           "id": "d03_exc_02",
-          "text": "处理预算/污染/过期知识",
+          "text": "处理上下文预算、记忆污染和过期知识",
           "score_adjustment": 3
         }
       ],
       "critical_errors": [
         {
           "id": "d03_err_01",
-          "text": "未校验检索结果进入高风险工具",
+          "text": "未校验检索或工具结果就触发高风险操作",
           "score_adjustment": -5
         }
       ],
-      "accepted_alternatives": []
+      "accepted_alternatives": [
+        {
+          "id": "d03_alt_course",
+          "text": "课程项目：实现RAG、记忆或工具调用链，并展示参数校验和引用结果"
+        },
+        {
+          "id": "d03_alt_competition",
+          "text": "竞赛：通过检索、上下文或工具方案解决任务，并报告失败样例与修复"
+        },
+        {
+          "id": "d03_alt_open_source",
+          "text": "开源：贡献检索器、记忆组件、工具适配器或安全校验，并附测试"
+        },
+        {
+          "id": "d03_alt_internship",
+          "text": "实习：维护知识库、上下文或工具集成，提供质量、权限或故障数据"
+        },
+        {
+          "id": "d03_alt_repro",
+          "text": "可复现实验：固定数据和工具集合下比较检索质量、调用成功率或上下文成本"
+        }
+      ]
     },
     {
       "id": "role_dim_04",
-      "name": "AI原生工程交付",
+      "name": "AI协作开发与生产交付",
       "weight": 0.15,
       "is_gating": false,
       "minimum_criteria": [
         {
           "id": "d04_min_01",
-          "text": "清晰规格并审查AI结果"
+          "text": "写清规格并审查AI生成的代码、配置和依赖"
         },
         {
           "id": "d04_min_02",
-          "text": "用测试/日志/实验验证"
+          "text": "用测试、日志、实验和可复现步骤验证交付结果"
         }
       ],
       "excellence_signals": [
         {
           "id": "d04_exc_01",
-          "text": "发现依赖/边界/安全问题",
+          "text": "主动发现依赖、边界、回滚和安全问题",
           "score_adjustment": 2
         },
         {
           "id": "d04_exc_02",
-          "text": "建立规格到验收流程",
+          "text": "建立从规格、AI协作到验收的可追踪交付流程",
           "score_adjustment": 3
         }
       ],
       "critical_errors": [
         {
           "id": "d04_err_01",
-          "text": "未经理解测试直接交付",
+          "text": "未理解生成结果或未运行验证就直接交付",
           "score_adjustment": -5
         }
       ],
-      "accepted_alternatives": []
+      "accepted_alternatives": [
+        {
+          "id": "d04_alt_course",
+          "text": "课程项目：使用AI协作完成一个功能，并保留规格、代码审查和测试记录"
+        },
+        {
+          "id": "d04_alt_competition",
+          "text": "竞赛：在有限时间内协作开发，说明如何验证AI生成代码和处理返工"
+        },
+        {
+          "id": "d04_alt_open_source",
+          "text": "开源：提交经过测试、审查和CI验证的代码或文档改动"
+        },
+        {
+          "id": "d04_alt_internship",
+          "text": "实习：提供代码评审、测试、发布或回滚中的具体交付记录"
+        },
+        {
+          "id": "d04_alt_repro",
+          "text": "可复现实验：公开依赖、运行命令、测试结果和失败重现步骤"
+        }
+      ]
     },
     {
       "id": "role_dim_05",
-      "name": "可靠性、评测与安全",
-      "weight": 0.2,
+      "name": "评测、可观测性与安全治理",
+      "weight": 0.20,
       "is_gating": true,
       "minimum_criteria": [
         {
           "id": "d05_min_01",
-          "text": "超时/重试/降级/恢复"
+          "text": "设计超时、重试、降级、告警和恢复路径"
         },
         {
           "id": "d05_min_02",
-          "text": "模型输出和工具调用评测边界"
+          "text": "评测模型输出、工具调用、可观测性和安全边界"
         }
       ],
       "excellence_signals": [
         {
           "id": "d05_exc_01",
-          "text": "可重试分类/幂等/补偿",
+          "text": "区分可重试错误、幂等性、补偿和人工升级",
           "score_adjustment": 2
         },
         {
           "id": "d05_exc_02",
-          "text": "效果/成本/延迟/安全评测",
+          "text": "用效果、成本、延迟、安全和追踪数据形成评测闭环",
           "score_adjustment": 3
         }
       ],
       "critical_errors": [
         {
           "id": "d05_err_01",
-          "text": "模型直接触发高风险操作",
+          "text": "让未经验证的模型输出直接触发高风险操作",
           "score_adjustment": -5
         }
       ],
-      "accepted_alternatives": []
+      "accepted_alternatives": [
+        {
+          "id": "d05_alt_course",
+          "text": "课程项目：为Agent建立测试集、日志指标、告警或安全防护并展示结果"
+        },
+        {
+          "id": "d05_alt_competition",
+          "text": "竞赛：用离线指标、故障注入或安全测试解释方案优劣"
+        },
+        {
+          "id": "d05_alt_open_source",
+          "text": "开源：贡献评测用例、可观测性、权限校验或安全修复并提供验证证据"
+        },
+        {
+          "id": "d05_alt_internship",
+          "text": "实习：提供线上指标、故障复盘、灰度、回滚或安全事件处理事实"
+        },
+        {
+          "id": "d05_alt_repro",
+          "text": "可复现实验：发布基准任务、指标定义、运行日志和安全失败边界"
+        }
+      ]
     },
     {
       "id": "role_dim_06",
-      "name": "系统思维与持续进化",
-      "weight": 0.1,
+      "name": "成本、性能与持续优化",
+      "weight": 0.10,
       "is_gating": false,
       "minimum_criteria": [
         {
           "id": "d06_min_01",
-          "text": "比较成本/性能/复杂度/扩展性"
+          "text": "比较成本、性能、延迟、复杂度和扩展性"
         },
         {
           "id": "d06_min_02",
-          "text": "根据失败和新约束调整"
+          "text": "根据失败数据、新约束和用户反馈调整方案"
         }
       ],
       "excellence_signals": [
         {
           "id": "d06_exc_01",
-          "text": "区分工程原则与热点",
+          "text": "用基线和数据区分工程原则、收益与热点方案",
           "score_adjustment": 2
         },
         {
           "id": "d06_exc_02",
-          "text": "持续评测复盘演进",
+          "text": "持续评测、复盘并按收益优先级演进系统",
           "score_adjustment": 3
         }
       ],
       "critical_errors": [
         {
           "id": "d06_err_01",
-          "text": "只按热度选型且无取舍",
+          "text": "只按热度选型且没有成本、性能或效果取舍",
           "score_adjustment": -5
         }
       ],
-      "accepted_alternatives": []
+      "accepted_alternatives": [
+        {
+          "id": "d06_alt_course",
+          "text": "课程项目：比较不同模型、提示或架构的成本、延迟和效果并复盘"
+        },
+        {
+          "id": "d06_alt_competition",
+          "text": "竞赛：在资源约束下迭代方案，提供基线、指标和取舍理由"
+        },
+        {
+          "id": "d06_alt_open_source",
+          "text": "开源：通过性能、成本或质量基准推动一次可复现优化贡献"
+        },
+        {
+          "id": "d06_alt_internship",
+          "text": "实习：提供一次线上或离线优化的指标变化、回滚条件和后续计划"
+        },
+        {
+          "id": "d06_alt_repro",
+          "text": "可复现实验：固定环境公布基线、资源、指标和迭代后的对照结果"
+        }
+      ]
     }
   ]
 }
