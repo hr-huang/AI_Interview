@@ -37,7 +37,8 @@
     "actual_hash": "sha256:0f43f7324db62d972e6e8aac64d5f8ad43a7d1ad73c71e65f63fe4ec4644532b",
     "differences": [],
     "expected_hash": "sha256:0f43f7324db62d972e6e8aac64d5f8ad43a7d1ad73c71e65f63fe4ec4644532b",
-    "matched": true
+    "matched": true,
+    "source": "independent-loader"
   },
   "model": "deterministic-fake",
   "passed": false,
@@ -47,7 +48,7 @@
     "reason": "local Qdrant was not configured",
     "stable": null
   },
-  "report_hash": "sha256:18f5c597412e1aaea7020ca1a6f1703abce60af391c71166371ef6775d1ea361",
+  "report_hash": "sha256:f48176c927b6d7e77cf3b32874e6dec731eccedcfdcafa195aa5afa2f073f7cc",
   "status": "unavailable",
   "store": "local",
   "validation_error_count": 0,

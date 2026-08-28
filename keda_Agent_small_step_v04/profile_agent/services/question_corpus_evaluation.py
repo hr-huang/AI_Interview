@@ -592,6 +592,8 @@ class IntentEvaluationResult:
     requested_mode: str
     gold_question_id: str
     top3: list[dict[str, Any]] = field(default_factory=list)
+    candidate_pool: list[str] | None = None
+    hard_negative_filter: dict[str, Any] | None = None
     gold_rank: int | None = None
     acceptable_ranks: list[int] = field(default_factory=list)
     hard_negative_hits: list[str] = field(default_factory=list)
@@ -623,6 +625,14 @@ class IntentEvaluationResult:
             "requested_mode": self.requested_mode,
             "gold_question_id": self.gold_question_id,
             "top3": [dict(item) for item in self.top3],
+            "candidate_pool": (
+                list(self.candidate_pool) if self.candidate_pool is not None else None
+            ),
+            "hard_negative_filter": (
+                dict(self.hard_negative_filter)
+                if self.hard_negative_filter is not None
+                else None
+            ),
             "gold_rank": self.gold_rank,
             "acceptable_ranks": list(self.acceptable_ranks),
             "acceptable_hit": self.acceptable_hit,
@@ -1065,6 +1075,69 @@ def _evaluate_one(
     if not status_present or status not in {"hit", "no_match", "unavailable", "index_mismatch"}:
         result.invalid_count += 1
         result.errors.append("result_status_invalid")
+    raw_candidate_pool = _field(
+        raw,
+        "candidate_pool",
+        "candidate_ids",
+        "indexed_candidate_ids",
+        default=None,
+    )
+    if raw_candidate_pool is not None:
+        candidate_pool = _as_list(raw_candidate_pool)
+        if candidate_pool is None:
+            result.invalid_count += 1
+            result.errors.append("candidate_pool_invalid")
+        else:
+            normalized_pool: list[str] = []
+            for candidate_id in candidate_pool:
+                if not isinstance(candidate_id, str) or not candidate_id.strip():
+                    result.invalid_count += 1
+                    result.errors.append("candidate_pool_id_invalid")
+                    continue
+                normalized_pool.append(candidate_id.strip())
+            if len(normalized_pool) != len(set(normalized_pool)):
+                result.invalid_count += 1
+                result.errors.append("candidate_pool_duplicate")
+            result.candidate_pool = normalized_pool
+            missing_hard_negatives = sorted(
+                set(intent.hard_negative_ids) - set(normalized_pool)
+            )
+            if missing_hard_negatives:
+                result.invalid_count += 1
+                result.errors.append("hard_negative_candidate_missing")
+    hard_negative_filter = _field(raw, "hard_negative_filter", default=None)
+    if isinstance(hard_negative_filter, Mapping):
+        result.hard_negative_filter = {
+            str(key): value
+            for key, value in hard_negative_filter.items()
+            if isinstance(key, str)
+        }
+        eligible = _as_list(hard_negative_filter.get("eligible"))
+        if "eligible" in hard_negative_filter and eligible is None:
+            result.invalid_count += 1
+            result.errors.append("hard_negative_filter_invalid")
+        elif eligible and any(
+            not isinstance(candidate_id, str) or not candidate_id.strip()
+            for candidate_id in eligible
+        ):
+            result.invalid_count += 1
+            result.errors.append("hard_negative_filter_invalid")
+        elif eligible:
+            result.invalid_count += 1
+            result.errors.append("hard_negative_policy_bypass")
+        if result.candidate_pool is not None:
+            indexed = hard_negative_filter.get("indexed")
+            filtered = hard_negative_filter.get("filtered")
+            if (
+                isinstance(indexed, bool)
+                or not isinstance(indexed, int)
+                or indexed < len(intent.hard_negative_ids)
+                or isinstance(filtered, bool)
+                or not isinstance(filtered, int)
+                or filtered < len(intent.hard_negative_ids)
+            ):
+                result.invalid_count += 1
+                result.errors.append("hard_negative_filter_incomplete")
     rank_values = _rank_trace_candidates(rank_trace)
     # A QuestionRetriever exposes its full top-k diagnostic as rank_trace.  If
     # no low-level hits were attached, it is a safe source for preserving top3.

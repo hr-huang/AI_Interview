@@ -230,6 +230,8 @@ class QuestionStoreSearchResult:
     status: _SEARCH_STATUSES
     hits: list[RetrievedQuestion] = field(default_factory=list)
     index_version: str | None = None
+    candidate_pool: list[str] | None = None
+    hard_negative_filter: dict[str, Any] | None = None
 
     @property
     def results(self) -> list[RetrievedQuestion]:
@@ -276,8 +278,9 @@ class DeterministicFakeQuestionStore:
         *,
         fingerprint: IndexFingerprint | Mapping[str, Any],
         embedding: Any | None = None,
-        candidate_safe: bool = True,
+        candidate_safe: bool = False,
         policy: QuestionModePolicy | Mapping[str, Any] | None = None,
+        hard_negative_candidates: Mapping[str, Mapping[str, Any]] | None = None,
     ) -> None:
         if not isinstance(candidate_safe, bool):
             raise TypeError("candidate_safe must be a bool")
@@ -294,6 +297,10 @@ class DeterministicFakeQuestionStore:
         )
         self._records: dict[str, InterviewQuestionRecord] = {}
         self._vectors: dict[str, list[float]] = {}
+        self._hard_negative_candidates = self._coerce_hard_negative_candidates(
+            hard_negative_candidates
+        )
+        self._hard_negative_vectors: dict[str, list[float]] = {}
         self._closed = False
 
     @property
@@ -308,6 +315,23 @@ class DeterministicFakeQuestionStore:
     def index_version(self) -> str:
         return self._expected_fingerprint.index_version
 
+    @property
+    def hard_negative_candidates(self) -> dict[str, dict[str, Any]]:
+        """Return the isolated synthetic candidates currently indexed."""
+
+        return {
+            candidate_id: dict(candidate)
+            for candidate_id, candidate in self._hard_negative_candidates.items()
+        }
+
+    @property
+    def candidate_ids(self) -> tuple[str, ...]:
+        """Return all canonical and synthetic IDs in deterministic order."""
+
+        return tuple(
+            sorted((*self._records.keys(), *self._hard_negative_candidates.keys()))
+        )
+
     def close(self) -> None:
         self._closed = True
 
@@ -316,6 +340,8 @@ class DeterministicFakeQuestionStore:
         records: Sequence[InterviewQuestionRecord | Mapping[str, Any]],
         vectors: Sequence[Sequence[float]],
         fingerprint: IndexFingerprint | Mapping[str, Any],
+        *,
+        hard_negative_candidates: Mapping[str, Mapping[str, Any]] | None = None,
     ) -> None:
         normalized = QdrantQuestionStore._coerce_fingerprint(fingerprint)
         if normalized is None:
@@ -329,6 +355,14 @@ class DeterministicFakeQuestionStore:
             raise TypeError("records and vectors must be sequences") from exc
         if len(record_values) != len(vector_values):
             raise ValueError("records and vectors must have the same length")
+        normalized_negatives = (
+            self._coerce_hard_negative_candidates(hard_negative_candidates)
+            if hard_negative_candidates is not None
+            else {
+                candidate_id: dict(candidate)
+                for candidate_id, candidate in self._hard_negative_candidates.items()
+            }
+        )
         next_records: dict[str, InterviewQuestionRecord] = {}
         next_vectors: dict[str, list[float]] = {}
         for raw_record, raw_vector in zip(record_values, vector_values):
@@ -340,8 +374,15 @@ class DeterministicFakeQuestionStore:
             )
             next_records[record.question_id] = record
             next_vectors[record.question_id] = vector
+        overlap = set(next_records) & set(normalized_negatives)
+        if overlap:
+            raise ValueError("hard-negative IDs must not overlap canonical question IDs")
         self._records = next_records
         self._vectors = next_vectors
+        self._hard_negative_candidates = normalized_negatives
+        self._hard_negative_vectors = self._build_hard_negative_vectors(
+            normalized_negatives, normalized.dimension
+        )
 
     def sync(
         self,
@@ -350,12 +391,18 @@ class DeterministicFakeQuestionStore:
         fingerprint: IndexFingerprint | Mapping[str, Any],
         *,
         today: date | None = None,
+        hard_negative_candidates: Mapping[str, Mapping[str, Any]] | None = None,
     ) -> None:
         """Refresh the in-process index with the same shape as Qdrant sync."""
 
         if today is not None and not isinstance(today, date):
             raise TypeError("today must be a date")
-        self.rebuild(records, vectors, fingerprint)
+        self.rebuild(
+            records,
+            vectors,
+            fingerprint,
+            hard_negative_candidates=hard_negative_candidates,
+        )
 
     def search(
         self,
@@ -382,6 +429,7 @@ class DeterministicFakeQuestionStore:
                 status="index_mismatch", index_version=self.index_version
             )
         ranked = self._rank(intent, vector, today, limit=min(limit, 3))
+        hard_negative_filter = self._hard_negative_filter(intent, today)
         hits = [
             RetrievedQuestion(
                 record=record,
@@ -394,6 +442,8 @@ class DeterministicFakeQuestionStore:
             status="hit" if hits else "no_match",
             hits=hits,
             index_version=self.index_version,
+            candidate_pool=list(self.candidate_ids),
+            hard_negative_filter=hard_negative_filter,
         )
 
     def retrieve(
@@ -445,6 +495,8 @@ class DeterministicFakeQuestionStore:
                 "status": "no_match",
                 "hits": [],
                 "index_version": self.index_version,
+                "candidate_pool": list(self.candidate_ids),
+                "hard_negative_filter": self._hard_negative_filter(intent, as_of),
                 "trace": {"status": "no_match"},
             }
         selected = hits[0]
@@ -452,7 +504,8 @@ class DeterministicFakeQuestionStore:
             "status": "hit",
             "hits": hits,
             "index_version": self.index_version,
-            "candidate_pool": [item["question_id"] for item in hits],
+            "candidate_pool": list(self.candidate_ids),
+            "hard_negative_filter": self._hard_negative_filter(intent, as_of),
             "trace": {"status": "hit", **selected},
         }
 
@@ -531,6 +584,141 @@ class DeterministicFakeQuestionStore:
         if left_norm == 0 or right_norm == 0:
             return 0.0
         return sum(a * b for a, b in zip(left, right)) / (left_norm * right_norm)
+
+    def _build_hard_negative_vectors(
+        self,
+        candidates: Mapping[str, Mapping[str, Any]],
+        dimension: int,
+    ) -> dict[str, list[float]]:
+        """Create isolated vectors when the explicit fake embedding is available."""
+
+        if not candidates or self._embedding is None:
+            return {}
+        embed = getattr(self._embedding, "embed", None)
+        if not callable(embed):
+            return {}
+        texts = [self._hard_negative_text(candidate) for candidate in candidates.values()]
+        try:
+            raw_vectors = embed(texts)
+            values = list(raw_vectors)
+        except (TypeError, ValueError):
+            return {}
+        if len(values) != len(texts):
+            return {}
+        result: dict[str, list[float]] = {}
+        for candidate_id, raw_vector in zip(candidates, values):
+            try:
+                result[candidate_id] = QdrantQuestionStore._validate_vector(
+                    raw_vector, expected_dimension=dimension
+                )
+            except (TypeError, ValueError):
+                return {}
+        return result
+
+    @staticmethod
+    def _hard_negative_text(candidate: Mapping[str, Any]) -> str:
+        keys = (
+            "question_id",
+            "category",
+            "intent_question_id",
+            "role",
+            "dimension_id",
+            "question_mode",
+            "status",
+            "trust_level",
+            "valid_until",
+            "duplicate_of",
+        )
+        return "|".join(str(candidate.get(key, "")) for key in keys)
+
+    def _hard_negative_filtered_ids(
+        self,
+        intent: QuestionRetrievalIntent,
+        today: date,
+    ) -> set[str]:
+        """Return synthetic IDs rejected by the candidate-safe policy."""
+
+        filtered: set[str] = set()
+        excluded = set(intent.excluded_question_ids)
+        for candidate_id, candidate in self._hard_negative_candidates.items():
+            if not self._hard_negative_is_eligible(candidate, intent, today, excluded):
+                filtered.add(candidate_id)
+        return filtered
+
+    def _hard_negative_filter(
+        self,
+        intent: QuestionRetrievalIntent,
+        today: date,
+    ) -> dict[str, Any]:
+        filtered = self._hard_negative_filtered_ids(intent, today)
+        return {
+            "indexed": len(self._hard_negative_candidates),
+            "filtered": len(filtered),
+            "eligible": sorted(
+                candidate_id
+                for candidate_id in self._hard_negative_candidates
+                if candidate_id not in filtered
+            ),
+            "top3_checked": True,
+        }
+
+    def _hard_negative_is_eligible(
+        self,
+        candidate: Mapping[str, Any],
+        intent: QuestionRetrievalIntent,
+        today: date,
+        excluded: set[str],
+    ) -> bool:
+        if candidate.get("question_id") in excluded:
+            return False
+        if candidate.get("role") != intent.role:
+            return False
+        if candidate.get("dimension_id") != intent.dimension_id:
+            return False
+        if candidate.get("question_mode") != intent.question_mode:
+            return False
+        if candidate.get("status") != "active":
+            return False
+        if candidate.get("trust_level") not in {"medium", "high"}:
+            return False
+        if candidate.get("duplicate_of"):
+            return False
+        try:
+            valid_until = QdrantQuestionStore._date_from_payload(
+                candidate.get("valid_until")
+            )
+        except ValueError:
+            return False
+        return valid_until >= today
+
+    @staticmethod
+    def _coerce_hard_negative_candidates(
+        candidates: Mapping[str, Mapping[str, Any]] | None,
+    ) -> dict[str, dict[str, Any]]:
+        """Validate isolated synthetic candidates without treating them as records."""
+
+        if candidates is None:
+            return {}
+        if not isinstance(candidates, Mapping):
+            raise TypeError("hard_negative_candidates must be a mapping")
+        normalized: dict[str, dict[str, Any]] = {}
+        for candidate_id, raw_candidate in candidates.items():
+            if not isinstance(candidate_id, str) or not candidate_id.strip():
+                raise ValueError("hard-negative IDs must be non-blank strings")
+            if not isinstance(raw_candidate, Mapping):
+                raise TypeError("hard-negative candidates must be mappings")
+            candidate = dict(raw_candidate)
+            if candidate.get("question_id", candidate_id) != candidate_id:
+                raise ValueError("hard-negative candidate ID does not match payload")
+            category = candidate.get("category")
+            intent_question_id = candidate.get("intent_question_id")
+            if not isinstance(category, str) or not category.strip():
+                raise ValueError("hard-negative candidate category is required")
+            if not isinstance(intent_question_id, str) or not intent_question_id.strip():
+                raise ValueError("hard-negative candidate intent target is required")
+            candidate["question_id"] = candidate_id
+            normalized[candidate_id] = candidate
+        return normalized
 
 
 # Compact aliases for callers that refer to this as an in-memory/local fake.

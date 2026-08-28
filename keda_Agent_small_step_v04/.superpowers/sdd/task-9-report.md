@@ -134,3 +134,47 @@ Task9 提交包含：
 2. deterministic fake 向量只用于契约、路由、生命周期与 repeatability 校验，
    不代表真实 embedding 的语义质量；生产索引仍需显式的 provider 与 `--apply`
    流程。
+
+## 独立审查后的 hardening follow-up
+
+审查指出原实现的 local repeatability 复用了第一次 evaluation 结果，fake
+hard-negative 仅停留在标签/候选池层面，manifest comparison 复用了同一 snapshot，
+以及 policy/unavailable 状态和 fake store 默认值仍需收紧。为此补充了五个 RED
+测试：
+
+- local loopback 使用同一已构建 index、第二个独立 provider/evaluator 实际执行
+  30 次检索，并比较两份独立 report hash；
+- fake isolated index 实际注入 210 个 synthetic candidates（30 题 × 7 类），
+  每个 intent 的 candidate pool 必须覆盖其 7 个 hard-negative，filter 必须报告
+  全部已过滤，且 evaluator 计算的 top-3 hits 必须为空；
+- manifest preview 使用 fresh loader snapshot 比较，差异会以
+  `manifest_preview_mismatch` 阻断；
+- 外部 Qdrant host 在 client 构造前以 `local_url_policy_rejected` / `invalid`
+  失败，和 loopback 服务不可用的 `local_qdrant_unavailable` / `unavailable`
+  分离；
+- `DeterministicFakeQuestionStore(candidate_safe=...)` 默认值改为 `False`，fake
+  calibration/tests 显式传入 `True`。
+
+补充测试首次按预期 RED：10 个测试中 5 个失败，分别暴露上述独立 evaluation、
+候选索引、manifest、policy 和默认值缺口；修复后聚焦测试为 `10/10 OK`，相关
+corpus 组合为 `78/78 OK`。fake artifact 现包含候选池及每个 intent 的
+`indexed=210`、`filtered=210`、`eligible=[]` 审计证据，未改变 canonical 30
+题或生产数据。
+
+最终验证（在禁用 python-dotenv 自动注入的测试进程中，避免工作站环境影响既有
+provider 测试）包括：
+
+```text
+question_corpus_zero_cost + question_corpus_evaluation: 25/25 OK
+question_corpus_schema + governance + evaluation + zero_cost: 78/78 OK
+full unittest discovery: 719/719 OK
+audit-corpus: status=valid, questions=30, errors=0, warnings=0
+evaluate-local --store fake: status=passed, questions=30, passed=true
+evaluate-local --store local (未配置 loopback): status=unavailable, passed=false
+compileall: OK
+git diff --check: OK
+```
+
+follow-up 提交仍仅包含 Task9 指定代码、测试、fake/local 两个 calibration
+artifact 与本报告；既有 `manifest_preview.json`、`validation_report.json`、
+`evaluation_local.json` 不加入提交。
