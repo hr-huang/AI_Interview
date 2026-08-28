@@ -30,6 +30,7 @@ ROOT = Path(__file__).parents[1]
 CORPUS_DIR = ROOT / "profile_agent" / "knowledge" / "question_banks" / "ai_agent_engineer_2026_h2"
 INTENTS_PATH = CORPUS_DIR / "retrieval_intents.jsonl"
 QUESTIONS_PATH = CORPUS_DIR / "questions.json"
+RELEASE_REGISTRY = CORPUS_DIR / ".." / ".." / "approval_registries" / "ai_agent_engineer_2026_h2_release_20260828.json"
 
 
 class QuestionCorpusEvaluationTests(unittest.TestCase):
@@ -137,6 +138,8 @@ class QuestionCorpusEvaluationTests(unittest.TestCase):
                         "evaluate-local",
                         "--corpus-dir",
                         str(CORPUS_DIR),
+                        "--approval-registry",
+                        str(RELEASE_REGISTRY),
                         "--store",
                         "local",
                         "--dry-run",
@@ -419,6 +422,8 @@ class QuestionCorpusEvaluationTests(unittest.TestCase):
                             "evaluate-local",
                             "--corpus-dir",
                             str(CORPUS_DIR),
+                            "--approval-registry",
+                            str(RELEASE_REGISTRY),
                             "--store",
                             "fake",
                             "--dry-run",

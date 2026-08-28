@@ -36,7 +36,8 @@ ROOT = Path(__file__).parents[1]
 CORPUS_DIR = ROOT / "profile_agent" / "knowledge" / "question_banks" / "ai_agent_engineer_2026_h2"
 QUESTIONS_PATH = CORPUS_DIR / "questions.json"
 INTENTS_PATH = CORPUS_DIR / "retrieval_intents.jsonl"
-AS_OF = date(2026, 8, 27)
+AS_OF = date(2026, 8, 28)
+RELEASE_REGISTRY = CORPUS_DIR / ".." / ".." / "approval_registries" / "ai_agent_engineer_2026_h2_release_20260828.json"
 
 
 class QuestionCorpusZeroCostTests(unittest.TestCase):
@@ -148,6 +149,8 @@ class QuestionCorpusZeroCostTests(unittest.TestCase):
                             "evaluate-local",
                             "--corpus-dir",
                             str(CORPUS_DIR),
+                            "--approval-registry",
+                            str(RELEASE_REGISTRY),
                             "--store",
                             "fake",
                             "--dry-run",
@@ -185,6 +188,8 @@ class QuestionCorpusZeroCostTests(unittest.TestCase):
                     "evaluate-local",
                     "--corpus-dir",
                     str(CORPUS_DIR),
+                    "--approval-registry",
+                    str(RELEASE_REGISTRY),
                     "--store",
                     "fake",
                     "--dry-run",
@@ -263,6 +268,8 @@ class QuestionCorpusZeroCostTests(unittest.TestCase):
                     "evaluate-local",
                     "--corpus-dir",
                     str(CORPUS_DIR),
+                    "--approval-registry",
+                    str(RELEASE_REGISTRY),
                     "--store",
                     "local",
                     "--qdrant-url",
@@ -307,6 +314,8 @@ class QuestionCorpusZeroCostTests(unittest.TestCase):
                     "evaluate-local",
                     "--corpus-dir",
                     str(CORPUS_DIR),
+                    "--approval-registry",
+                    str(RELEASE_REGISTRY),
                     "--store",
                     "fake",
                     "--dry-run",
@@ -331,6 +340,8 @@ class QuestionCorpusZeroCostTests(unittest.TestCase):
                     "evaluate-local",
                     "--corpus-dir",
                     str(CORPUS_DIR),
+                    "--approval-registry",
+                    str(RELEASE_REGISTRY),
                     "--store",
                     "local",
                     "--qdrant-url",
@@ -361,6 +372,8 @@ class QuestionCorpusZeroCostTests(unittest.TestCase):
                     "evaluate-local",
                     "--corpus-dir",
                     str(CORPUS_DIR),
+                    "--approval-registry",
+                    str(RELEASE_REGISTRY),
                     "--store",
                     "local",
                     "--qdrant-url",
@@ -392,6 +405,8 @@ class QuestionCorpusZeroCostTests(unittest.TestCase):
                     "evaluate-local",
                     "--corpus-dir",
                     str(CORPUS_DIR),
+                    "--approval-registry",
+                    str(RELEASE_REGISTRY),
                     "--store",
                     "local",
                     "--qdrant-url",
@@ -420,6 +435,8 @@ class QuestionCorpusZeroCostTests(unittest.TestCase):
                     "evaluate-local",
                     "--corpus-dir",
                     str(CORPUS_DIR),
+                    "--approval-registry",
+                    str(RELEASE_REGISTRY),
                     "--store",
                     "local",
                     "--dry-run",

@@ -1969,6 +1969,7 @@ def _run_corpus_read_only_action(
             issue_payload=issue_payload,
             validation_error_count=errors,
             validation_warning_count=warnings,
+            approval_verifier=verifier,
         )
 
     if args.action == "manifest":
@@ -2186,13 +2187,16 @@ def _compare_preview_with_snapshot(
 def _build_independent_manifest_preview(
     corpus_dir: Path,
     as_of: date,
+    *,
+    approval_verifier: Any = None,
 ) -> dict[str, Any]:
     """Load and validate a fresh corpus snapshot for preview comparison."""
 
     independent_snapshot = load_question_corpus_snapshot(corpus_dir, as_of)
     role_pack = _load_corpus_role_pack()
     independent_issues = tuple(
-        validate_question_corpus(independent_snapshot, role_pack, as_of)
+        validate_question_corpus(independent_snapshot, role_pack, as_of,
+                                 approval_verifier=approval_verifier)
     )
     return build_manifest_preview(independent_snapshot, independent_issues)
 
@@ -2391,6 +2395,7 @@ def _run_corpus_evaluation_action(
     issue_payload: Sequence[Mapping[str, Any]],
     validation_error_count: int,
     validation_warning_count: int,
+    approval_verifier: Any = None,
 ) -> int:
     """Run the explicit fake/local corpus evaluator without provider access."""
 
@@ -2401,7 +2406,7 @@ def _run_corpus_evaluation_action(
 
     try:
         independent_preview = _build_independent_manifest_preview(
-            args.corpus_dir, as_of
+            args.corpus_dir, as_of, approval_verifier=approval_verifier
         )
         comparison = _compare_preview_with_snapshot(
             snapshot,

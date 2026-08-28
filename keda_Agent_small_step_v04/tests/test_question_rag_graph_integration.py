@@ -547,7 +547,7 @@ class QuestionRagGraphIntegrationTests(unittest.TestCase):
         with TemporaryDirectory() as root:
             env = self._default_env(root, index_path=str(Path(root) / "questions"))
             with (
-                patch.dict(os.environ, env, clear=False),
+                patch.dict(os.environ, env, clear=True),
                 patch(
                     "profile_agent.graphs.interview.generate_question",
                     new=FakeQuestionGenerator(),
@@ -585,7 +585,7 @@ class QuestionRagGraphIntegrationTests(unittest.TestCase):
         with TemporaryDirectory() as root:
             env = self._default_env(root)
             with (
-                patch.dict(os.environ, env, clear=False),
+                patch.dict(os.environ, env, clear=True),
                 patch("httpx.Client", side_effect=AssertionError("HTTP at startup")),
                 patch(
                     "profile_agent.graphs.interview.generate_question",
@@ -622,7 +622,7 @@ class QuestionRagGraphIntegrationTests(unittest.TestCase):
             )
             env["SILICONFLOW_API_KEY"] = ""
             with (
-                patch.dict(os.environ, env, clear=False),
+                patch.dict(os.environ, env, clear=True),
                 patch("httpx.Client", side_effect=AssertionError("HTTP before provider is ready")),
                 patch(
                     "profile_agent.graphs.interview.generate_question",
@@ -666,7 +666,7 @@ class QuestionRagGraphIntegrationTests(unittest.TestCase):
                 index_path=str(Path(root) / "questions"),
             )
             with (
-                patch.dict(os.environ, env, clear=False),
+                patch.dict(os.environ, env, clear=True),
                 patch(
                     "profile_agent.services.siliconflow_embedding_service.SiliconFlowEmbeddingClient.from_env",
                     return_value=embedding,
@@ -715,7 +715,7 @@ class QuestionRagGraphIntegrationTests(unittest.TestCase):
             )
             embedding = CloseSpy()
             with (
-                patch.dict(os.environ, env, clear=False),
+                patch.dict(os.environ, env, clear=True),
                 patch(
                     "profile_agent.services.siliconflow_embedding_service.SiliconFlowEmbeddingClient.from_env",
                     return_value=embedding,
@@ -765,7 +765,8 @@ class QuestionRagGraphIntegrationTests(unittest.TestCase):
                 }
             )
             with (
-                patch.dict(os.environ, env, clear=False),
+                patch.dict(os.environ, env, clear=True),
+                patch("profile_agent.web.container._configured_question_bank_path", return_value=None),
                 patch(
                     "profile_agent.services.siliconflow_embedding_service.SiliconFlowEmbeddingClient.from_env",
                     return_value=CloseSpy(),
@@ -830,7 +831,7 @@ class QuestionRagGraphIntegrationTests(unittest.TestCase):
             )
             embedding = CloseSpy()
             with (
-                patch.dict(os.environ, env, clear=False),
+                patch.dict(os.environ, env, clear=True),
                 patch(
                     "profile_agent.services.siliconflow_embedding_service.SiliconFlowEmbeddingClient.from_env",
                     return_value=embedding,
@@ -906,7 +907,7 @@ class QuestionRagGraphIntegrationTests(unittest.TestCase):
                 question_mode="scenario",
                 difficulty="intermediate",
             )
-            with patch.dict(os.environ, env, clear=False), patch(
+            with patch.dict(os.environ, env, clear=True), patch(
                 "profile_agent.services.siliconflow_embedding_service.SiliconFlowEmbeddingClient.from_env",
                 side_effect=lambda: StableEmbedding(),
             ):
@@ -960,7 +961,7 @@ class QuestionRagGraphIntegrationTests(unittest.TestCase):
                     index_path=str(Path(root) / "questions"),
                 )
                 with (
-                    patch.dict(os.environ, env, clear=False),
+                    patch.dict(os.environ, env, clear=True),
                     patch(
                         "profile_agent.graphs.interview.generate_question",
                         new=FakeQuestionGenerator(),

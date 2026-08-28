@@ -213,7 +213,7 @@ class SiliconFlowEmbeddingClientTests(unittest.TestCase):
                 "SILICONFLOW_EMBEDDING_MODEL": "custom-model",
                 "SILICONFLOW_EMBEDDING_BASE_URL": "https://embedding.example/v1",
             },
-            clear=False,
+            clear=True,
         ):
             client = SiliconFlowEmbeddingClient.from_env(http_client=fake_client)  # type: ignore[arg-type]
 
