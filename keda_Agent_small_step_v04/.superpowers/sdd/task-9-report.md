@@ -238,3 +238,21 @@ with a shape-oriented unittest assertion. The candidate CLI tests use only
 the standard library `unittest` runner. Focused and related unittest suites
 pass (54 tests); compileall and diffcheck pass. The full suite and real
 embedding remain parent-operator work; no network call was made here.
+
+### Supervisor probe coverage follow-up
+
+The candidate embedded evaluation now centralizes four representative probes:
+`intent_q001`/foundation → `q001` exact, `intent_q010`/scenario → `q010`
+exact, `intent_q028`/coding → `q028` exact, and `intent_q003`/scenario with
+`q003,q006` excluded → `q004` system-design compatible fallback. All probes
+reuse the pre-batched query vectors and emit `intent_id`, `requested_mode`,
+`status`, top-3 `{question_id, mode, tier, score}`, `expected`, and boolean
+`assertion`; any failed assertion remains gate-failing. The focused candidate,
+evaluation, and zero-cost suites pass (35 tests); compileall and diffcheck pass.
+No real API or embedding call was made.
+
+复审后补强 compatible probe：测试 fake store 现在严格按请求 mode 过滤，scenario
+且排除 q003/q006 时返回 no_match，随后 probe 按 `policy.compatible_order_for`
+尝试 system_design，并在保留同一排除集合的情况下命中 q004；测试同时 spy
+验证了 exclusions 确实传入 runtime。fallback 仅属于 candidate probe 路由，未修改
+生产 QuestionRetriever 语义。

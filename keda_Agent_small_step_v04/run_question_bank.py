@@ -21,6 +21,7 @@ import os
 from pathlib import Path
 import re
 import sys
+from types import SimpleNamespace
 from typing import Any
 from urllib.parse import urlparse
 
@@ -201,6 +202,60 @@ def _candidate_embedded_result_provider(store: Any, query_vectors: Mapping[str, 
     return provide
 
 
+def _run_supervisor_probes(store: Any, intents: Sequence[Any], runtime_intents: Sequence[Any],
+                           query_vectors: Mapping[str, Sequence[float]], records: Sequence[Any],
+                           *, policy: Any = None, as_of: date) -> list[dict[str, Any]]:
+    """Run representative Supervisor retrieval probes using precomputed vectors."""
+    by_id = {label.intent_id: (label, runtime)
+             for label, runtime in zip(intents, runtime_intents, strict=True)}
+    probe_specs = [("intent_q001", "foundation", "q001", "exact", ()),
+                   ("intent_q010", "scenario", "q010", "exact", ()),
+                   ("intent_q028", "coding", "q028", "exact", ()),
+                   ("intent_q003", "scenario", "q004", "compatible", ("q003", "q006"))]
+    probes = []
+    for intent_id, requested_mode, expected_id, expected_tier, exclusions in probe_specs:
+        label, runtime = by_id[intent_id]
+        if exclusions and records:
+            runtime = intent_to_runtime_intent(label, records=records,
+                                                excluded_question_ids=exclusions)
+        requested_runtime_mode = runtime.question_mode
+        modes = [requested_runtime_mode]
+        if policy is not None:
+            modes.extend(mode for mode in policy.compatible_order_for(runtime.dimension_id)
+                         if mode not in modes)
+        result = None
+        matched_mode = requested_runtime_mode
+        for mode in modes:
+            if mode == requested_runtime_mode:
+                candidate_runtime = runtime
+            elif hasattr(runtime, "model_copy"):
+                candidate_runtime = runtime.model_copy(update={"question_mode": mode})
+            else:
+                runtime_fields = vars(runtime).copy()
+                runtime_fields["question_mode"] = mode
+                candidate_runtime = SimpleNamespace(**runtime_fields)
+            result = store.search(intent=candidate_runtime, query_vector=query_vectors[intent_id],
+                                  today=as_of, limit=3)
+            if getattr(result, "hits", ()):
+                matched_mode = mode
+                runtime = candidate_runtime
+                break
+        top3 = []
+        for hit in getattr(result, "hits", ())[:3]:
+            record = hit.record
+            mode = record.primary_mode or record.question_mode
+            top3.append({"question_id": hit.question_id, "mode": mode,
+                         "tier": "exact" if matched_mode == requested_runtime_mode else "compatible",
+                         "score": hit.score})
+        assertion = bool(top3 and top3[0]["question_id"] == expected_id
+                         and top3[0]["tier"] == expected_tier)
+        probes.append({"intent_id": intent_id, "requested_mode": requested_mode,
+                       "status": "pass" if assertion else "failed", "top3": top3,
+                       "expected": {"question_id": expected_id, "match_tier": expected_tier},
+                       "assertion": assertion})
+    return probes
+
+
 def _run_candidate_embedded_action(args: Any, *, view: _DependencyView,
                                    as_of: date, output: Callable[[str], None],
                                    output_format: str) -> int:
@@ -273,12 +328,8 @@ def _run_candidate_embedded_action(args: Any, *, view: _DependencyView,
         report = evaluate_question_corpus(intents, records,
                                           result_provider=_candidate_embedded_result_provider(store, query_vectors, as_of=as_of),
                                           as_of=as_of, backend="siliconflow-local-qdrant")
-        probes = []
-        for index, label in enumerate(intents[:4], start=1):
-            result = store.search(intent=runtime_intents[index - 1], query_vector=query_vectors[label.intent_id],
-                                  today=as_of, limit=3)
-            probes.append({"probe_id": f"supervisor-{index}", "status": "pass" if _candidate_probe_hit(result) else "failed",
-                           "top3": [getattr(item, "question_id", str(item)) for item in getattr(result, "results", ())]})
+        probes = _run_supervisor_probes(store, intents, runtime_intents, query_vectors, records,
+                                        policy=runtime.policy, as_of=as_of)
         no_match_intent = intent_to_runtime_intent(intents[0], records=records,
                                                     excluded_question_ids=[getattr(r, "question_id") for r in records])
         no_match = store.search(intent=no_match_intent, query_vector=query_vectors[intents[0].intent_id],

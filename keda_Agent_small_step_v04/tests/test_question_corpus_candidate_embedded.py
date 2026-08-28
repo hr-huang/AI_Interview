@@ -37,6 +37,54 @@ class CandidateEmbeddedTests(unittest.TestCase):
         report = SimpleNamespace(passed=True)
         self.assertFalse(cli._candidate_gate_passed(report, [{"status": "pass"}], SimpleNamespace(status="hit")))
 
+    def test_supervisor_probes_cover_exact_modes_and_compatible_fallback(self):
+        class Store:
+            def __init__(self):
+                self.compatible_intent = None
+
+            def search(self, *, intent, query_vector, today, limit):
+                if query_vector[0] == "q004":
+                    self.compatible_intent = intent
+                    excluded = set(getattr(intent, "excluded_question_ids", ()))
+                    if intent.question_mode == "scenario" and excluded == {"q003", "q006"}:
+                        return SimpleNamespace(hits=[], status="no_match", index_version="candidate")
+                    question_id = "q004" if intent.question_mode == "system_design" and excluded == {"q003", "q006"} else "q003"
+                else:
+                    question_id = query_vector[0]
+                mode = "system_design" if question_id == "q004" else intent.question_mode
+                record = SimpleNamespace(primary_mode=mode, question_mode=mode)
+                hit = SimpleNamespace(record=record, question_id=question_id,
+                                      score=0.7, source_id="fixture", index_version="candidate")
+                return SimpleNamespace(hits=[hit], status="hit", index_version="candidate")
+
+        labels = [SimpleNamespace(intent_id=f"intent_{qid}") for qid in ("q001", "q010", "q028", "q003")]
+        runtimes = [SimpleNamespace(question_mode=mode, dimension_id="role_dim_01") for mode in ("foundation", "scenario", "coding", "scenario")]
+        vectors = {label.intent_id: [qid] for label, qid in zip(labels, ("q001", "q010", "q028", "q004"))}
+        store = Store()
+
+        def runtime_with_exclusions(intent, *, records, excluded_question_ids=()):
+            return SimpleNamespace(question_mode="scenario", dimension_id="role_dim_01",
+                                   excluded_question_ids=tuple(excluded_question_ids))
+
+        policy = SimpleNamespace(compatible_order_for=lambda dimension_id: ("scenario", "system_design"))
+
+        with patch.object(cli, "intent_to_runtime_intent", side_effect=runtime_with_exclusions) as to_runtime:
+            probes = cli._run_supervisor_probes(store, labels, runtimes, vectors,
+                                                records=[SimpleNamespace(question_id="q001")], policy=policy,
+                                                as_of=date.today())
+
+        self.assertEqual([probe["intent_id"] for probe in probes],
+                         ["intent_q001", "intent_q010", "intent_q028", "intent_q003"])
+        self.assertEqual([probe["status"] for probe in probes], ["pass"] * 4)
+        self.assertEqual(probes[0]["top3"][0]["question_id"], "q001")
+        self.assertEqual(probes[1]["top3"][0]["question_id"], "q010")
+        self.assertEqual(probes[2]["top3"][0]["question_id"], "q028")
+        self.assertEqual(probes[3]["top3"][0]["question_id"], "q004")
+        self.assertEqual(probes[3]["top3"][0]["tier"], "compatible")
+        self.assertEqual(store.compatible_intent.excluded_question_ids, ("q003", "q006"))
+        to_runtime.assert_called_once()
+        self.assertTrue(all("expected" in probe and "assertion" in probe for probe in probes))
+
     def test_precomputed_provider_preserves_trace_without_embedding(self):
         class Store:
             def search(self, **kwargs):
