@@ -17,6 +17,7 @@ import math
 from pathlib import Path
 from typing import Any, Literal
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
+from urllib.parse import urlparse
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 from qdrant_client import QdrantClient
@@ -38,6 +39,7 @@ from qdrant_client.models import (
 from profile_agent.schemas.question_rag_schema import (
     InterviewQuestionRecord,
     MODE_POLICY_VERSION,
+    QuestionModePolicy,
     QuestionRetrievalIntent,
     RetrievedQuestion,
 )
@@ -82,7 +84,45 @@ _SAFE_SOURCE_TYPES = frozenset(
 DEFAULT_EMBEDDING_TEXT_VERSION = "legacy-v1"
 DEFAULT_QUESTION_BANK_MANIFEST_HASH = "legacy-v1"
 DEFAULT_MODE_POLICY_VERSION = MODE_POLICY_VERSION
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 logger = logging.getLogger(__name__)
+
+
+def validate_loopback_url(value: Any) -> str:
+    """Validate and return an explicit HTTP(S) loopback Qdrant URL.
+
+    A URL is accepted only for the three host spellings deliberately reserved
+    for a local calibration service.  In particular, the entire 127/8 range,
+    private-network addresses, hostnames, and URLs carrying credentials are
+    rejected.  This check runs before ``QdrantClient`` construction.
+    """
+
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("local Qdrant URL must not be blank")
+    url = value.strip()
+    try:
+        parsed = urlparse(url)
+        hostname = parsed.hostname
+        _ = parsed.port
+    except (TypeError, ValueError, UnicodeError) as exc:
+        raise ValueError("local Qdrant URL is invalid") from exc
+    if parsed.scheme.casefold() not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("local Qdrant URL is invalid")
+    if hostname is None or hostname.casefold().rstrip(".") not in LOOPBACK_HOSTS:
+        raise ValueError("local Qdrant URL must use a loopback host")
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError("local Qdrant URL must not contain credentials")
+    return url.rstrip("/")
+
+
+def is_loopback_url(value: Any) -> bool:
+    """Return whether ``value`` passes the explicit local URL allowlist."""
+
+    try:
+        validate_loopback_url(value)
+    except (TypeError, ValueError, UnicodeError):
+        return False
+    return True
 
 
 def _safe_source_id(value: Any, question_id: Any) -> str:
@@ -218,6 +258,286 @@ class QuestionStoreSearchResult:
         return self.hits
 
 
+class DeterministicFakeQuestionStore:
+    """In-process candidate-safe store used by zero-cost corpus calibration.
+
+    This adapter deliberately keeps the same ``search`` envelope as the
+    Qdrant store, while ``retrieve`` adds a trace envelope for the evaluator.
+    It never imports or constructs Qdrant and accepts ``needs_review`` records
+    only when the explicit ``candidate_safe`` switch is enabled.  The lexical
+    component is merely a deterministic fixture ranking signal; it is not a
+    claim about embedding quality.
+    """
+
+    backend = "deterministic-fake"
+
+    def __init__(
+        self,
+        *,
+        fingerprint: IndexFingerprint | Mapping[str, Any],
+        embedding: Any | None = None,
+        candidate_safe: bool = True,
+        policy: QuestionModePolicy | Mapping[str, Any] | None = None,
+    ) -> None:
+        if not isinstance(candidate_safe, bool):
+            raise TypeError("candidate_safe must be a bool")
+        normalized = QdrantQuestionStore._coerce_fingerprint(fingerprint)
+        if normalized is None:
+            raise ValueError("fingerprint is required")
+        self._expected_fingerprint = normalized
+        self._embedding = embedding
+        self.candidate_safe = candidate_safe
+        self.policy = (
+            QuestionModePolicy.default()
+            if policy is None
+            else QuestionModePolicy.model_validate(policy)
+        )
+        self._records: dict[str, InterviewQuestionRecord] = {}
+        self._vectors: dict[str, list[float]] = {}
+        self._closed = False
+
+    @property
+    def fingerprint(self) -> IndexFingerprint:
+        return self._expected_fingerprint
+
+    @property
+    def model(self) -> str:
+        return self._expected_fingerprint.model
+
+    @property
+    def index_version(self) -> str:
+        return self._expected_fingerprint.index_version
+
+    def close(self) -> None:
+        self._closed = True
+
+    def rebuild(
+        self,
+        records: Sequence[InterviewQuestionRecord | Mapping[str, Any]],
+        vectors: Sequence[Sequence[float]],
+        fingerprint: IndexFingerprint | Mapping[str, Any],
+    ) -> None:
+        normalized = QdrantQuestionStore._coerce_fingerprint(fingerprint)
+        if normalized is None:
+            raise ValueError("fingerprint is required")
+        if normalized != self._expected_fingerprint:
+            raise ValueError("index fingerprint mismatch")
+        try:
+            record_values = list(records)
+            vector_values = list(vectors)
+        except TypeError as exc:
+            raise TypeError("records and vectors must be sequences") from exc
+        if len(record_values) != len(vector_values):
+            raise ValueError("records and vectors must have the same length")
+        next_records: dict[str, InterviewQuestionRecord] = {}
+        next_vectors: dict[str, list[float]] = {}
+        for raw_record, raw_vector in zip(record_values, vector_values):
+            record = QdrantQuestionStore._validated_question_record(raw_record)
+            if record.question_id in next_records:
+                raise ValueError("question_id values must be unique")
+            vector = QdrantQuestionStore._validate_vector(
+                raw_vector, expected_dimension=normalized.dimension
+            )
+            next_records[record.question_id] = record
+            next_vectors[record.question_id] = vector
+        self._records = next_records
+        self._vectors = next_vectors
+
+    def sync(
+        self,
+        records: Sequence[InterviewQuestionRecord | Mapping[str, Any]],
+        vectors: Sequence[Sequence[float]],
+        fingerprint: IndexFingerprint | Mapping[str, Any],
+        *,
+        today: date | None = None,
+    ) -> None:
+        """Refresh the in-process index with the same shape as Qdrant sync."""
+
+        if today is not None and not isinstance(today, date):
+            raise TypeError("today must be a date")
+        self.rebuild(records, vectors, fingerprint)
+
+    def search(
+        self,
+        *,
+        intent: QuestionRetrievalIntent,
+        query_vector: Sequence[float],
+        today: date,
+        limit: int = 3,
+    ) -> QuestionStoreSearchResult:
+        if self._closed:
+            return QuestionStoreSearchResult(status="unavailable")
+        if not isinstance(intent, QuestionRetrievalIntent):
+            raise TypeError("intent must be QuestionRetrievalIntent")
+        if isinstance(today, date) is False:
+            raise TypeError("today must be a date")
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
+            raise ValueError("limit must be a positive integer")
+        try:
+            vector = QdrantQuestionStore._validate_vector(
+                query_vector, expected_dimension=self._expected_fingerprint.dimension
+            )
+        except (TypeError, ValueError):
+            return QuestionStoreSearchResult(
+                status="index_mismatch", index_version=self.index_version
+            )
+        ranked = self._rank(intent, vector, today, limit=min(limit, 3))
+        hits = [
+            RetrievedQuestion(
+                record=record,
+                score=score,
+                index_version=self.index_version,
+            )
+            for record, score, _tier in ranked
+        ]
+        return QuestionStoreSearchResult(
+            status="hit" if hits else "no_match",
+            hits=hits,
+            index_version=self.index_version,
+        )
+
+    def retrieve(
+        self,
+        intent: QuestionRetrievalIntent,
+        *,
+        today: date | None = None,
+        limit: int = 3,
+    ) -> Mapping[str, Any]:
+        """Return candidate-safe top-3 results plus an explicit trace."""
+
+        if self._closed:
+            return {"status": "unavailable", "hits": [], "trace": {"status": "unavailable"}}
+        if self._embedding is None:
+            return {"status": "unavailable", "hits": [], "trace": {"status": "unavailable"}}
+        as_of = today if today is not None else date.today()
+        if not isinstance(as_of, date):
+            raise TypeError("today must be a date")
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
+            raise ValueError("limit must be a positive integer")
+        from profile_agent.services.question_retrieval_service import build_query_embedding_text
+
+        query_text = build_query_embedding_text(intent, ())
+        raw_vectors = self._embedding.embed([query_text])
+        if not isinstance(raw_vectors, Sequence) or len(raw_vectors) != 1:
+            return {"status": "index_mismatch", "hits": [], "trace": {"status": "index_mismatch"}}
+        ranked = self._rank(
+            intent,
+            QdrantQuestionStore._validate_vector(
+                raw_vectors[0], expected_dimension=self._expected_fingerprint.dimension
+            ),
+            as_of,
+            limit=min(limit, 3),
+        )
+        hits: list[dict[str, Any]] = []
+        for rank, (record, score, tier) in enumerate(ranked, start=1):
+            hits.append(
+                {
+                    "question_id": record.question_id,
+                    "source_id": record.source_id,
+                    "score": score,
+                    "index_version": self.index_version,
+                    "match_tier": tier,
+                    "rank": rank,
+                }
+            )
+        if not hits:
+            return {
+                "status": "no_match",
+                "hits": [],
+                "index_version": self.index_version,
+                "trace": {"status": "no_match"},
+            }
+        selected = hits[0]
+        return {
+            "status": "hit",
+            "hits": hits,
+            "index_version": self.index_version,
+            "candidate_pool": [item["question_id"] for item in hits],
+            "trace": {"status": "hit", **selected},
+        }
+
+    def _rank(
+        self,
+        intent: QuestionRetrievalIntent,
+        query_vector: Sequence[float],
+        today: date,
+        *,
+        limit: int,
+    ) -> list[tuple[InterviewQuestionRecord, float, str]]:
+        query_chars = {
+            char.casefold()
+            for char in intent.query_text
+            if char.isalnum() or "\u3400" <= char <= "\u9fff"
+        }
+        exact: list[tuple[InterviewQuestionRecord, str]] = []
+        compatible: list[tuple[InterviewQuestionRecord, str]] = []
+        requested_mode = intent.question_mode
+        allowed_modes = self.policy.compatible_order_for(intent.dimension_id)
+        for record in self._records.values():
+            if record.role != intent.role or record.dimension_id != intent.dimension_id:
+                continue
+            if record.question_id in set(intent.excluded_question_ids):
+                continue
+            if record.status != "active" and not (
+                self.candidate_safe and record.status == "needs_review"
+            ):
+                continue
+            if record.trust_level not in {"medium", "high"} or record.valid_until < today:
+                continue
+            primary = record.primary_mode or record.question_mode
+            if primary == requested_mode or record.question_mode == requested_mode:
+                exact.append((record, "exact"))
+            elif (
+                primary in allowed_modes
+                and requested_mode in record.compatible_modes
+            ):
+                compatible.append((record, "compatible"))
+        candidates = exact or [
+            item
+            for mode in allowed_modes
+            for item in compatible
+            if (item[0].primary_mode or item[0].question_mode) == mode
+        ]
+
+        def score(item: tuple[InterviewQuestionRecord, str]) -> float:
+            record, _tier = item
+            candidate_chars = {
+                char.casefold()
+                for char in record.question_text
+                if char.isalnum() or "\u3400" <= char <= "\u9fff"
+            }
+            overlap = (
+                len(query_chars & candidate_chars) / len(query_chars)
+                if query_chars
+                else 0.0
+            )
+            cosine = self._cosine(query_vector, self._vectors[record.question_id])
+            # Lexical overlap keeps the fixture useful for calibration while
+            # digest-derived vectors still participate in every ordering.
+            return round(0.9 * overlap + 0.1 * ((cosine + 1.0) / 2.0), 9)
+
+        candidates.sort(key=lambda item: (-score(item), item[0].question_id))
+        return [
+            (record, score((record, tier)), tier)
+            for record, tier in candidates[:limit]
+        ]
+
+    @staticmethod
+    def _cosine(left: Sequence[float], right: Sequence[float]) -> float:
+        if len(left) != len(right) or not left:
+            return 0.0
+        left_norm = math.sqrt(sum(value * value for value in left))
+        right_norm = math.sqrt(sum(value * value for value in right))
+        if left_norm == 0 or right_norm == 0:
+            return 0.0
+        return sum(a * b for a, b in zip(left, right)) / (left_norm * right_norm)
+
+
+# Compact aliases for callers that refer to this as an in-memory/local fake.
+FakeQuestionStore = DeterministicFakeQuestionStore
+InMemoryQuestionStore = DeterministicFakeQuestionStore
+
+
 class QdrantQuestionStore:
     """A disposable Qdrant-backed index with strict retrieval filters.
 
@@ -234,18 +554,24 @@ class QdrantQuestionStore:
         self,
         *,
         path: str | Path = ":memory:",
+        url: str | None = None,
         client: QdrantClient | None = None,
         collection_name: str = COLLECTION_NAME,
         fingerprint: IndexFingerprint | Mapping[str, Any] | None = None,
         expected_fingerprint: IndexFingerprint | Mapping[str, Any] | None = None,
+        candidate_safe: bool = False,
         authoritative_catalog: Mapping[
             str, InterviewQuestionRecord | Mapping[str, Any]
         ] | None = None,
     ) -> None:
         if fingerprint is not None and expected_fingerprint is not None:
             raise ValueError("pass only one of fingerprint and expected_fingerprint")
+        if url is not None and client is not None:
+            raise ValueError("pass only one of url and client")
         if collection_name != COLLECTION_NAME:
             raise ValueError(f"collection_name must be {COLLECTION_NAME!r}")
+        if not isinstance(candidate_safe, bool):
+            raise TypeError("candidate_safe must be a bool")
         configured_fingerprint = self._coerce_fingerprint(
             expected_fingerprint if expected_fingerprint is not None else fingerprint
         )
@@ -253,8 +579,16 @@ class QdrantQuestionStore:
             raise ValueError("fingerprint is required")
         self.collection_name = COLLECTION_NAME
         self._expected_fingerprint = configured_fingerprint
+        self.candidate_safe = candidate_safe
+        self._url = validate_loopback_url(url) if url is not None else None
         self._owns_client = client is None
-        self._client = client if client is not None else QdrantClient(path=str(path))
+        self._client = (
+            client
+            if client is not None
+            else QdrantClient(url=self._url)
+            if self._url is not None
+            else QdrantClient(path=str(path))
+        )
         self._question_catalog = self._coerce_authoritative_catalog(
             authoritative_catalog
         )
@@ -268,6 +602,12 @@ class QdrantQuestionStore:
     @property
     def fingerprint(self) -> IndexFingerprint:
         return self._expected_fingerprint
+
+    @property
+    def url(self) -> str | None:
+        """Return the validated endpoint, if this store uses HTTP Qdrant."""
+
+        return self._url
 
     def close(self) -> None:
         if self._owns_client:
@@ -399,7 +739,14 @@ class QdrantQuestionStore:
                 FieldCondition(
                     key="question_mode", match=MatchValue(value=intent.question_mode)
                 ),
-                FieldCondition(key="status", match=MatchValue(value="active")),
+                (
+                    FieldCondition(
+                        key="status",
+                        match=MatchAny(any=["active", "needs_review"]),
+                    )
+                    if self.candidate_safe
+                    else FieldCondition(key="status", match=MatchValue(value="active"))
+                ),
                 FieldCondition(key="trust_level", match=MatchAny(any=["medium", "high"])),
                 FieldCondition(
                     key="valid_until_epoch",
@@ -429,7 +776,12 @@ class QdrantQuestionStore:
                 payload = point.payload if isinstance(point.payload, Mapping) else {}
                 if payload.get("record_type") != _QUESTION_RECORD_TYPE:
                     continue
-                if not self._payload_matches_intent(payload, intent, today):
+                if not self._payload_matches_intent(
+                    payload,
+                    intent,
+                    today,
+                    candidate_safe=self.candidate_safe,
+                ):
                     continue
                 record = self._record_from_payload(payload)
                 if record is None:
@@ -1152,7 +1504,11 @@ class QdrantQuestionStore:
 
     @staticmethod
     def _payload_matches_intent(
-        payload: Mapping[str, Any], intent: QuestionRetrievalIntent, today: date
+        payload: Mapping[str, Any],
+        intent: QuestionRetrievalIntent,
+        today: date,
+        *,
+        candidate_safe: bool = False,
     ) -> bool:
         if payload.get("record_type") != _QUESTION_RECORD_TYPE:
             return False
@@ -1162,7 +1518,8 @@ class QdrantQuestionStore:
             return False
         if payload.get("question_mode") != intent.question_mode:
             return False
-        if payload.get("status") != "active":
+        status = payload.get("status")
+        if status != "active" and not (candidate_safe and status == "needs_review"):
             return False
         if payload.get("trust_level") not in {"medium", "high"}:
             return False
@@ -1198,7 +1555,13 @@ class QdrantQuestionStore:
 
 __all__ = [
     "COLLECTION_NAME",
+    "DeterministicFakeQuestionStore",
+    "FakeQuestionStore",
+    "InMemoryQuestionStore",
     "IndexFingerprint",
+    "LOOPBACK_HOSTS",
     "QdrantQuestionStore",
     "QuestionStoreSearchResult",
+    "is_loopback_url",
+    "validate_loopback_url",
 ]

@@ -16,6 +16,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
+import hashlib
 import inspect
 import json
 import math
@@ -177,6 +178,35 @@ class EvaluationValidationError(ValueError):
 
 # Compatibility spelling for callers that name errors after the service.
 QuestionCorpusEvaluationError = EvaluationValidationError
+
+
+def stable_json_hash(value: Any) -> str:
+    """Return a repeatable SHA-256 hash for JSON-safe calibration payloads."""
+
+    try:
+        encoded = json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    except (TypeError, ValueError, UnicodeError) as exc:
+        raise EvaluationValidationError("value cannot be hashed as JSON") from exc
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
+def compare_manifest_preview(
+    expected: Mapping[str, Any], actual: Mapping[str, Any]
+) -> tuple[str, ...]:
+    """Compare stable manifest preview fields without echoing corpus values."""
+
+    if not isinstance(expected, Mapping) or not isinstance(actual, Mapping):
+        raise EvaluationValidationError("manifest previews must be mappings")
+    differences: list[str] = []
+    for key in sorted(set(expected) | set(actual)):
+        if expected.get(key) != actual.get(key):
+            differences.append(str(key))
+    return tuple(differences)
 
 
 def _field(value: Any, *names: str, default: Any = None) -> Any:
@@ -625,6 +655,12 @@ class CorpusEvaluationReport:
     errors: list[str] = field(default_factory=list)
     as_of: date | None = None
     backend: str | None = None
+
+    @property
+    def report_hash(self) -> str:
+        """Stable content hash excluding the hash field itself."""
+
+        return stable_json_hash(self.to_dict())
 
     @property
     def pass_predicate(self) -> bool:
@@ -1316,6 +1352,7 @@ __all__ = [
     "IntentEvaluationResult",
     "QuestionCorpusEvaluationError",
     "SYNTHETIC_HARD_NEGATIVE_CATALOG",
+    "compare_manifest_preview",
     "evaluate_question_corpus",
     "intent_to_runtime_intent",
     "evaluation_report_to_json",
@@ -1325,6 +1362,7 @@ __all__ = [
     "report_to_json",
     "serialize_report",
     "serialize_evaluation_report",
+    "stable_json_hash",
     "validate_intents",
     "validate_labeled_intents",
     "validate_retrieval_intents",

@@ -17,6 +17,7 @@ from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from datetime import date, datetime
 from enum import Enum
+import hashlib
 import math
 import re
 from typing import Any, Protocol
@@ -250,6 +251,68 @@ _QUERY_SEMANTIC_FIELDS = frozenset(
 class EmbeddingClient(Protocol):
     def embed(self, texts: Sequence[str]) -> list[list[float]]:
         """Embed the supplied texts in input order."""
+
+
+DETERMINISTIC_FAKE_EMBEDDING_MODEL = "deterministic-fake"
+DETERMINISTIC_FAKE_EMBEDDING_VERSION = "deterministic-fake-v1"
+
+
+class DeterministicFakeEmbedding:
+    """A zero-cost embedding client for offline calibration only.
+
+    The vector is derived solely from a SHA-256 digest of each input.  It is
+    deliberately not a semantic embedding and must never be used as a
+    production-quality relevance signal.  Keeping the implementation here at
+    the embedding boundary lets calibration exercise the same retriever
+    contract without constructing an HTTP/provider client.
+    """
+
+    provider = DETERMINISTIC_FAKE_EMBEDDING_MODEL
+    model = DETERMINISTIC_FAKE_EMBEDDING_MODEL
+    index_version = DETERMINISTIC_FAKE_EMBEDDING_VERSION
+
+    def __init__(self, *, dimension: int = 16) -> None:
+        if isinstance(dimension, bool) or not isinstance(dimension, int) or dimension <= 0:
+            raise ValueError("deterministic fake embedding dimension must be positive")
+        self.dimension = dimension
+
+    def embed(self, texts: Sequence[str]) -> list[list[float]]:
+        if isinstance(texts, (str, bytes, bytearray)):
+            raise TypeError("embedding texts must be a sequence")
+        try:
+            values = list(texts)
+        except TypeError as exc:
+            raise TypeError("embedding texts must be a sequence") from exc
+        vectors: list[list[float]] = []
+        for text in values:
+            if not isinstance(text, str) or not text.strip():
+                raise ValueError("embedding text must be a non-blank string")
+            normalized = text.strip().encode("utf-8")
+            vector: list[float] = []
+            # Extend the digest deterministically for dimensions greater than
+            # one digest.  No random state or process-specific value is used.
+            for index in range(self.dimension):
+                digest = hashlib.sha256(
+                    normalized + b"\x00" + index.to_bytes(4, "big")
+                ).digest()
+                value = int.from_bytes(digest[:8], "big") / float(2**64 - 1)
+                vector.append(round((value * 2.0) - 1.0, 12))
+            norm = math.sqrt(sum(value * value for value in vector))
+            if norm == 0.0:
+                vector[0] = 1.0
+                norm = 1.0
+            vectors.append([round(value / norm, 12) for value in vector])
+        return vectors
+
+    def close(self) -> None:
+        """Match the provider lifecycle without owning any external handle."""
+
+        return None
+
+
+# Explicit aliases make the test-only boundary discoverable without creating
+# a second implementation with subtly different identity metadata.
+DeterministicFakeEmbeddingClient = DeterministicFakeEmbedding
 
 
 def build_query_embedding_text(
@@ -1243,7 +1306,11 @@ class QuestionRetriever:
 __all__ = [
     "ASKED_PENALTY_WEIGHT",
     "COVERAGE_WEIGHT",
+    "DETERMINISTIC_FAKE_EMBEDDING_MODEL",
+    "DETERMINISTIC_FAKE_EMBEDDING_VERSION",
     "DUPLICATE_PENALTY_WEIGHT",
+    "DeterministicFakeEmbedding",
+    "DeterministicFakeEmbeddingClient",
     "EmbeddingClient",
     "FRESHNESS_WEIGHT",
     "MAX_QUERY_CHARS",

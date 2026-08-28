@@ -1,0 +1,56 @@
+{
+  "action": "evaluate-local",
+  "as_of": "2026-08-27",
+  "backend": "local-loopback",
+  "dry_run": true,
+  "embedding": {
+    "backend": "deterministic-fake",
+    "dimension": 16,
+    "model": "deterministic-fake",
+    "real_embedding": false
+  },
+  "error_count": 1,
+  "issues": [
+    {
+      "code": "local_store_unavailable",
+      "message": "Task 9 local evaluation requires an explicit loopback Qdrant URL; environment is unavailable",
+      "path": "--qdrant-url",
+      "severity": "error"
+    }
+  ],
+  "local_qdrant": {
+    "skipped": true,
+    "status": "unavailable"
+  },
+  "manifest_fingerprint": {
+    "dimension": 16,
+    "embedding_text_version": "six-section-v1",
+    "fingerprint_hash": "sha256:d9f068f2d06aa70e366bf1ac4b48f27b661003ad25abbfec4db3842e95839ace",
+    "index_version": "deterministic-fake-v1",
+    "manifest_hash": "sha256:7c5ddd805d1a2705fc68e4038bdc1da8376655deb0d87616baf1a5e71f083525",
+    "manifest_preview_hash": "sha256:0f43f7324db62d972e6e8aac64d5f8ad43a7d1ad73c71e65f63fe4ec4644532b",
+    "mode_policy_version": "2026-H2",
+    "model": "deterministic-fake",
+    "provider": "local-loopback"
+  },
+  "manifest_preview_comparison": {
+    "actual_hash": "sha256:0f43f7324db62d972e6e8aac64d5f8ad43a7d1ad73c71e65f63fe4ec4644532b",
+    "differences": [],
+    "expected_hash": "sha256:0f43f7324db62d972e6e8aac64d5f8ad43a7d1ad73c71e65f63fe4ec4644532b",
+    "matched": true
+  },
+  "model": "deterministic-fake",
+  "passed": false,
+  "question_count": 30,
+  "repeatability": {
+    "checked": false,
+    "reason": "local Qdrant was not configured",
+    "stable": null
+  },
+  "report_hash": "sha256:18f5c597412e1aaea7020ca1a6f1703abce60af391c71166371ef6775d1ea361",
+  "status": "unavailable",
+  "store": "local",
+  "validation_error_count": 0,
+  "validation_warning_count": 0,
+  "warning_count": 0
+}

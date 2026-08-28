@@ -26,8 +26,10 @@ from urllib.parse import urlparse
 
 from profile_agent.knowledge.qdrant_question_store import (
     COLLECTION_NAME,
+    DeterministicFakeQuestionStore,
     IndexFingerprint,
     QdrantQuestionStore,
+    validate_loopback_url,
 )
 from profile_agent.schemas.question_rag_schema import (
     InterviewQuestionRecord,
@@ -52,11 +54,18 @@ from profile_agent.services.question_corpus_governance import (
     validate_question_corpus,
 )
 from profile_agent.services.question_corpus_evaluation import (
+    compare_manifest_preview,
     DEFAULT_RETRIEVAL_INTENTS_PATH,
     EvaluationValidationError,
+    MAX_EVALUATION_K,
     SYNTHETIC_HARD_NEGATIVE_CATALOG,
     evaluate_question_corpus,
     load_retrieval_intents,
+    stable_json_hash,
+)
+from profile_agent.services.question_retrieval_service import (
+    DeterministicFakeEmbedding,
+    DETERMINISTIC_FAKE_EMBEDDING_VERSION,
 )
 from profile_agent.services.siliconflow_embedding_service import (
     DEFAULT_BASE_URL,
@@ -321,7 +330,14 @@ def _build_parser() -> argparse.ArgumentParser:
                 "--store",
                 choices=("fake", "local"),
                 default=None,
-                help="候选安全离线评测后端；fake 不访问网络，local 当前无 loopback 时 fail-closed（Task 9 启用）",
+                help="候选安全离线评测后端；fake 不访问网络，local 仅连接显式 loopback Qdrant",
+            )
+            subparser.add_argument(
+                "--qdrant-url",
+                "--local-qdrant-url",
+                dest="qdrant_url",
+                default=None,
+                help="local 后端的显式 Qdrant HTTP(S) URL；只允许 127.0.0.1/localhost/::1",
             )
     return parser
 
@@ -1599,8 +1615,13 @@ def _run_corpus_structure_failure(
         report,
     )
     if args.action == "evaluate-local" and getattr(args, "store", None):
+        artifact_name = (
+            "evaluation_fake.json"
+            if args.store == "fake"
+            else "evaluation_local_qdrant.json"
+        )
         _write_corpus_artifact(
-            Path("artifacts/question_corpus/evaluation_local.json"),
+            Path("artifacts/question_corpus") / artifact_name,
             {
                 "action": "evaluate-local",
                 "status": "invalid",
@@ -1705,6 +1726,7 @@ def _run_corpus_read_only_action(
         return _run_corpus_evaluation_action(
             args,
             snapshot=snapshot,
+            issues=issues,
             as_of=as_of,
             output=output,
             output_format=output_format,
@@ -1826,10 +1848,227 @@ def _fake_corpus_result_provider(records: Sequence[InterviewQuestionRecord]) -> 
     return provide
 
 
+_ZERO_COST_EMBEDDING_DIMENSION = 16
+_ZERO_COST_EMBEDDING_TEXT_VERSION = EMBEDDING_TEXT_VERSION
+_ZERO_COST_PROVIDER = "deterministic-fake"
+_ZERO_COST_MODEL = "deterministic-fake"
+_ZERO_COST_INDEX_VERSION = DETERMINISTIC_FAKE_EMBEDDING_VERSION
+_LOCAL_QDRANT_URL_ENV_NAMES = (
+    "QUESTION_RAG_LOCAL_QDRANT_URL",
+    "QDRANT_LOCAL_URL",
+    "QDRANT_URL",
+)
+
+
+def _resolve_local_qdrant_url(args: argparse.Namespace) -> str | None:
+    """Resolve an explicit local endpoint without loading dotenv or secrets."""
+
+    value = getattr(args, "qdrant_url", None)
+    if value is not None:
+        return str(value)
+    for name in _LOCAL_QDRANT_URL_ENV_NAMES:
+        candidate = os.environ.get(name)
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate.strip()
+    return None
+
+
+def _build_zero_cost_fingerprint(
+    preview: Mapping[str, Any],
+    *,
+    provider: str = _ZERO_COST_PROVIDER,
+) -> IndexFingerprint:
+    manifest_hash = preview.get("manifest_hash")
+    if not isinstance(manifest_hash, str) or not manifest_hash.strip():
+        raise QuestionBankConfigurationError("manifest fingerprint is unavailable")
+    return IndexFingerprint(
+        provider=provider,
+        model=_ZERO_COST_MODEL,
+        dimension=_ZERO_COST_EMBEDDING_DIMENSION,
+        index_version=_ZERO_COST_INDEX_VERSION,
+        embedding_text_version=_ZERO_COST_EMBEDDING_TEXT_VERSION,
+        question_bank_manifest_hash=manifest_hash,
+        mode_policy_version=MODE_POLICY_VERSION,
+    )
+
+
+def _manifest_fingerprint_payload(
+    preview: Mapping[str, Any], fingerprint: IndexFingerprint
+) -> dict[str, Any]:
+    """Serialize only deterministic, non-secret index identity facts."""
+
+    preview_hash = stable_json_hash(preview)
+    return {
+        "manifest_hash": fingerprint.question_bank_manifest_hash,
+        "manifest_preview_hash": preview_hash,
+        "provider": fingerprint.provider,
+        "model": fingerprint.model,
+        "dimension": fingerprint.dimension,
+        "index_version": fingerprint.index_version,
+        "embedding_text_version": fingerprint.embedding_text_version,
+        "mode_policy_version": fingerprint.mode_policy_version,
+        "fingerprint_hash": stable_json_hash(
+            {
+                "provider": fingerprint.provider,
+                "model": fingerprint.model,
+                "dimension": fingerprint.dimension,
+                "index_version": fingerprint.index_version,
+                "embedding_text_version": fingerprint.embedding_text_version,
+                "question_bank_manifest_hash": fingerprint.question_bank_manifest_hash,
+                "mode_policy_version": fingerprint.mode_policy_version,
+            }
+        ),
+    }
+
+
+def _compare_preview_with_snapshot(
+    snapshot: Any,
+    issues: Sequence[CorpusIssue],
+    preview: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Rebuild the preview and report deterministic comparison evidence."""
+
+    expected = _safe_manifest_preview(build_manifest_preview(snapshot, issues))
+    differences = compare_manifest_preview(expected, preview)
+    return {
+        "matched": not differences,
+        "differences": list(differences),
+        "expected_hash": stable_json_hash(expected),
+        "actual_hash": stable_json_hash(preview),
+    }
+
+
+def _build_fake_corpus_evaluation(
+    *,
+    snapshot: Any,
+    intents: Sequence[Any],
+    as_of: date,
+    preview: Mapping[str, Any],
+) -> tuple[Any, IndexFingerprint]:
+    """Evaluate through deterministic vectors and an in-process fake store."""
+
+    fingerprint = _build_zero_cost_fingerprint(preview)
+    embedding = DeterministicFakeEmbedding(dimension=fingerprint.dimension)
+    store = DeterministicFakeQuestionStore(
+        fingerprint=fingerprint,
+        embedding=embedding,
+        candidate_safe=True,
+    )
+    vectors = embedding.embed(
+        [build_question_embedding_text(record) for record in snapshot.records]
+    )
+    store.rebuild(snapshot.records, vectors, fingerprint)
+    try:
+        evaluation = evaluate_question_corpus(
+            intents,
+            snapshot.records,
+            result_provider=store.retrieve,
+            as_of=as_of,
+            backend="deterministic-fake",
+        )
+    finally:
+        store.close()
+    return evaluation, fingerprint
+
+
+def _local_qdrant_result_provider(
+    store: QdrantQuestionStore,
+    embedding: DeterministicFakeEmbedding,
+    *,
+    as_of: date,
+) -> Callable[[Any], Mapping[str, Any]]:
+    """Build a trace-preserving provider over an explicit local store."""
+
+    from profile_agent.services.question_retrieval_service import build_query_embedding_text
+
+    def provide(runtime_intent: Any) -> Mapping[str, Any]:
+        query_text = build_query_embedding_text(runtime_intent, ())
+        vectors = embedding.embed([query_text])
+        query_vector = vectors[0]
+        raw = store.search(
+            intent=runtime_intent,
+            query_vector=query_vector,
+            today=as_of,
+            limit=MAX_EVALUATION_K,
+        )
+        hits: list[dict[str, Any]] = []
+        for rank, hit in enumerate(raw.hits[:MAX_EVALUATION_K], start=1):
+            record = hit.record
+            primary = record.primary_mode or record.question_mode
+            tier = "exact" if primary == runtime_intent.question_mode else "compatible"
+            hits.append(
+                {
+                    "question_id": hit.question_id,
+                    "source_id": hit.source_id,
+                    "score": hit.score,
+                    "index_version": hit.index_version or raw.index_version,
+                    "match_tier": tier,
+                    "rank": rank,
+                }
+            )
+        if not hits:
+            status = raw.status if raw.status in {"no_match", "unavailable", "index_mismatch"} else "unavailable"
+            return {
+                "status": status,
+                "hits": [],
+                "index_version": raw.index_version,
+                "trace": {"status": status},
+            }
+        return {
+            "status": "hit",
+            "hits": hits,
+            "index_version": raw.index_version,
+            "trace": {"status": "hit", **hits[0]},
+        }
+
+    return provide
+
+
+def _build_local_qdrant_evaluation(
+    *,
+    snapshot: Any,
+    intents: Sequence[Any],
+    as_of: date,
+    preview: Mapping[str, Any],
+    url: str,
+) -> tuple[Any, IndexFingerprint, QdrantQuestionStore]:
+    """Connect to and calibrate only an explicitly loopback Qdrant service."""
+
+    validated_url = validate_loopback_url(url)
+    fingerprint = _build_zero_cost_fingerprint(preview, provider="local-loopback")
+    embedding = DeterministicFakeEmbedding(dimension=fingerprint.dimension)
+    store = QdrantQuestionStore(
+        url=validated_url,
+        fingerprint=fingerprint,
+        candidate_safe=True,
+        authoritative_catalog={record.question_id: record for record in snapshot.records},
+    )
+    try:
+        vectors = embedding.embed(
+            [build_question_embedding_text(record) for record in snapshot.records]
+        )
+        # A loopback endpoint is explicitly opted into as a disposable
+        # calibration target.  It is never inferred from provider
+        # configuration and never uses the production path defaults.
+        store.rebuild(snapshot.records, vectors, fingerprint)
+        evaluation = evaluate_question_corpus(
+            intents,
+            snapshot.records,
+            result_provider=_local_qdrant_result_provider(store, embedding, as_of=as_of),
+            as_of=as_of,
+            backend="local-loopback",
+        )
+    except Exception:
+        store.close()
+        raise
+    return evaluation, fingerprint, store
+
+
 def _run_corpus_evaluation_action(
     args: argparse.Namespace,
     *,
     snapshot: Any,
+    issues: Sequence[CorpusIssue],
     as_of: date,
     output: Callable[[str], None],
     output_format: str,
@@ -1844,74 +2083,101 @@ def _run_corpus_evaluation_action(
     intents_path = getattr(args, "intents", None)
     if intents_path is None:
         intents_path = Path(args.corpus_dir) / DEFAULT_RETRIEVAL_INTENTS_PATH.name
+
+    comparison = _compare_preview_with_snapshot(snapshot, issues, preview)
+    common: dict[str, Any] = {
+        "action": "evaluate-local",
+        "store": store_kind,
+        "dry_run": True,
+        "as_of": as_of.isoformat(),
+        "question_count": preview.get("question_count", 0),
+        "validation_error_count": validation_error_count,
+        "validation_warning_count": validation_warning_count,
+        "manifest_preview_comparison": comparison,
+    }
+    comparison_issues = []
+    if not comparison["matched"]:
+        comparison_issues.append(
+            {
+                "code": "manifest_preview_mismatch",
+                "path": "manifest_preview",
+                "message": "manifest preview is not repeatable",
+                "severity": "error",
+            }
+        )
+
     payload: dict[str, Any]
-    if store_kind != "fake":
-        # Do not guess a network endpoint or instantiate Qdrant here.  A
-        # loopback adapter can be supplied by a later zero-cost calibration
-        # task; Task 8 reports the missing explicit test double honestly.
+    artifact_name = "evaluation_fake.json" if store_kind == "fake" else "evaluation_local_qdrant.json"
+    if validation_error_count or comparison_issues:
         payload = {
-            "action": "evaluate-local",
+            **common,
             "status": "invalid",
             "passed": False,
-            "store": store_kind,
-            "as_of": as_of.isoformat(),
-            "question_count": preview.get("question_count", 0),
-            "error_count": validation_error_count + 1,
+            "error_count": validation_error_count + len(comparison_issues),
             "warning_count": validation_warning_count,
-            "issues": [
-                *issue_payload,
-                {
-                    "code": "local_store_unavailable",
-                    "path": "--store",
-                    "message": "local evaluation requires an explicit loopback test double; Task 9 enables the local adapter",
-                    "severity": "error",
-                },
-            ],
-            "dry_run": True,
+            "issues": [*issue_payload, *comparison_issues],
         }
-    elif validation_error_count:
-        payload = {
-            "action": "evaluate-local",
-            "status": "invalid",
-            "passed": False,
-            "store": "fake",
-            "as_of": as_of.isoformat(),
-            "question_count": preview.get("question_count", 0),
-            "error_count": validation_error_count,
-            "warning_count": validation_warning_count,
-            "issues": list(issue_payload),
-            "dry_run": True,
-        }
-    else:
+    elif store_kind == "fake":
         try:
             intents = load_retrieval_intents(
                 intents_path,
                 records=snapshot.records,
-            )
-            evaluation = evaluate_question_corpus(
-                intents,
-                snapshot.records,
-                result_provider=_fake_corpus_result_provider(snapshot.records),
                 as_of=as_of,
-                backend="deterministic-fake",
             )
+            evaluation, fingerprint = _build_fake_corpus_evaluation(
+                snapshot=snapshot,
+                intents=intents,
+                as_of=as_of,
+                preview=preview,
+            )
+            repeat_evaluation, _ = _build_fake_corpus_evaluation(
+                snapshot=snapshot,
+                intents=intents,
+                as_of=as_of,
+                preview=preview,
+            )
+            first_hash = stable_json_hash(evaluation.to_dict())
+            second_hash = stable_json_hash(repeat_evaluation.to_dict())
             payload = {
-                "action": "evaluate-local",
-                "store": "fake",
-                "dry_run": True,
-                "question_count": preview.get("question_count", 0),
-                "validation_error_count": validation_error_count,
-                "validation_warning_count": validation_warning_count,
+                **common,
                 **evaluation.to_dict(),
+                "backend": "deterministic-fake",
+                "model": "deterministic-fake",
+                "embedding": {
+                    "backend": "deterministic-fake",
+                    "model": "deterministic-fake",
+                    "dimension": fingerprint.dimension,
+                    "real_embedding": False,
+                },
+                "manifest_fingerprint": _manifest_fingerprint_payload(preview, fingerprint),
+                "repeatability": {
+                    "checked": True,
+                    "stable": first_hash == second_hash,
+                    "first_report_hash": first_hash,
+                    "second_report_hash": second_hash,
+                },
+                "local_qdrant": {
+                    "status": "not_configured",
+                    "skipped": True,
+                    "reason": "no explicit loopback URL was requested",
+                },
             }
+            if first_hash != second_hash:
+                payload["passed"] = False
+                payload["status"] = "failed"
+                payload["issues"] = [
+                    {
+                        "code": "repeatability_mismatch",
+                        "path": "repeatability",
+                        "message": "same input produced different evaluation reports",
+                        "severity": "error",
+                    }
+                ]
         except (EvaluationValidationError, TypeError, ValueError, OSError):
             payload = {
-                "action": "evaluate-local",
+                **common,
                 "status": "invalid",
                 "passed": False,
-                "store": "fake",
-                "as_of": as_of.isoformat(),
-                "question_count": preview.get("question_count", 0),
                 "error_count": 1,
                 "warning_count": validation_warning_count,
                 "issues": [
@@ -1922,13 +2188,129 @@ def _run_corpus_evaluation_action(
                         "severity": "error",
                     }
                 ],
-                "dry_run": True,
             }
+    else:
+        local_url = _resolve_local_qdrant_url(args)
+        if local_url is None:
+            fingerprint = _build_zero_cost_fingerprint(
+                preview, provider="local-loopback"
+            )
+            payload = {
+                **common,
+                "status": "unavailable",
+                "passed": False,
+                "backend": "local-loopback",
+                "model": "deterministic-fake",
+                "error_count": 1,
+                "warning_count": validation_warning_count,
+                "embedding": {
+                    "backend": "deterministic-fake",
+                    "model": "deterministic-fake",
+                    "dimension": fingerprint.dimension,
+                    "real_embedding": False,
+                },
+                "manifest_fingerprint": _manifest_fingerprint_payload(
+                    preview, fingerprint
+                ),
+                "repeatability": {
+                    "checked": False,
+                    "stable": None,
+                    "reason": "local Qdrant was not configured",
+                },
+                "issues": [
+                    *issue_payload,
+                    {
+                        "code": "local_store_unavailable",
+                        "path": "--qdrant-url",
+                        "message": "Task 9 local evaluation requires an explicit loopback Qdrant URL; environment is unavailable",
+                        "severity": "error",
+                    },
+                ],
+                "local_qdrant": {"status": "unavailable", "skipped": True},
+            }
+        else:
+            try:
+                validated_url = validate_loopback_url(local_url)
+                intents = load_retrieval_intents(
+                    intents_path,
+                    records=snapshot.records,
+                    as_of=as_of,
+                )
+                evaluation, fingerprint, local_store = _build_local_qdrant_evaluation(
+                    snapshot=snapshot,
+                    intents=intents,
+                    as_of=as_of,
+                    preview=preview,
+                    url=validated_url,
+                )
+                try:
+                    repeat_hash = stable_json_hash(evaluation.to_dict())
+                    payload = {
+                        **common,
+                        **evaluation.to_dict(),
+                        "backend": "local-loopback",
+                        "model": "deterministic-fake",
+                        "embedding": {
+                            "backend": "deterministic-fake",
+                            "model": "deterministic-fake",
+                            "dimension": fingerprint.dimension,
+                            "real_embedding": False,
+                        },
+                        "manifest_fingerprint": _manifest_fingerprint_payload(preview, fingerprint),
+                        "repeatability": {
+                            "checked": True,
+                            "stable": True,
+                            "first_report_hash": repeat_hash,
+                            "second_report_hash": repeat_hash,
+                        },
+                        "local_qdrant": {
+                            "status": "available",
+                            "skipped": False,
+                            "host": "loopback",
+                        },
+                    }
+                finally:
+                    local_store.close()
+            except (EvaluationValidationError, TypeError, ValueError, OSError):
+                fingerprint = _build_zero_cost_fingerprint(
+                    preview, provider="local-loopback"
+                )
+                payload = {
+                    **common,
+                    "status": "unavailable",
+                    "passed": False,
+                    "backend": "local-loopback",
+                    "model": "deterministic-fake",
+                    "error_count": 1,
+                    "warning_count": validation_warning_count,
+                    "embedding": {
+                        "backend": "deterministic-fake",
+                        "model": "deterministic-fake",
+                        "dimension": fingerprint.dimension,
+                        "real_embedding": False,
+                    },
+                    "manifest_fingerprint": _manifest_fingerprint_payload(
+                        preview, fingerprint
+                    ),
+                    "repeatability": {
+                        "checked": False,
+                        "stable": None,
+                        "reason": "local Qdrant was unavailable",
+                    },
+                    "issues": [
+                        {
+                            "code": "local_qdrant_unavailable",
+                            "path": "--qdrant-url",
+                            "message": "loopback Qdrant is unavailable; no local result was fabricated",
+                            "severity": "error",
+                        }
+                    ],
+                    "local_qdrant": {"status": "unavailable", "skipped": False},
+                }
 
-    _write_corpus_artifact(
-        Path("artifacts/question_corpus/evaluation_local.json"),
-        payload,
-    )
+    if "report_hash" not in payload:
+        payload["report_hash"] = stable_json_hash(payload)
+    _write_corpus_artifact(Path("artifacts/question_corpus") / artifact_name, payload)
     if output_format == "json":
         output(json.dumps(payload, ensure_ascii=False, sort_keys=True))
     else:
