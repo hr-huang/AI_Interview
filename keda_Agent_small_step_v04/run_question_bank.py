@@ -24,6 +24,9 @@ import sys
 from typing import Any
 from urllib.parse import urlparse
 
+import httpx
+from qdrant_client.http.exceptions import ResponseHandlingException
+
 from profile_agent.knowledge.qdrant_question_store import (
     COLLECTION_NAME,
     DeterministicFakeQuestionStore,
@@ -2094,6 +2097,56 @@ def _build_local_qdrant_evaluation(
     return evaluation, fingerprint, store
 
 
+def _classify_local_evaluation_failure(error: BaseException) -> dict[str, str]:
+    """Map local failures to safe, non-sensitive outcome categories.
+
+    Only transport/connection failures mean that the explicitly requested
+    service is unavailable.  Validation/configuration failures and evaluator
+    or unexpected program failures remain visible as distinct fail-closed
+    outcomes; exception text and response bodies are never emitted.
+    """
+
+    source = error.source if isinstance(error, ResponseHandlingException) else error
+    if isinstance(
+        source,
+        (
+            httpx.RequestError,
+            ConnectionError,
+            TimeoutError,
+            OSError,
+        ),
+    ):
+        return {
+            "status": "unavailable",
+            "code": "local_qdrant_unavailable",
+            "category": "service_unavailable",
+            "message": "loopback Qdrant is unavailable; no local result was fabricated",
+        }
+    if isinstance(error, EvaluationValidationError):
+        return {
+            "status": "failed",
+            "code": "local_evaluation_failed",
+            "category": "evaluator_failure",
+            "message": "local evaluation failed closed; no result was fabricated",
+        }
+    if isinstance(
+        error,
+        (QuestionBankValidationError, QuestionBankConfigurationError, TypeError, ValueError),
+    ):
+        return {
+            "status": "invalid",
+            "code": "local_configuration_invalid",
+            "category": "configuration_or_schema_invalid",
+            "message": "local calibration configuration or schema is invalid",
+        }
+    return {
+        "status": "failed",
+        "code": "local_evaluation_failed",
+        "category": "internal_failure",
+        "message": "local calibration failed closed; no result was fabricated",
+    }
+
+
 def _run_corpus_evaluation_action(
     args: argparse.Namespace,
     *,
@@ -2403,13 +2456,14 @@ def _run_corpus_evaluation_action(
                             ]
                     finally:
                         local_store.close()
-                except Exception:
+                except Exception as exc:
+                    failure = _classify_local_evaluation_failure(exc)
                     fingerprint = _build_zero_cost_fingerprint(
                         preview, provider="local-loopback"
                     )
                     payload = {
                         **common,
-                        "status": "unavailable",
+                        "status": failure["status"],
                         "passed": False,
                         "backend": "local-loopback",
                         "model": "deterministic-fake",
@@ -2427,19 +2481,20 @@ def _run_corpus_evaluation_action(
                         "repeatability": {
                             "checked": False,
                             "stable": None,
-                            "reason": "local Qdrant was unavailable",
+                            "reason": failure["category"],
                         },
                         "issues": [
                             {
-                                "code": "local_qdrant_unavailable",
+                                "code": failure["code"],
                                 "path": "--qdrant-url",
-                                "message": "loopback Qdrant is unavailable; no local result was fabricated",
+                                "message": failure["message"],
                                 "severity": "error",
                             }
                         ],
                         "local_qdrant": {
-                            "status": "unavailable",
+                            "status": failure["status"],
                             "skipped": False,
+                            "failure_category": failure["category"],
                         },
                     }
 

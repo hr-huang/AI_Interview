@@ -1,6 +1,6 @@
 {
   "action": "evaluate-local",
-  "as_of": "2026-08-27",
+  "as_of": "2026-08-28",
   "backend": "local-loopback",
   "dry_run": true,
   "embedding": {
@@ -48,7 +48,7 @@
     "reason": "local Qdrant was not configured",
     "stable": null
   },
-  "report_hash": "sha256:f48176c927b6d7e77cf3b32874e6dec731eccedcfdcafa195aa5afa2f073f7cc",
+  "report_hash": "sha256:412f7da45e810d66a6d81807cc5298eb1d3f95acaaa8c76ed39fa058ddf1a6ce",
   "status": "unavailable",
   "store": "local",
   "validation_error_count": 0,

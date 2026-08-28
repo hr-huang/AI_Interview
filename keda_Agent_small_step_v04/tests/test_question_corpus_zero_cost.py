@@ -22,6 +22,7 @@ from profile_agent.knowledge.qdrant_question_store import (
 )
 from profile_agent.services.question_bank_service import load_question_bank
 from profile_agent.services.question_corpus_evaluation import (
+    EvaluationValidationError,
     SYNTHETIC_HARD_NEGATIVE_CATALOG,
     evaluate_question_corpus,
     load_retrieval_intents,
@@ -347,6 +348,68 @@ class QuestionCorpusZeroCostTests(unittest.TestCase):
         self.assertEqual(payload["status"], "invalid")
         self.assertEqual(payload["issues"][0]["code"], "local_url_policy_rejected")
         self.assertEqual(payload["local_qdrant"]["status"], "invalid")
+
+    def test_local_connection_failure_is_unavailable(self) -> None:
+        stdout = io.StringIO()
+        with patch.object(
+            run_question_bank,
+            "_build_local_qdrant_evaluation",
+            side_effect=ConnectionError("private connection details"),
+        ), redirect_stdout(stdout):
+            code = run_question_bank.main(
+                [
+                    "evaluate-local",
+                    "--corpus-dir",
+                    str(CORPUS_DIR),
+                    "--store",
+                    "local",
+                    "--qdrant-url",
+                    "http://127.0.0.1:6333",
+                    "--dry-run",
+                    "--format",
+                    "json",
+                    "--as-of",
+                    AS_OF.isoformat(),
+                ]
+            )
+
+        self.assertNotEqual(code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["status"], "unavailable")
+        self.assertEqual(payload["issues"][0]["code"], "local_qdrant_unavailable")
+        self.assertEqual(payload["local_qdrant"]["failure_category"], "service_unavailable")
+        self.assertNotIn("private connection details", stdout.getvalue())
+
+    def test_local_evaluator_failure_is_not_reported_as_unavailable(self) -> None:
+        stdout = io.StringIO()
+        with patch.object(
+            run_question_bank,
+            "_build_local_qdrant_evaluation",
+            side_effect=EvaluationValidationError("secret evaluator details"),
+        ), redirect_stdout(stdout):
+            code = run_question_bank.main(
+                [
+                    "evaluate-local",
+                    "--corpus-dir",
+                    str(CORPUS_DIR),
+                    "--store",
+                    "local",
+                    "--qdrant-url",
+                    "http://127.0.0.1:6333",
+                    "--dry-run",
+                    "--format",
+                    "json",
+                    "--as-of",
+                    AS_OF.isoformat(),
+                ]
+            )
+
+        self.assertNotEqual(code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["status"], "failed")
+        self.assertEqual(payload["issues"][0]["code"], "local_evaluation_failed")
+        self.assertEqual(payload["local_qdrant"]["failure_category"], "evaluator_failure")
+        self.assertNotIn("secret evaluator details", stdout.getvalue())
 
     def test_local_cli_without_explicit_loopback_is_honest_unavailable(self) -> None:
         stdout = io.StringIO()

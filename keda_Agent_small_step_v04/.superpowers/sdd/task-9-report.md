@@ -178,3 +178,20 @@ git diff --check: OK
 follow-up 提交仍仅包含 Task9 指定代码、测试、fake/local 两个 calibration
 artifact 与本报告；既有 `manifest_preview.json`、`validation_report.json`、
 `evaluation_local.json` 不加入提交。
+
+## Quality follow-up：local failure classification
+
+进一步复审发现 local 分支的裸 `except Exception` 会把 evaluator、schema、
+configuration 和程序错误伪装成 unavailable。新增连接失败与 evaluator 失败
+测试，并改为安全分类：transport/connection/timeout 仅映射为
+`status=unavailable`、`local_qdrant_unavailable`；`EvaluationValidationError`
+映射为 `status=failed`、`local_evaluation_failed`；配置/类型/schema 错误映射为
+`status=invalid`、`local_configuration_invalid`；其余内部错误映射为
+`status=failed`、`internal_failure`。输出仅包含固定安全消息和 category，不回显
+异常文本、响应正文或密钥。
+
+本轮聚焦测试为 `12/12 OK`，相关 corpus 组合为 `80/80 OK`。全量测试先发现既有
+测试副作用改写了 canonical `questions.json`（造成 content hash mismatch）；因
+Task9 禁止污染 canonical corpus，已仅恢复该被测试改写的文件，随后在
+`PYTHON_DOTENV_DISABLED=1` 隔离环境下完成 `721/721 OK`。三个既有临时 artifact
+仍未加入提交。
