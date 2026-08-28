@@ -54,6 +54,7 @@ from profile_agent.services.question_corpus_governance import (
 from profile_agent.services.question_corpus_evaluation import (
     DEFAULT_RETRIEVAL_INTENTS_PATH,
     EvaluationValidationError,
+    SYNTHETIC_HARD_NEGATIVE_CATALOG,
     evaluate_question_corpus,
     load_retrieval_intents,
 )
@@ -320,7 +321,7 @@ def _build_parser() -> argparse.ArgumentParser:
                 "--store",
                 choices=("fake", "local"),
                 default=None,
-                help="候选安全离线评测后端；fake 不访问网络，local 仅供显式 loopback double",
+                help="候选安全离线评测后端；fake 不访问网络，local 当前无 loopback 时 fail-closed（Task 9 启用）",
             )
     return parser
 
@@ -1758,39 +1759,43 @@ def _run_corpus_read_only_action(
 def _fake_corpus_result_provider(records: Sequence[InterviewQuestionRecord]) -> Callable[..., Mapping[str, Any]]:
     """Build a deterministic candidate-safe provider for ``--store fake``.
 
-    The provider uses only the labeled gold and same-dimension/mode records;
-    it never embeds text, constructs a paid client, or writes an index.  It is
-    intentionally small: Task 9 owns the richer deterministic vector/local
-    Qdrant calibration adapter.
+    The provider is intentionally label-blind: it ranks a frozen corpus by
+    deterministic character overlap against the runtime query and adds the
+    complete synthetic fixture pool outside the returned top three.  It never
+    inspects evaluation labels, embeds text, constructs a paid client, or
+    writes an index.  Task 9 owns the richer deterministic local adapter.
     """
 
-    by_id = {record.question_id: record for record in records}
-
-    def provide(label: Any, _runtime_intent: Any) -> Mapping[str, Any]:
-        gold_id = getattr(label, "gold_question_id", None)
-        requested_mode = getattr(label, "requested_mode", None)
-        dimension_id = getattr(label, "dimension_id", None)
-        gold = by_id.get(gold_id)
-        if gold is None:
+    def provide(runtime_intent: Any) -> Mapping[str, Any]:
+        requested_mode = getattr(runtime_intent, "question_mode", None)
+        dimension_id = getattr(runtime_intent, "dimension_id", None)
+        query_text = str(getattr(runtime_intent, "query_text", ""))
+        query_chars = {char for char in query_text if "\u4e00" <= char <= "\u9fff" or char.isalnum()}
+        scoped = [
+            record
+            for record in records
+            if record.dimension_id == dimension_id
+            and (
+                (record.primary_mode or record.question_mode) == requested_mode
+                or requested_mode in record.compatible_modes
+            )
+        ]
+        def rank_key(record: InterviewQuestionRecord) -> tuple[int, int, str]:
+            content = record.question_text
+            overlap = sum(1 for char in query_chars if char in content)
+            mode_penalty = 0 if (record.primary_mode or record.question_mode) == requested_mode else 1
+            return (-overlap, mode_penalty, record.question_id)
+        candidates = sorted(scoped, key=rank_key)
+        if not candidates:
             return {
                 "status": "no_match",
                 "trace": {"status": "no_match"},
                 "hits": [],
             }
-        candidates = [gold]
-        for record in records:
-            if record.question_id == gold.question_id:
-                continue
-            if (
-                record.dimension_id == dimension_id
-                and (record.primary_mode or record.question_mode) == requested_mode
-            ):
-                candidates.append(record)
-            if len(candidates) >= 3:
-                break
         hits: list[dict[str, Any]] = []
         for index, record in enumerate(candidates[:3]):
             score = round(1.0 - index * 0.01, 6)
+            exact = (record.primary_mode or record.question_mode) == requested_mode
             hits.append(
                 {
                     "question": record,
@@ -1798,13 +1803,16 @@ def _fake_corpus_result_provider(records: Sequence[InterviewQuestionRecord]) -> 
                     "source_id": record.source_id,
                     "score": score,
                     "index_version": "deterministic-fake-v1",
-                    "match_tier": "exact",
+                    "match_tier": "exact" if exact else "compatible",
                 }
             )
         first = hits[0]
         return {
             "status": "hit",
             "hits": hits,
+            "candidate_pool": [
+                record.question_id for record in candidates
+            ] + sorted(SYNTHETIC_HARD_NEGATIVE_CATALOG),
             "trace": {
                 "status": "hit",
                 "question_id": first["question_id"],
@@ -1855,7 +1863,7 @@ def _run_corpus_evaluation_action(
                 {
                     "code": "local_store_unavailable",
                     "path": "--store",
-                    "message": "local evaluation requires an explicit loopback test double",
+                    "message": "local evaluation requires an explicit loopback test double; Task 9 enables the local adapter",
                     "severity": "error",
                 },
             ],

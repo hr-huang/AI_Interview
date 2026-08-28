@@ -59,67 +59,82 @@ HARD_NEGATIVE_CATEGORIES: tuple[str, ...] = (
 # records in the 30-question release and are never passed to an embedding
 # input or a production store.  Task 9 may replace this catalogue with richer
 # fixture records while keeping the label contract unchanged.
-SYNTHETIC_HARD_NEGATIVE_CATALOG: dict[str, dict[str, str]] = {
-    "hn_wrong_dimension_fixture": {
-        "category": "wrong_dimension",
-        "role": CORPUS_ROLE,
-        "dimension_id": "role_dim_02",
-        "status": "active",
-        "trust_level": "medium",
-        "source": "offline-synthetic-fixture",
-    },
-    "hn_wrong_mode_fixture": {
-        "category": "wrong_mode",
-        "role": CORPUS_ROLE,
-        "dimension_id": "role_dim_01",
-        "question_mode": "scenario",
-        "status": "active",
-        "trust_level": "medium",
-        "source": "offline-synthetic-fixture",
-    },
-    "hn_expired_fixture": {
-        "category": "expired",
-        "role": CORPUS_ROLE,
-        "dimension_id": "role_dim_01",
-        "status": "active",
-        "valid_until": "2026-08-26",
-        "trust_level": "medium",
-        "source": "offline-synthetic-fixture",
-    },
-    "hn_retired_fixture": {
-        "category": "retired",
-        "role": CORPUS_ROLE,
-        "dimension_id": "role_dim_01",
-        "status": "retired",
-        "trust_level": "medium",
-        "source": "offline-synthetic-fixture",
-    },
-    "hn_duplicate_fixture": {
-        "category": "duplicate",
-        "role": CORPUS_ROLE,
-        "dimension_id": "role_dim_01",
-        "status": "active",
-        "duplicate_of": "q001",
-        "trust_level": "medium",
-        "source": "offline-synthetic-fixture",
-    },
-    "hn_wrong_role_fixture": {
-        "category": "wrong_role",
-        "role": "other_role_fixture",
-        "dimension_id": "role_dim_01",
-        "status": "active",
-        "trust_level": "medium",
-        "source": "offline-synthetic-fixture",
-    },
-    "hn_low_trust_fixture": {
-        "category": "low_trust",
-        "role": CORPUS_ROLE,
-        "dimension_id": "role_dim_01",
-        "status": "active",
-        "trust_level": "low",
-        "source": "offline-synthetic-fixture",
-    },
-}
+_FIXTURE_MODES = (
+    "foundation",
+    "project_deep_dive",
+    "scenario",
+    "system_design",
+    "coding",
+    "follow_up",
+)
+_FIXTURE_DIMENSIONS = (
+    *("role_dim_01" for _ in range(6)),
+    *("role_dim_02" for _ in range(5)),
+    *("role_dim_03" for _ in range(6)),
+    *("role_dim_04" for _ in range(4)),
+    *("role_dim_05" for _ in range(6)),
+    *("role_dim_06" for _ in range(3)),
+)
+_FIXTURE_REQUESTED_MODES = (
+    "foundation", "project_deep_dive", "scenario", "system_design", "follow_up", "scenario",
+    "foundation", "scenario", "project_deep_dive", "scenario", "follow_up",
+    "foundation", "scenario", "system_design", "coding", "follow_up", "project_deep_dive",
+    "project_deep_dive", "scenario", "coding", "follow_up",
+    "foundation", "scenario", "system_design", "scenario", "follow_up", "project_deep_dive",
+    "coding", "system_design", "follow_up",
+)
+
+
+def _build_synthetic_hard_negative_catalog() -> dict[str, dict[str, Any]]:
+    """Build the frozen, per-intent hard-negative fixture registry.
+
+    The registry is independent of labels at evaluation time.  Its IDs are
+    deliberately scoped to the question they challenge so a label cannot
+    accidentally reuse a negative with the wrong dimension or gold target.
+    """
+
+    catalog: dict[str, dict[str, Any]] = {}
+    for number in range(1, 31):
+        question_id = f"q{number:03d}"
+        dimension_id = _FIXTURE_DIMENSIONS[number - 1]
+        requested_mode = _FIXTURE_REQUESTED_MODES[number - 1]
+        wrong_dimension_number = (number % 6) + 1
+        current_dimension_number = int(dimension_id.rsplit("_", 1)[-1])
+        if wrong_dimension_number == current_dimension_number:
+            wrong_dimension_number = (current_dimension_number % 6) + 1
+        wrong_dimension = f"role_dim_{wrong_dimension_number:02d}"
+        # All release modes intentionally omit follow_up from their compatible
+        # mode lists; follow_up is therefore a safe wrong-mode fixture except
+        # when it is the requested mode, where coding is incompatible instead.
+        wrong_mode = "coding" if requested_mode == "follow_up" else "follow_up"
+        if question_id == "q021":
+            wrong_mode = "foundation"
+        entries = {
+            "wrong_dimension": {"dimension_id": wrong_dimension},
+            "wrong_mode": {"dimension_id": dimension_id, "question_mode": wrong_mode},
+            "expired": {"dimension_id": dimension_id, "valid_until": "2026-08-26"},
+            "retired": {"dimension_id": dimension_id, "status": "retired"},
+            "duplicate": {"dimension_id": dimension_id, "duplicate_of": question_id},
+            "wrong_role": {"dimension_id": dimension_id, "role": "other_role_fixture"},
+            "low_trust": {"dimension_id": dimension_id, "trust_level": "low"},
+        }
+        for category, attributes in entries.items():
+            fixture_id = f"hn_{category}_q{number:03d}"
+            catalog[fixture_id] = {
+                "fixture_id": fixture_id,
+                "category": category,
+                "question_id": fixture_id,
+                "role": CORPUS_ROLE,
+                "status": "active",
+                "trust_level": "medium",
+                "source": "offline-synthetic-fixture",
+                "intent_question_id": question_id,
+                **attributes,
+            }
+    return catalog
+
+
+SYNTHETIC_HARD_NEGATIVE_CATALOG = _build_synthetic_hard_negative_catalog()
 
 _DIFFICULTY_BY_MODE: dict[str, str] = {
     "foundation": "intermediate",
@@ -312,31 +327,12 @@ def _expected_match_tier(
     return None
 
 
-def _hard_negative_category(value: str) -> str | None:
-    if value in SYNTHETIC_HARD_NEGATIVE_CATALOG:
-        return SYNTHETIC_HARD_NEGATIVE_CATALOG[value]["category"]
-    lowered = value.casefold().replace("-", "_").replace(" ", "_")
-    for category in HARD_NEGATIVE_CATEGORIES:
-        if category in lowered:
-            return category
-    return None
-
-
-def _note_categories(value: str) -> set[str]:
-    lowered = value.casefold()
-    return {
-        category
-        for category in HARD_NEGATIVE_CATEGORIES
-        if category in lowered
-        or category.replace("_", " ") in lowered
-    }
-
-
 def _collect_intent_validation_issues(
     intents: Sequence[LabeledQuestionIntent],
     records: Any = None,
     *,
     policy: QuestionModePolicy | None = None,
+    as_of: date = CORPUS_AS_OF,
 ) -> list[str]:
     issues: list[str] = []
     if not intents:
@@ -390,18 +386,40 @@ def _collect_intent_validation_issues(
             if _expected_match_tier(intent, acceptable, selected_policy) is None:
                 issues.append(f"acceptable has invalid mode: {intent.intent_id}")
 
+        if not intent.hard_negative_ids:
+            issues.append(f"hard negatives must not be empty: {intent.intent_id}")
         if len(set(intent.hard_negative_ids)) != len(intent.hard_negative_ids):
             issues.append(f"hard negatives contain duplicates: {intent.intent_id}")
         accepted_ids = set(intent.acceptable_question_ids)
         for negative_id in intent.hard_negative_ids:
             if negative_id in accepted_ids or negative_id == intent.gold_question_id:
                 issues.append(f"hard negative overlaps positive: {intent.intent_id}")
-            category = _hard_negative_category(negative_id)
-            if category is None and records is not None and negative_id not in by_id:
+            fixture = SYNTHETIC_HARD_NEGATIVE_CATALOG.get(negative_id)
+            if fixture is None:
                 issues.append(f"hard negative fixture is unknown: {negative_id}")
-            if category is not None:
-                all_categories.add(category)
-        all_categories.update(_note_categories(intent.label_notes))
+                continue
+            category = fixture["category"]
+            all_categories.add(category)
+            if fixture.get("intent_question_id") != intent.gold_question_id:
+                issues.append(f"hard negative fixture targets wrong gold: {intent.intent_id}")
+            if category == "wrong_dimension" and fixture.get("dimension_id") == intent.dimension_id:
+                issues.append(f"wrong-dimension fixture matches dimension: {intent.intent_id}")
+            elif category == "wrong_mode":
+                mode = fixture.get("question_mode")
+                if mode == intent.requested_mode:
+                    issues.append(f"wrong-mode fixture matches requested mode: {intent.intent_id}")
+                if gold is not None and mode in gold.compatible_modes:
+                    issues.append(f"wrong-mode fixture is compatible: {intent.intent_id}")
+            elif category == "expired" and fixture.get("valid_until", "9999-12-31") >= as_of.isoformat():
+                issues.append(f"expired fixture is not expired: {intent.intent_id}")
+            elif category == "retired" and fixture.get("status") != "retired":
+                issues.append(f"retired fixture is active: {intent.intent_id}")
+            elif category == "duplicate" and fixture.get("duplicate_of") != intent.gold_question_id:
+                issues.append(f"duplicate fixture targets wrong gold: {intent.intent_id}")
+            elif category == "wrong_role" and fixture.get("role") == intent.role:
+                issues.append(f"wrong-role fixture matches role: {intent.intent_id}")
+            elif category == "low_trust" and fixture.get("trust_level") != "low":
+                issues.append(f"low-trust fixture is trusted: {intent.intent_id}")
 
     # A complete canonical set must explicitly exercise all seven categories.
     # Small test fixtures remain useful without pretending to cover the whole
@@ -425,6 +443,7 @@ def validate_labeled_intents(
     records: Any = None,
     *,
     policy: QuestionModePolicy | Mapping[str, Any] | None = None,
+    as_of: date = CORPUS_AS_OF,
 ) -> tuple[str, ...]:
     """Validate labeled intents and raise a non-echoing contract error."""
 
@@ -444,6 +463,7 @@ def validate_labeled_intents(
         normalized,
         records,
         policy=selected_policy,
+        as_of=as_of,
     )
     if issues:
         raise EvaluationValidationError("; ".join(issues))
@@ -459,6 +479,7 @@ def load_retrieval_intents(
     *,
     records: Any = None,
     policy: QuestionModePolicy | Mapping[str, Any] | None = None,
+    as_of: date = CORPUS_AS_OF,
 ) -> list[LabeledQuestionIntent]:
     """Load strict JSONL labels and validate their cross-record relations."""
 
@@ -483,7 +504,7 @@ def load_retrieval_intents(
             raise EvaluationValidationError(
                 f"retrieval intent schema is invalid at line {line_number}"
             ) from exc
-    validate_labeled_intents(values, records=records, policy=policy)
+    validate_labeled_intents(values, records=records, policy=policy, as_of=as_of)
     return values
 
 
@@ -1173,7 +1194,7 @@ def evaluate_question_corpus(
     """
 
     if isinstance(intents, (str, Path)):
-        normalized_intents = load_retrieval_intents(intents, records=records, policy=policy)
+        normalized_intents = load_retrieval_intents(intents, records=records, policy=policy, as_of=as_of)
     else:
         try:
             normalized_intents = [_coerce_intent(value) for value in intents]
@@ -1191,7 +1212,7 @@ def evaluate_question_corpus(
         )
     except Exception as exc:
         raise EvaluationValidationError("evaluation mode policy is invalid") from exc
-    validate_labeled_intents(normalized_intents, records=records, policy=selected_policy)
+    validate_labeled_intents(normalized_intents, records=records, policy=selected_policy, as_of=as_of)
     records_by_id, corpus_invalid, corpus_duplicates = _normalise_records(records)
     selected_store = store or question_store or fake_store
     selected_embedding = embedding if embedding is not None else embedding_client

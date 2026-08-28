@@ -18,6 +18,8 @@ from profile_agent.schemas.question_rag_schema import (
 from profile_agent.services.question_bank_service import load_question_bank
 from profile_agent.services.question_corpus_evaluation import (
     EvaluationValidationError,
+    HARD_NEGATIVE_CATEGORIES,
+    SYNTHETIC_HARD_NEGATIVE_CATALOG,
     evaluate_question_corpus,
     intent_to_runtime_intent,
     load_retrieval_intents,
@@ -52,6 +54,140 @@ class QuestionCorpusEvaluationTests(unittest.TestCase):
             self.assertTrue(intent.query_text)
             self.assertTrue(intent.label_notes)
             self.assertIn(intent.gold_question_id, intent.acceptable_question_ids)
+
+    def test_hard_negative_registry_is_per_intent_and_attribute_validated(self) -> None:
+        all_ids = [negative_id for intent in self.intents for negative_id in intent.hard_negative_ids]
+        self.assertEqual(len(all_ids), 30 * len(HARD_NEGATIVE_CATEGORIES))
+        self.assertEqual(len(set(all_ids)), len(all_ids))
+        as_of = date(2026, 8, 27)
+        for intent in self.intents:
+            categories = set()
+            for negative_id in intent.hard_negative_ids:
+                fixture = SYNTHETIC_HARD_NEGATIVE_CATALOG[negative_id]
+                category = fixture["category"]
+                categories.add(category)
+                if category == "wrong_dimension":
+                    self.assertNotEqual(fixture["dimension_id"], intent.dimension_id)
+                elif category == "wrong_mode":
+                    self.assertNotEqual(fixture["question_mode"], intent.requested_mode)
+                    self.assertNotIn(fixture["question_mode"], self.records[0].compatible_modes)
+                elif category == "expired":
+                    self.assertLess(fixture["valid_until"], as_of.isoformat())
+                elif category == "retired":
+                    self.assertEqual(fixture["status"], "retired")
+                elif category == "duplicate":
+                    self.assertEqual(fixture["duplicate_of"], intent.gold_question_id)
+                elif category == "wrong_role":
+                    self.assertNotEqual(fixture["role"], intent.role)
+                elif category == "low_trust":
+                    self.assertEqual(fixture["trust_level"], "low")
+            self.assertEqual(categories, set(HARD_NEGATIVE_CATEGORIES))
+
+    def test_hard_negative_ids_are_strict_and_notes_cannot_fake_coverage(self) -> None:
+        payload = [intent.model_dump(mode="json") for intent in self.intents]
+        payload[0]["hard_negative_ids"] = []
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "intents.jsonl"
+            path.write_text("\n".join(json.dumps(item) for item in payload) + "\n", encoding="utf-8")
+            with self.assertRaises(EvaluationValidationError):
+                load_retrieval_intents(path, records=self.records)
+        payload = [intent.model_dump(mode="json") for intent in self.intents]
+        payload[0]["hard_negative_ids"][0] = "madeup_wrong_dimension_fixture"
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "intents.jsonl"
+            path.write_text("\n".join(json.dumps(item) for item in payload) + "\n", encoding="utf-8")
+            with self.assertRaises(EvaluationValidationError):
+                load_retrieval_intents(path, records=self.records)
+
+    def test_fake_provider_is_label_blind_and_gold_mutation_fails(self) -> None:
+        provider = run_question_bank._fake_corpus_result_provider(self.records)
+        original = self.intents[0]
+        runtime = intent_to_runtime_intent(original, records=self.records)
+        raw = provider(runtime)
+        self.assertTrue(set(original.hard_negative_ids).issubset(set(raw["candidate_pool"])))
+        self.assertTrue(set(original.hard_negative_ids).isdisjoint({hit["question_id"] for hit in raw["hits"]}))
+        mutated = original.model_copy(
+            update={
+                "gold_question_id": "q006",
+                "acceptable_question_ids": ["q006"],
+                "hard_negative_ids": [
+                    "hn_wrong_dimension_q006",
+                    "hn_wrong_mode_q006",
+                    "hn_expired_q006",
+                    "hn_retired_q006",
+                    "hn_duplicate_q006",
+                    "hn_wrong_role_q006",
+                    "hn_low_trust_q006",
+                ],
+            }
+        )
+        self.assertEqual(provider(runtime), provider(intent_to_runtime_intent(mutated, records=self.records)))
+        source = run_question_bank._fake_corpus_result_provider.__code__.co_names
+        self.assertNotIn("gold_question_id", source)
+        self.assertNotIn("acceptable_question_ids", source)
+        report = evaluate_question_corpus([mutated], None, result_provider=provider)
+        self.assertFalse(report.passed)
+
+    def test_cli_local_without_loopback_fails_closed(self) -> None:
+        stdout = io.StringIO()
+        with patch.object(run_question_bank, "_write_corpus_artifact"):
+            with redirect_stdout(stdout):
+                code = run_question_bank.main(
+                    [
+                        "evaluate-local",
+                        "--corpus-dir",
+                        str(CORPUS_DIR),
+                        "--store",
+                        "local",
+                        "--dry-run",
+                        "--format",
+                        "json",
+                    ]
+                )
+        self.assertNotEqual(code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertFalse(payload["passed"])
+        self.assertIn("Task 9", payload["issues"][-1]["message"])
+
+    def test_canonical_labels_exercise_compatible_tier(self) -> None:
+        compatible = [intent for intent in self.intents if len(intent.acceptable_question_ids) > 1]
+        self.assertTrue(compatible)
+        intent = compatible[0]
+        result = evaluate_question_corpus(
+            [intent],
+            self.records,
+            results={
+                intent.intent_id: {
+                    "status": "hit",
+                    "hits": [
+                        {
+                            "question_id": intent.gold_question_id,
+                            "source_id": next(r.source_id for r in self.records if r.question_id == intent.gold_question_id),
+                            "score": 1.0,
+                            "index_version": "fixture",
+                            "match_tier": "exact",
+                        },
+                        {
+                            "question_id": intent.acceptable_question_ids[1],
+                            "source_id": next(r.source_id for r in self.records if r.question_id == intent.acceptable_question_ids[1]),
+                            "score": 0.9,
+                            "index_version": "fixture",
+                            "match_tier": "compatible",
+                        },
+                    ],
+                    "trace": {
+                        "status": "hit",
+                        "question_id": intent.gold_question_id,
+                        "source_id": next(r.source_id for r in self.records if r.question_id == intent.gold_question_id),
+                        "score": 1.0,
+                        "index_version": "fixture",
+                        "match_tier": "exact",
+                    },
+                }
+            },
+        )
+        self.assertTrue(result.passed)
+        self.assertEqual(result.intent_results[0].top3[1]["match_tier"], "compatible")
 
     def test_intent_to_runtime_intent_only_projects_runtime_fields(self) -> None:
         runtime = intent_to_runtime_intent(self.intents[0], records=self.records)
