@@ -1,0 +1,274 @@
+{
+  "records": [
+    {
+      "question_id": "q001",
+      "semantic_hash": "sha256:f13f622032ac7a540532f44579f9a77e677cc1e13af720aadbfc0450f525dccd",
+      "comparison_batch": "task7-v1",
+      "candidate_duplicate_group": [],
+      "near_duplicate_decision": "pending",
+      "decision": "pending",
+      "reviewed_at": "2026-08-27"
+    },
+    {
+      "question_id": "q002",
+      "semantic_hash": "sha256:0ed7b3f9999b60e74963e7199034f6fd8398ae4c0d987082482c4d8b1d3f2b4c",
+      "comparison_batch": "task7-v1",
+      "candidate_duplicate_group": [],
+      "near_duplicate_decision": "pending",
+      "decision": "pending",
+      "reviewed_at": "2026-08-27"
+    },
+    {
+      "question_id": "q003",
+      "semantic_hash": "sha256:0b28f81247cd29085fbbef9646e1f53d6c931220a79f1db528af3253cb515e3f",
+      "comparison_batch": "task7-v1",
+      "candidate_duplicate_group": [],
+      "near_duplicate_decision": "pending",
+      "decision": "pending",
+      "reviewed_at": "2026-08-27"
+    },
+    {
+      "question_id": "q004",
+      "semantic_hash": "sha256:f89f8357434664099600d13daf689e14188b3cc9217f50201304fc0e68055fba",
+      "comparison_batch": "task7-v1",
+      "candidate_duplicate_group": [],
+      "near_duplicate_decision": "pending",
+      "decision": "pending",
+      "reviewed_at": "2026-08-27"
+    },
+    {
+      "question_id": "q005",
+      "semantic_hash": "sha256:34b7dde35d9032d1813aee1a17e4347645da53b7cf12bb0e4f0fbb8118d6f66b",
+      "comparison_batch": "task7-v1",
+      "candidate_duplicate_group": [],
+      "near_duplicate_decision": "pending",
+      "decision": "pending",
+      "reviewed_at": "2026-08-27"
+    },
+    {
+      "question_id": "q006",
+      "semantic_hash": "sha256:e50a5a2f075cbd468f10966bb90d4b17a715b91c4a64f7a6f0f15307a2732445",
+      "comparison_batch": "task7-v1",
+      "candidate_duplicate_group": [],
+      "near_duplicate_decision": "pending",
+      "decision": "pending",
+      "reviewed_at": "2026-08-27"
+    },
+    {
+      "question_id": "q007",
+      "semantic_hash": "sha256:b1edc8e60289692bb28a2af8b8e76815ab92be554253457166f8762c317dda36",
+      "comparison_batch": "task7-v1",
+      "candidate_duplicate_group": [],
+      "near_duplicate_decision": "pending",
+      "decision": "pending",
+      "reviewed_at": "2026-08-27"
+    },
+    {
+      "question_id": "q008",
+      "semantic_hash": "sha256:199cd3320b1714adce6dc6d9c97351fca92d36579676a3ed3b9174a43a38a657",
+      "comparison_batch": "task7-v1",
+      "candidate_duplicate_group": [],
+      "near_duplicate_decision": "pending",
+      "decision": "pending",
+      "reviewed_at": "2026-08-27"
+    },
+    {
+      "question_id": "q009",
+      "semantic_hash": "sha256:6154b8b884ec1157c5a394527f4dc4bd106f6e0530aa414f89ad3f86dff98f55",
+      "comparison_batch": "task7-v1",
+      "candidate_duplicate_group": [],
+      "near_duplicate_decision": "pending",
+      "decision": "pending",
+      "reviewed_at": "2026-08-27"
+    },
+    {
+      "question_id": "q010",
+      "semantic_hash": "sha256:4ec81e012c6690b10e0355a295f931f055c055bd261c2a5adda2b9ca12de2813",
+      "comparison_batch": "task7-v1",
+      "candidate_duplicate_group": [],
+      "near_duplicate_decision": "pending",
+      "decision": "pending",
+      "reviewed_at": "2026-08-27"
+    },
+    {
+      "question_id": "q011",
+      "semantic_hash": "sha256:38c28f3742f6225ef9c35f48f46c9093cb2cc375fcbc9045c3e7d5f56bbcb08b",
+      "comparison_batch": "task7-v1",
+      "candidate_duplicate_group": [],
+      "near_duplicate_decision": "pending",
+      "decision": "pending",
+      "reviewed_at": "2026-08-27"
+    },
+    {
+      "question_id": "q012",
+      "semantic_hash": "sha256:3a1b03a01274249b218566d8cb3a7fc16b05add59a96b346d9d610c7b5655031",
+      "comparison_batch": "task7-v1",
+      "candidate_duplicate_group": [],
+      "near_duplicate_decision": "pending",
+      "decision": "pending",
+      "reviewed_at": "2026-08-27"
+    },
+    {
+      "question_id": "q013",
+      "semantic_hash": "sha256:37d22035840fc2e61314f90442ab1e8e2b4a362c9f9a1a56f16c00a9f18dd57d",
+      "comparison_batch": "task7-v1",
+      "candidate_duplicate_group": [],
+      "near_duplicate_decision": "pending",
+      "decision": "pending",
+      "reviewed_at": "2026-08-27"
+    },
+    {
+      "question_id": "q014",
+      "semantic_hash": "sha256:a06afb7d96eac7d607088d69fa0f3b4772602e418eb539c864938ab9abb7425a",
+      "comparison_batch": "task7-v1",
+      "candidate_duplicate_group": [],
+      "near_duplicate_decision": "pending",
+      "decision": "pending",
+      "reviewed_at": "2026-08-27"
+    },
+    {
+      "question_id": "q015",
+      "semantic_hash": "sha256:6fa209fe04df10fe42a63a4056a5e7d156d71b75a81e8f68f7b8ea1e86fdedac",
+      "comparison_batch": "task7-v1",
+      "candidate_duplicate_group": [],
+      "near_duplicate_decision": "pending",
+      "decision": "pending",
+      "reviewed_at": "2026-08-27"
+    },
+    {
+      "question_id": "q016",
+      "semantic_hash": "sha256:af07e9e81bfccf883bba5b8b12af05ba43f0003790932be46d8dcf4c3677bfea",
+      "comparison_batch": "task7-v1",
+      "candidate_duplicate_group": [],
+      "near_duplicate_decision": "pending",
+      "decision": "pending",
+      "reviewed_at": "2026-08-27"
+    },
+    {
+      "question_id": "q017",
+      "semantic_hash": "sha256:65044c214ca4f98ea9c2dc5bf6746b99baf8219dbd5f7ccf08cb92de70a785e7",
+      "comparison_batch": "task7-v1",
+      "candidate_duplicate_group": [],
+      "near_duplicate_decision": "pending",
+      "decision": "pending",
+      "reviewed_at": "2026-08-27"
+    },
+    {
+      "question_id": "q018",
+      "semantic_hash": "sha256:d6a0897bd34b335ffcf533627526c7fba970403ddc0044fade5b2ab5d58f490d",
+      "comparison_batch": "task7-v1",
+      "candidate_duplicate_group": [],
+      "near_duplicate_decision": "pending",
+      "decision": "pending",
+      "reviewed_at": "2026-08-27"
+    },
+    {
+      "question_id": "q019",
+      "semantic_hash": "sha256:9a79b12f8cda711410a130ded7a73b5f60e2b99562e1aa1dedda702a544e996e",
+      "comparison_batch": "task7-v1",
+      "candidate_duplicate_group": [],
+      "near_duplicate_decision": "pending",
+      "decision": "pending",
+      "reviewed_at": "2026-08-27"
+    },
+    {
+      "question_id": "q020",
+      "semantic_hash": "sha256:6d3d708049cf7bdbc1630eebaf20c60fabb950b1e55b082d56d0aaaa2ec29be5",
+      "comparison_batch": "task7-v1",
+      "candidate_duplicate_group": [],
+      "near_duplicate_decision": "pending",
+      "decision": "pending",
+      "reviewed_at": "2026-08-27"
+    },
+    {
+      "question_id": "q021",
+      "semantic_hash": "sha256:7877c560b83a5b4125d8b728fae4bdb39d428f1ed46b1831e9c6f344e7e36636",
+      "comparison_batch": "task7-v1",
+      "candidate_duplicate_group": [],
+      "near_duplicate_decision": "pending",
+      "decision": "pending",
+      "reviewed_at": "2026-08-27"
+    },
+    {
+      "question_id": "q022",
+      "semantic_hash": "sha256:da8db0c40e625f3631c51cc7f57ebf9d15ea7283442560adf36ec47de4cdacd5",
+      "comparison_batch": "task7-v1",
+      "candidate_duplicate_group": [],
+      "near_duplicate_decision": "pending",
+      "decision": "pending",
+      "reviewed_at": "2026-08-27"
+    },
+    {
+      "question_id": "q023",
+      "semantic_hash": "sha256:fa5dec2ef142b6d3c6a839efb446212e512f98287344f3b73cf7e9469a282057",
+      "comparison_batch": "task7-v1",
+      "candidate_duplicate_group": [],
+      "near_duplicate_decision": "pending",
+      "decision": "pending",
+      "reviewed_at": "2026-08-27"
+    },
+    {
+      "question_id": "q024",
+      "semantic_hash": "sha256:6b73ae66193f32a982d020810a97e508dd9d57cb5be087f0120c3f4860673587",
+      "comparison_batch": "task7-v1",
+      "candidate_duplicate_group": [],
+      "near_duplicate_decision": "pending",
+      "decision": "pending",
+      "reviewed_at": "2026-08-27"
+    },
+    {
+      "question_id": "q025",
+      "semantic_hash": "sha256:d5f7448ae65769d74663a456c55fb92e13232f98673852606ab68a9a47e2f765",
+      "comparison_batch": "task7-v1",
+      "candidate_duplicate_group": [],
+      "near_duplicate_decision": "pending",
+      "decision": "pending",
+      "reviewed_at": "2026-08-27"
+    },
+    {
+      "question_id": "q026",
+      "semantic_hash": "sha256:d17c219434f6169c20018af678e42857152075be0f0713784b87062735b91602",
+      "comparison_batch": "task7-v1",
+      "candidate_duplicate_group": [],
+      "near_duplicate_decision": "pending",
+      "decision": "pending",
+      "reviewed_at": "2026-08-27"
+    },
+    {
+      "question_id": "q027",
+      "semantic_hash": "sha256:198cc6900b4bd8e084cfd27f770b64c65f66dae2920b672638e441852d9f8211",
+      "comparison_batch": "task7-v1",
+      "candidate_duplicate_group": [],
+      "near_duplicate_decision": "pending",
+      "decision": "pending",
+      "reviewed_at": "2026-08-27"
+    },
+    {
+      "question_id": "q028",
+      "semantic_hash": "sha256:a7249d866bf1617c50fc42266e551a723e13c7a0e28a4f07dab46ba70023c39a",
+      "comparison_batch": "task7-v1",
+      "candidate_duplicate_group": [],
+      "near_duplicate_decision": "pending",
+      "decision": "pending",
+      "reviewed_at": "2026-08-27"
+    },
+    {
+      "question_id": "q029",
+      "semantic_hash": "sha256:30d7e96e2b6ac265b668ff7c2a49634f743cd45e6c314a27248912073cc539f5",
+      "comparison_batch": "task7-v1",
+      "candidate_duplicate_group": [],
+      "near_duplicate_decision": "pending",
+      "decision": "pending",
+      "reviewed_at": "2026-08-27"
+    },
+    {
+      "question_id": "q030",
+      "semantic_hash": "sha256:2cdcc765646195e1d3f9875a51e89907f23c4de7baeb1b9c1d900e99f0fc6274",
+      "comparison_batch": "task7-v1",
+      "candidate_duplicate_group": [],
+      "near_duplicate_decision": "pending",
+      "decision": "pending",
+      "reviewed_at": "2026-08-27"
+    }
+  ]
+}

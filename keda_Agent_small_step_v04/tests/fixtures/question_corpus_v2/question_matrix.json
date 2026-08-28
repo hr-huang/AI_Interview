@@ -1,0 +1,157 @@
+{
+  "schema_version": "2",
+  "role": "ai_agent_engineer",
+  "role_version": "2026-H2",
+  "questions": [
+    {
+      "question_id": "q001",
+      "dimension_id": "role_dim_01",
+      "primary_mode": "foundation"
+    },
+    {
+      "question_id": "q002",
+      "dimension_id": "role_dim_01",
+      "primary_mode": "project_deep_dive"
+    },
+    {
+      "question_id": "q003",
+      "dimension_id": "role_dim_01",
+      "primary_mode": "scenario"
+    },
+    {
+      "question_id": "q004",
+      "dimension_id": "role_dim_01",
+      "primary_mode": "system_design"
+    },
+    {
+      "question_id": "q005",
+      "dimension_id": "role_dim_01",
+      "primary_mode": "follow_up"
+    },
+    {
+      "question_id": "q006",
+      "dimension_id": "role_dim_01",
+      "primary_mode": "scenario"
+    },
+    {
+      "question_id": "q007",
+      "dimension_id": "role_dim_02",
+      "primary_mode": "foundation"
+    },
+    {
+      "question_id": "q008",
+      "dimension_id": "role_dim_02",
+      "primary_mode": "scenario"
+    },
+    {
+      "question_id": "q009",
+      "dimension_id": "role_dim_02",
+      "primary_mode": "project_deep_dive"
+    },
+    {
+      "question_id": "q010",
+      "dimension_id": "role_dim_02",
+      "primary_mode": "scenario"
+    },
+    {
+      "question_id": "q011",
+      "dimension_id": "role_dim_02",
+      "primary_mode": "follow_up"
+    },
+    {
+      "question_id": "q012",
+      "dimension_id": "role_dim_03",
+      "primary_mode": "foundation"
+    },
+    {
+      "question_id": "q013",
+      "dimension_id": "role_dim_03",
+      "primary_mode": "scenario"
+    },
+    {
+      "question_id": "q014",
+      "dimension_id": "role_dim_03",
+      "primary_mode": "system_design"
+    },
+    {
+      "question_id": "q015",
+      "dimension_id": "role_dim_03",
+      "primary_mode": "coding"
+    },
+    {
+      "question_id": "q016",
+      "dimension_id": "role_dim_03",
+      "primary_mode": "follow_up"
+    },
+    {
+      "question_id": "q017",
+      "dimension_id": "role_dim_03",
+      "primary_mode": "project_deep_dive"
+    },
+    {
+      "question_id": "q018",
+      "dimension_id": "role_dim_04",
+      "primary_mode": "project_deep_dive"
+    },
+    {
+      "question_id": "q019",
+      "dimension_id": "role_dim_04",
+      "primary_mode": "scenario"
+    },
+    {
+      "question_id": "q020",
+      "dimension_id": "role_dim_04",
+      "primary_mode": "coding"
+    },
+    {
+      "question_id": "q021",
+      "dimension_id": "role_dim_04",
+      "primary_mode": "follow_up"
+    },
+    {
+      "question_id": "q022",
+      "dimension_id": "role_dim_05",
+      "primary_mode": "foundation"
+    },
+    {
+      "question_id": "q023",
+      "dimension_id": "role_dim_05",
+      "primary_mode": "scenario"
+    },
+    {
+      "question_id": "q024",
+      "dimension_id": "role_dim_05",
+      "primary_mode": "system_design"
+    },
+    {
+      "question_id": "q025",
+      "dimension_id": "role_dim_05",
+      "primary_mode": "scenario"
+    },
+    {
+      "question_id": "q026",
+      "dimension_id": "role_dim_05",
+      "primary_mode": "follow_up"
+    },
+    {
+      "question_id": "q027",
+      "dimension_id": "role_dim_05",
+      "primary_mode": "project_deep_dive"
+    },
+    {
+      "question_id": "q028",
+      "dimension_id": "role_dim_06",
+      "primary_mode": "coding"
+    },
+    {
+      "question_id": "q029",
+      "dimension_id": "role_dim_06",
+      "primary_mode": "system_design"
+    },
+    {
+      "question_id": "q030",
+      "dimension_id": "role_dim_06",
+      "primary_mode": "follow_up"
+    }
+  ]
+}

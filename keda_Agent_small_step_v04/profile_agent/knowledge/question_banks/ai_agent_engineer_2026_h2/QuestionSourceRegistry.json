@@ -11,7 +11,11 @@
       "accessed_at": "2026-08-27",
       "trust": "medium",
       "lifecycle": "draft",
-      "question_ids": [],
+      "question_ids": [
+        "q001",
+        "q002",
+        "q003"
+      ],
       "human_summary": "作者整理影石创新AI Agent一面，涉及项目拆解、工具权限、评测与发布运营，属于二手整理。",
       "review_class": "dynamic",
       "date_basis": "published_at",
@@ -42,7 +46,11 @@
       "accessed_at": "2026-08-27",
       "trust": "medium",
       "lifecycle": "draft",
-      "question_ids": [],
+      "question_ids": [
+        "q004",
+        "q005",
+        "q006"
+      ],
       "human_summary": "候选人记录字节大模型应用开发一面，重点是Agent项目架构、RAG链路与工程追问。",
       "review_class": "dynamic",
       "date_basis": "published_at",
@@ -73,7 +81,11 @@
       "accessed_at": "2026-08-27",
       "trust": "medium",
       "lifecycle": "draft",
-      "question_ids": [],
+      "question_ids": [
+        "q007",
+        "q008",
+        "q009"
+      ],
       "human_summary": "候选人分享字节AI全栈一面，覆盖后端基础、模型调用、检索与现场协作。",
       "review_class": "dynamic",
       "date_basis": "published_at",
@@ -104,7 +116,11 @@
       "accessed_at": "2026-08-27",
       "trust": "medium",
       "lifecycle": "draft",
-      "question_ids": [],
+      "question_ids": [
+        "q010",
+        "q011",
+        "q012"
+      ],
       "human_summary": "帖子汇总阿里、蚂蚁、字节Agent岗位问题，标记为汇编，不能视作单一候选人原始记录。",
       "review_class": "dynamic",
       "date_basis": "published_at",
@@ -135,7 +151,11 @@
       "accessed_at": "2026-08-27",
       "trust": "medium",
       "lifecycle": "draft",
-      "question_ids": [],
+      "question_ids": [
+        "q013",
+        "q014",
+        "q015"
+      ],
       "human_summary": "作者复盘连续三场AI-Agent后端面试，强调工具调用、记忆、并发和故障处理。",
       "review_class": "dynamic",
       "date_basis": "published_at",
@@ -166,7 +186,11 @@
       "accessed_at": "2026-08-27",
       "trust": "medium",
       "lifecycle": "draft",
-      "question_ids": [],
+      "question_ids": [
+        "q016",
+        "q017",
+        "q018"
+      ],
       "human_summary": "候选人记录四家大厂Agent岗位面试，分别涉及工具链、RAG、缓存与算法，属个人经历。",
       "review_class": "dynamic",
       "date_basis": "published_at",
@@ -197,7 +221,11 @@
       "accessed_at": "2026-08-27",
       "trust": "medium",
       "lifecycle": "draft",
-      "question_ids": [],
+      "question_ids": [
+        "q019",
+        "q020",
+        "q021"
+      ],
       "human_summary": "候选人记录字节后端实习二面，包含项目追问、数据库与服务稳定性问题。",
       "review_class": "dynamic",
       "date_basis": "published_at",
@@ -228,7 +256,11 @@
       "accessed_at": "2026-08-27",
       "trust": "medium",
       "lifecycle": "draft",
-      "question_ids": [],
+      "question_ids": [
+        "q022",
+        "q023",
+        "q024"
+      ],
       "human_summary": "候选人分享字节国际化广告一面，关注业务理解、数据处理和模型应用工程。",
       "review_class": "dynamic",
       "date_basis": "published_at",
@@ -259,7 +291,11 @@
       "accessed_at": "2026-08-27",
       "trust": "medium",
       "lifecycle": "draft",
-      "question_ids": [],
+      "question_ids": [
+        "q025",
+        "q026",
+        "q027"
+      ],
       "human_summary": "作者总结近期AI Coding面试，说明人机协作、提示词、测试和问题定位考察点。",
       "review_class": "dynamic",
       "date_basis": "published_at",
@@ -290,7 +326,11 @@
       "accessed_at": "2026-08-27",
       "trust": "medium",
       "lifecycle": "draft",
-      "question_ids": [],
+      "question_ids": [
+        "q028",
+        "q029",
+        "q030"
+      ],
       "human_summary": "候选人记录安软AI应用开发实习技术面，覆盖AI Coding、模型选型、上下文、Agent架构、RAG评测及Redis数据库。",
       "review_class": "dynamic",
       "date_basis": "published_at",
@@ -321,7 +361,11 @@
       "accessed_at": "2026-08-27",
       "trust": "high",
       "lifecycle": "draft",
-      "question_ids": [],
+      "question_ids": [
+        "q001",
+        "q002",
+        "q003"
+      ],
       "human_summary": "国内官方技术文档，说明RAG、Agent、模型调用或评测工程能力。",
       "review_class": "evergreen",
       "date_basis": "published_at",
@@ -331,7 +375,7 @@
         "role_dim_04"
       ],
       "access_status": "accessible",
-      "next_review_at": "2027-08-22",
+      "next_review_at": "2027-08-27",
       "rights_status": "pending",
       "notes": "页面H1“腾讯云智能体开发平台 Agentic RAG”；最近更新时间：2026-08-21；定位智能体检索与RAG配置。",
       "date_evidence": "页面H1“腾讯云智能体开发平台 Agentic RAG”；最近更新时间：2026-08-21；定位智能体检索与RAG配置。",
@@ -351,7 +395,11 @@
       "accessed_at": "2026-08-27",
       "trust": "high",
       "lifecycle": "draft",
-      "question_ids": [],
+      "question_ids": [
+        "q004",
+        "q005",
+        "q006"
+      ],
       "human_summary": "国内官方技术文档，说明RAG、Agent、模型调用或评测工程能力。",
       "review_class": "evergreen",
       "date_basis": "published_at",
@@ -362,7 +410,7 @@
         "role_dim_06"
       ],
       "access_status": "accessible",
-      "next_review_at": "2027-08-22",
+      "next_review_at": "2027-08-27",
       "rights_status": "pending",
       "notes": "页面H1“混元调用指南”；最近更新时间：2026-08-22；定位模型调用、评测与安全参数。",
       "date_evidence": "页面H1“混元调用指南”；最近更新时间：2026-08-22；定位模型调用、评测与安全参数。",
@@ -382,7 +430,11 @@
       "accessed_at": "2026-08-27",
       "trust": "high",
       "lifecycle": "draft",
-      "question_ids": [],
+      "question_ids": [
+        "q007",
+        "q008",
+        "q009"
+      ],
       "human_summary": "国内官方技术文档，说明RAG、Agent、模型调用或评测工程能力。",
       "review_class": "evergreen",
       "date_basis": "published_at",
@@ -392,7 +444,7 @@
         "role_dim_05"
       ],
       "access_status": "accessible",
-      "next_review_at": "2027-08-22",
+      "next_review_at": "2027-08-27",
       "rights_status": "pending",
       "notes": "页面H1“知识引擎原子能力 RAG 操作指南”；最近更新时间：2026-04-16；定位知识库、检索与召回配置。",
       "date_evidence": "页面H1“知识引擎原子能力 RAG 操作指南”；最近更新时间：2026-04-16；定位知识库、检索与召回配置。",
@@ -412,7 +464,11 @@
       "accessed_at": "2026-08-27",
       "trust": "high",
       "lifecycle": "draft",
-      "question_ids": [],
+      "question_ids": [
+        "q010",
+        "q011",
+        "q012"
+      ],
       "human_summary": "国内官方技术文档，说明RAG、Agent、模型调用或评测工程能力。",
       "review_class": "evergreen",
       "date_basis": "published_at",
@@ -422,7 +478,7 @@
         "role_dim_05"
       ],
       "access_status": "accessible",
-      "next_review_at": "2027-08-22",
+      "next_review_at": "2027-08-27",
       "rights_status": "pending",
       "notes": "页面H1“腾讯云智能体开发平台 Agent 节点”；最近更新时间：2026-02-12；定位节点编排、输入输出与安全设置。",
       "date_evidence": "页面H1“腾讯云智能体开发平台 Agent 节点”；最近更新时间：2026-02-12；定位节点编排、输入输出与安全设置。",
@@ -442,7 +498,11 @@
       "accessed_at": "2026-08-27",
       "trust": "high",
       "lifecycle": "draft",
-      "question_ids": [],
+      "question_ids": [
+        "q013",
+        "q014",
+        "q015"
+      ],
       "human_summary": "国内官方技术文档，说明RAG、Agent、模型调用或评测工程能力。",
       "review_class": "evergreen",
       "date_basis": "published_at",
@@ -453,7 +513,7 @@
         "role_dim_05"
       ],
       "access_status": "accessible",
-      "next_review_at": "2027-08-22",
+      "next_review_at": "2027-08-27",
       "rights_status": "pending",
       "notes": "页面H1“云数据库 PostgreSQL tencentdb_ai RAG”；最近更新时间：2026-08-20；定位向量检索与数据库集成。",
       "date_evidence": "页面H1“云数据库 PostgreSQL tencentdb_ai RAG”；最近更新时间：2026-08-20；定位向量检索与数据库集成。",
@@ -473,7 +533,11 @@
       "accessed_at": "2026-08-27",
       "trust": "high",
       "lifecycle": "draft",
-      "question_ids": [],
+      "question_ids": [
+        "q016",
+        "q017",
+        "q018"
+      ],
       "human_summary": "百度当前校招职位，职责涵盖智能体算法、规划、工具调用、RAG与评测闭环。",
       "review_class": "dynamic",
       "date_basis": "published_at",
@@ -504,7 +568,11 @@
       "accessed_at": "2026-08-27",
       "trust": "high",
       "lifecycle": "draft",
-      "question_ids": [],
+      "question_ids": [
+        "q019",
+        "q020",
+        "q021"
+      ],
       "human_summary": "国内当前公开职位，列出大模型、Agent、RAG、多模态或工程化职责要求。",
       "review_class": "dynamic",
       "date_basis": "published_at",
@@ -535,7 +603,11 @@
       "accessed_at": "2026-08-27",
       "trust": "high",
       "lifecycle": "draft",
-      "question_ids": [],
+      "question_ids": [
+        "q022",
+        "q023",
+        "q024"
+      ],
       "human_summary": "百度当前校招职位，职责涵盖基础大模型训练、数据治理、Coding与Agent能力研发。",
       "review_class": "dynamic",
       "date_basis": "published_at",
@@ -566,7 +638,11 @@
       "accessed_at": "2026-08-27",
       "trust": "high",
       "lifecycle": "draft",
-      "question_ids": [],
+      "question_ids": [
+        "q025",
+        "q026",
+        "q027"
+      ],
       "human_summary": "百度当前校招职位，职责涵盖智能体全链路、规划、工具调用、记忆、多智能体协同与评估。",
       "review_class": "dynamic",
       "date_basis": "published_at",
@@ -597,7 +673,11 @@
       "accessed_at": "2026-08-27",
       "trust": "high",
       "lifecycle": "draft",
-      "question_ids": [],
+      "question_ids": [
+        "q028",
+        "q029",
+        "q030"
+      ],
       "human_summary": "百度当前社招职位，职责涵盖Agent企业能力底座、API、CLI、Skill治理与效果评估。",
       "review_class": "dynamic",
       "date_basis": "published_at",

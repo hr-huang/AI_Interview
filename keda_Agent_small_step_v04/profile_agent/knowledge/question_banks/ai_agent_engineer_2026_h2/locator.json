@@ -1,0 +1,604 @@
+{
+  "records": [
+    {
+      "question_id": "q001",
+      "source_id": "src_cn_nowcoder_shadow_agent_01",
+      "canonical_url": "https://www.nowcoder.com/discuss/919595418265059328?sourceSSR=post",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-08-19",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:6e023f5595b7e26322f2bc112d0caf0d732e344e33ac3db8db57ff041dc6f835"
+    },
+    {
+      "question_id": "q001",
+      "source_id": "src_cn_official_tencent_agentic_rag",
+      "canonical_url": "https://cloud.tencent.com/document/product/1759/132211",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-08-21",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:43672e19ce4b8ac2c835ac46258d7453073e15d3c6d887ecdfb02c5b9d310f8d"
+    },
+    {
+      "question_id": "q002",
+      "source_id": "src_cn_nowcoder_shadow_agent_01",
+      "canonical_url": "https://www.nowcoder.com/discuss/919595418265059328?sourceSSR=post",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-08-19",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:8010991833df70aa2b43539cf307a06aac1ea20376d317e712bb8747654ea7e0"
+    },
+    {
+      "question_id": "q002",
+      "source_id": "src_cn_official_tencent_agentic_rag",
+      "canonical_url": "https://cloud.tencent.com/document/product/1759/132211",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-08-21",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:995cb410e6a21207a779b6fbb16e78de8dd131f8aa62921bfc0dd88b214ea596"
+    },
+    {
+      "question_id": "q003",
+      "source_id": "src_cn_nowcoder_shadow_agent_01",
+      "canonical_url": "https://www.nowcoder.com/discuss/919595418265059328?sourceSSR=post",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-08-19",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:19a6a1ba36739a687d7695ad44b74de97e6fc254c4b13ebebc6eab2ece40b74e"
+    },
+    {
+      "question_id": "q003",
+      "source_id": "src_cn_official_tencent_agentic_rag",
+      "canonical_url": "https://cloud.tencent.com/document/product/1759/132211",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-08-21",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:eeb8362d4fce6256d00f39ba3959ad621d0f7f8590362eaa082533eb15bf5543"
+    },
+    {
+      "question_id": "q004",
+      "source_id": "src_cn_nowcoder_byte_agent_01",
+      "canonical_url": "https://www.nowcoder.com/discuss/916420927619928064?sourceSSR=dynamic",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-08-10",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:c74126634f9dd4ff54258a1564f89e0c7571d0b519a426776c216412364f2890"
+    },
+    {
+      "question_id": "q004",
+      "source_id": "src_cn_official_tencent_hunyuan",
+      "canonical_url": "https://intl.cloud.tencent.com/zh/document/product/1300/80695",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-08-22",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:18d9e32213bb42b2a6dab12606244da9d7f06d2144f44f75c8825c549da23ccd"
+    },
+    {
+      "question_id": "q005",
+      "source_id": "src_cn_nowcoder_byte_agent_01",
+      "canonical_url": "https://www.nowcoder.com/discuss/916420927619928064?sourceSSR=dynamic",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-08-10",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:b9bd94b3e19ae74fbeebb42f9a0ab7940b92470ac3b849d0e42016fa889fee9b"
+    },
+    {
+      "question_id": "q005",
+      "source_id": "src_cn_official_tencent_hunyuan",
+      "canonical_url": "https://intl.cloud.tencent.com/zh/document/product/1300/80695",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-08-22",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:dd2c01985e6c1457f2035e5c6b18c649d32a271db00586b2fa83ecbbdf1eee2f"
+    },
+    {
+      "question_id": "q006",
+      "source_id": "src_cn_nowcoder_byte_agent_01",
+      "canonical_url": "https://www.nowcoder.com/discuss/916420927619928064?sourceSSR=dynamic",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-08-10",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:d67b8ea2997fe5b655e2e043bf8470485d03f39c7ca43644bd2ce75ac14e7513"
+    },
+    {
+      "question_id": "q006",
+      "source_id": "src_cn_official_tencent_hunyuan",
+      "canonical_url": "https://intl.cloud.tencent.com/zh/document/product/1300/80695",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-08-22",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:9406b16f6d6eb50ad0fe53c1a17ab2b446567356023f9edc1cd22fa8ddb872d6"
+    },
+    {
+      "question_id": "q007",
+      "source_id": "src_cn_nowcoder_byte_fullstack_01",
+      "canonical_url": "https://www.nowcoder.com/discuss/913848724952997888?sourceSSR=home",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-08-03",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:56f1cde61988f4262cb360b0d1bea2151f8f8e89cb06deb5874783cf06127fd1"
+    },
+    {
+      "question_id": "q007",
+      "source_id": "src_cn_official_tencent_rag",
+      "canonical_url": "https://cloud.tencent.com/document/product/1772/111236",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-04-16",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:71f43d8de8cb6e40594751ad8365e4cc4cab56fea8cf6ef08c31619a05420cd5"
+    },
+    {
+      "question_id": "q008",
+      "source_id": "src_cn_nowcoder_byte_fullstack_01",
+      "canonical_url": "https://www.nowcoder.com/discuss/913848724952997888?sourceSSR=home",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-08-03",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:93b272baf75de146eaa407adb618fc77d11feb295682bc464a21f0d51a0941e1"
+    },
+    {
+      "question_id": "q008",
+      "source_id": "src_cn_official_tencent_rag",
+      "canonical_url": "https://cloud.tencent.com/document/product/1772/111236",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-04-16",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:5c4e1b9c7d87e5513239f5344852e1998f3dec5fa10c48c39cfc76166c52610d"
+    },
+    {
+      "question_id": "q009",
+      "source_id": "src_cn_nowcoder_byte_fullstack_01",
+      "canonical_url": "https://www.nowcoder.com/discuss/913848724952997888?sourceSSR=home",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-08-03",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:82bc8dc23207ea6c0662901bd722ddeffb80026a2830d38923535314b3cccf69"
+    },
+    {
+      "question_id": "q009",
+      "source_id": "src_cn_official_tencent_rag",
+      "canonical_url": "https://cloud.tencent.com/document/product/1772/111236",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-04-16",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:5cd2dee1ada5cf48f24ea0f6fecef12fa9e42014ea2ca574d2d031e27e476363"
+    },
+    {
+      "question_id": "q010",
+      "source_id": "src_cn_nowcoder_alibaba_agent_01",
+      "canonical_url": "https://www.nowcoder.com/discuss/877151327091027968?sourceSSR=dynamic",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-04-24",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:90b19f1288346eea9595c6a26fa617db56e819ff98056f2bb0e9087dd28de33d"
+    },
+    {
+      "question_id": "q010",
+      "source_id": "src_cn_official_tencent_agent_node",
+      "canonical_url": "https://cloud.tencent.com/document/product/1759/122554",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-02-12",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:c1e7d8dc225c739f25d9b46b39699bea6b2d0e482c5a1f15b1cb6b1fec4f7fbd"
+    },
+    {
+      "question_id": "q011",
+      "source_id": "src_cn_nowcoder_alibaba_agent_01",
+      "canonical_url": "https://www.nowcoder.com/discuss/877151327091027968?sourceSSR=dynamic",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-04-24",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:7d74e9ae211f936d464b31b2ef724e51c0529b7c7c14dcc9e743aa13a7d103dc"
+    },
+    {
+      "question_id": "q011",
+      "source_id": "src_cn_official_tencent_agent_node",
+      "canonical_url": "https://cloud.tencent.com/document/product/1759/122554",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-02-12",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:3b20b0eae22ee1fe14a2e8f04ffca5c105f0fde8883519861f1368bbbeae934f"
+    },
+    {
+      "question_id": "q012",
+      "source_id": "src_cn_nowcoder_alibaba_agent_01",
+      "canonical_url": "https://www.nowcoder.com/discuss/877151327091027968?sourceSSR=dynamic",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-04-24",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:6458d5873509e68c88206e34b874e0adb6e3d8943cd9d151138ee68ae87e7078"
+    },
+    {
+      "question_id": "q012",
+      "source_id": "src_cn_official_tencent_agent_node",
+      "canonical_url": "https://cloud.tencent.com/document/product/1759/122554",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-02-12",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:851a9caab137d9bf7d1bc47a63efcde3f364612c53689f976b578f4fdbade8f1"
+    },
+    {
+      "question_id": "q013",
+      "source_id": "src_cn_nowcoder_agent_3_01",
+      "canonical_url": "https://www.nowcoder.com/discuss/919608103723622400?sourceSSR=dynamic",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-08-19",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:a3297b2d10ad2fe023c2146dd90982ba1b2059eac733baf14de93c52bcef09c8"
+    },
+    {
+      "question_id": "q013",
+      "source_id": "src_cn_official_tencent_rag_pg",
+      "canonical_url": "https://cloud.tencent.com/document/product/409/133911",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-08-20",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:6fc19797c08a7b0bd90b8b530712cf9929853f4b1dd0b942753742a0882d88e4"
+    },
+    {
+      "question_id": "q014",
+      "source_id": "src_cn_nowcoder_agent_3_01",
+      "canonical_url": "https://www.nowcoder.com/discuss/919608103723622400?sourceSSR=dynamic",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-08-19",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:4cd89ca96dafa4c2d32b314cff579c2359a02e772f39eae7a8dcf3bd191c8a45"
+    },
+    {
+      "question_id": "q014",
+      "source_id": "src_cn_official_tencent_rag_pg",
+      "canonical_url": "https://cloud.tencent.com/document/product/409/133911",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-08-20",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:f1de5e41199c65c5f2141a3663d3223c5d6f52464f22aef3af15937fffb16836"
+    },
+    {
+      "question_id": "q015",
+      "source_id": "src_cn_nowcoder_agent_3_01",
+      "canonical_url": "https://www.nowcoder.com/discuss/919608103723622400?sourceSSR=dynamic",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-08-19",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:8d36c0edcbe749f9aebaffaf0a7358327b1681b0e7638539948a934e85339cb7"
+    },
+    {
+      "question_id": "q015",
+      "source_id": "src_cn_official_tencent_rag_pg",
+      "canonical_url": "https://cloud.tencent.com/document/product/409/133911",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-08-20",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:c06cbe2c92b08386e7f022ff017c57a42839f2aed8620199bfb6a4560a8038b2"
+    },
+    {
+      "question_id": "q016",
+      "source_id": "src_cn_nowcoder_bigtech_agent_04",
+      "canonical_url": "https://www.nowcoder.com/discuss/919673484509184000?sourceSSR=post",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-08-19",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:7b8538963c7ad2ee48d010f1062651bba4392420d10ed79b76ff49cb011f542b"
+    },
+    {
+      "question_id": "q016",
+      "source_id": "src_cn_jd_baidu_agentic_2026",
+      "canonical_url": "https://talent.baidu.com/jobs/detail/GRADUATE/4f1cbc80-8332-4a92-b8fa-c0132b17d47e",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-05-12",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:a6f7c34d41a8922898b34376716559ba4b85cf8db203c15baaf4d77dbd1e4ee7"
+    },
+    {
+      "question_id": "q017",
+      "source_id": "src_cn_nowcoder_bigtech_agent_04",
+      "canonical_url": "https://www.nowcoder.com/discuss/919673484509184000?sourceSSR=post",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-08-19",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:242c1666e818ac5775751baabe90580cad98ac488293f3846f77253ca1fe8542"
+    },
+    {
+      "question_id": "q017",
+      "source_id": "src_cn_jd_baidu_agentic_2026",
+      "canonical_url": "https://talent.baidu.com/jobs/detail/GRADUATE/4f1cbc80-8332-4a92-b8fa-c0132b17d47e",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-05-12",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:fca6a1638540ffbb12d4742bf59d5bc5b8fdcd54e93320821f22600953788df2"
+    },
+    {
+      "question_id": "q018",
+      "source_id": "src_cn_nowcoder_bigtech_agent_04",
+      "canonical_url": "https://www.nowcoder.com/discuss/919673484509184000?sourceSSR=post",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-08-19",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:67d365b1ea86a679cff8caa71bae7096fa59651580b1bb97e1d1773e7845c3f5"
+    },
+    {
+      "question_id": "q018",
+      "source_id": "src_cn_jd_baidu_agentic_2026",
+      "canonical_url": "https://talent.baidu.com/jobs/detail/GRADUATE/4f1cbc80-8332-4a92-b8fa-c0132b17d47e",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-05-12",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:55e4580ae1be7da6fb150ba20f24798aebe266a661203f9ce59089b2baf31aa1"
+    },
+    {
+      "question_id": "q019",
+      "source_id": "src_cn_nowcoder_byte_backend_02",
+      "canonical_url": "https://www.nowcoder.com/discuss/898592450359349248?sourceSSR=home",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-06-22",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:57022649ca57ba16f6780ca123c4fcd4b91d7c25d1311c1696140732b2912efb"
+    },
+    {
+      "question_id": "q019",
+      "source_id": "src_cn_jd_baidu_agent_2026",
+      "canonical_url": "https://talent.baidu.com/jobs/detail/SOCIAL/c8821b51-c061-4652-8fad-61d8a49b9f52",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-04-03",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:232ced697eb8bb2f06ca5ed4500cc9b06d431c179cfccef3ede94ff38edf4881"
+    },
+    {
+      "question_id": "q020",
+      "source_id": "src_cn_nowcoder_byte_backend_02",
+      "canonical_url": "https://www.nowcoder.com/discuss/898592450359349248?sourceSSR=home",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-06-22",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:f5095f9b25c908e781a8de2df942da028f0374b0cc51afeaa6e22a17af9fc62d"
+    },
+    {
+      "question_id": "q020",
+      "source_id": "src_cn_jd_baidu_agent_2026",
+      "canonical_url": "https://talent.baidu.com/jobs/detail/SOCIAL/c8821b51-c061-4652-8fad-61d8a49b9f52",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-04-03",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:4bbb3800c46af96ec801fa99328c6b93c553326320d25286d1e32845b8e6c079"
+    },
+    {
+      "question_id": "q021",
+      "source_id": "src_cn_nowcoder_byte_backend_02",
+      "canonical_url": "https://www.nowcoder.com/discuss/898592450359349248?sourceSSR=home",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-06-22",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:afa9d467464a37cd4294f20f0cf94facaf8c0d2dfdc0cecf27876d55347f11cf"
+    },
+    {
+      "question_id": "q021",
+      "source_id": "src_cn_jd_baidu_agent_2026",
+      "canonical_url": "https://talent.baidu.com/jobs/detail/SOCIAL/c8821b51-c061-4652-8fad-61d8a49b9f52",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-04-03",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:e09ab3eab92c1ca56e0e8b1f828c47415d4b0f370d12f33ff8fa9be1a5cc9cab"
+    },
+    {
+      "question_id": "q022",
+      "source_id": "src_cn_nowcoder_byte_ads_01",
+      "canonical_url": "https://www.nowcoder.com/discuss/888046680824639488?sourceSSR=home",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-05-24",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:b6f1bc7658b3e4adbd91d741c5c1abb48ab30f3175cf6ec82c8f59ccbb73752d"
+    },
+    {
+      "question_id": "q022",
+      "source_id": "src_cn_jd_baidu_base_2026",
+      "canonical_url": "https://talent.baidu.com/jobs/detail/GRADUATE/33f41590-5770-4a91-9395-3c05e7ed1571",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-07-08",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:efa4113d0c8ae0194a1e17d84a56a01c5c60195f70d9a95150e232ded5e7f6b7"
+    },
+    {
+      "question_id": "q023",
+      "source_id": "src_cn_nowcoder_byte_ads_01",
+      "canonical_url": "https://www.nowcoder.com/discuss/888046680824639488?sourceSSR=home",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-05-24",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:b497cf014ae016a55f673d072f4878d32b732c537bd4107aae4cb52f51f6f63f"
+    },
+    {
+      "question_id": "q023",
+      "source_id": "src_cn_jd_baidu_base_2026",
+      "canonical_url": "https://talent.baidu.com/jobs/detail/GRADUATE/33f41590-5770-4a91-9395-3c05e7ed1571",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-07-08",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:0c8f347a7267e660bf98b327c2469f48d18313ce4a6d9fa069fa9ca3d0bc2c22"
+    },
+    {
+      "question_id": "q024",
+      "source_id": "src_cn_nowcoder_byte_ads_01",
+      "canonical_url": "https://www.nowcoder.com/discuss/888046680824639488?sourceSSR=home",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-05-24",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:a3eca203cc0e8bdae1ee69010949cbd0a755d7ccd3752c6cf027fa35ea04d589"
+    },
+    {
+      "question_id": "q024",
+      "source_id": "src_cn_jd_baidu_base_2026",
+      "canonical_url": "https://talent.baidu.com/jobs/detail/GRADUATE/33f41590-5770-4a91-9395-3c05e7ed1571",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-07-08",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:40117b2ed3d58ba5c8d0c5df89943a754305e9497852429c0a4327365d71d515"
+    },
+    {
+      "question_id": "q025",
+      "source_id": "src_cn_nowcoder_aicoding_01",
+      "canonical_url": "https://www.nowcoder.com/discuss/914899592678805504?sourceSSR=home",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-08-06",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:829083ad8f584555cb3cff72c578548c5508fdbc0198416a8cb9d9d73120322f"
+    },
+    {
+      "question_id": "q025",
+      "source_id": "src_cn_jd_baidu_agent_2026b",
+      "canonical_url": "https://talent.baidu.com/jobs/detail/GRADUATE/02f73086-be71-4d09-8d6e-f1c6981b8b48",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-07-08",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:664fe917f3d7735c22514946eddec8fe9a84cde829f0b081908b64a4bcfbf1d4"
+    },
+    {
+      "question_id": "q026",
+      "source_id": "src_cn_nowcoder_aicoding_01",
+      "canonical_url": "https://www.nowcoder.com/discuss/914899592678805504?sourceSSR=home",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-08-06",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:3b45f57a84be4435f18472f1653bb6081271acc80dca10006e1b609b17db93da"
+    },
+    {
+      "question_id": "q026",
+      "source_id": "src_cn_jd_baidu_agent_2026b",
+      "canonical_url": "https://talent.baidu.com/jobs/detail/GRADUATE/02f73086-be71-4d09-8d6e-f1c6981b8b48",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-07-08",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:c664cd6dc6b8b8bf39d1303820749899e481fee3f30f4dd98b94fc5ef955749b"
+    },
+    {
+      "question_id": "q027",
+      "source_id": "src_cn_nowcoder_aicoding_01",
+      "canonical_url": "https://www.nowcoder.com/discuss/914899592678805504?sourceSSR=home",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-08-06",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:f94289b1d5ef61a3244fb5b37b58aaf4d5dda9461f6b32056a3d45d54c72b5f0"
+    },
+    {
+      "question_id": "q027",
+      "source_id": "src_cn_jd_baidu_agent_2026b",
+      "canonical_url": "https://talent.baidu.com/jobs/detail/GRADUATE/02f73086-be71-4d09-8d6e-f1c6981b8b48",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-07-08",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:a6459530cc2d751ee934b9d72065f6fba0c1d3f268297bdfc2387f10d1ac0b58"
+    },
+    {
+      "question_id": "q028",
+      "source_id": "src_cn_nowcoder_anruan_ai_app_01",
+      "canonical_url": "https://www.nowcoder.com/feed/main/detail/40920533fad14136bff01c3928c7e953?sourceSSR=dynamic",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-08-05",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:94ecc991f994cd01fd6e121589a44315cf6886f5f2f1d90e7a371e4adfd57779"
+    },
+    {
+      "question_id": "q028",
+      "source_id": "src_cn_jd_baidu_app_platform_2026",
+      "canonical_url": "https://talent.baidu.com/jobs/detail/SOCIAL/a5ff8d15-b547-4a87-ba55-a128dae953cd",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-07-21",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:2e6ae50ab0cc36beee13573a7e9dbad6c18494424874528fb19b39a7336faea2"
+    },
+    {
+      "question_id": "q029",
+      "source_id": "src_cn_nowcoder_anruan_ai_app_01",
+      "canonical_url": "https://www.nowcoder.com/feed/main/detail/40920533fad14136bff01c3928c7e953?sourceSSR=dynamic",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-08-05",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:84fe4f1ab5ee39678c04eabf725a19208c9be2c392aa46d01cdda6f8c9008ed5"
+    },
+    {
+      "question_id": "q029",
+      "source_id": "src_cn_jd_baidu_app_platform_2026",
+      "canonical_url": "https://talent.baidu.com/jobs/detail/SOCIAL/a5ff8d15-b547-4a87-ba55-a128dae953cd",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-07-21",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:831a77b52c8c276bb996334f496c78b40c903621b12b9bda13e37fc212730e6d"
+    },
+    {
+      "question_id": "q030",
+      "source_id": "src_cn_nowcoder_anruan_ai_app_01",
+      "canonical_url": "https://www.nowcoder.com/feed/main/detail/40920533fad14136bff01c3928c7e953?sourceSSR=dynamic",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-08-05",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:cf499f4dcdf1f43dac37fb19f6bf793e6502505197e9073a7efd11d43b8c5bb4"
+    },
+    {
+      "question_id": "q030",
+      "source_id": "src_cn_jd_baidu_app_platform_2026",
+      "canonical_url": "https://talent.baidu.com/jobs/detail/SOCIAL/a5ff8d15-b547-4a87-ba55-a128dae953cd",
+      "section": "来源信号",
+      "heading": "页面标题与发表日期/更新时间",
+      "published_date": "2026-07-21",
+      "viewed_at": "2026-08-27",
+      "locator_hash": "sha256:157aa155c0d40780849ca770fda6dc91252f301e1805906898883a17077908e6"
+    }
+  ]
+}

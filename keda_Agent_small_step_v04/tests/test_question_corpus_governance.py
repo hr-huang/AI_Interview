@@ -538,6 +538,7 @@ class QuestionCorpusGovernanceTests(unittest.TestCase):
                 self.assertEqual(expected["currentness"], currentness)
                 self.assertEqual(actual.date_evidence_kind, "jd_page_posted_at")
                 self.assertEqual(expected["isValid"], is_valid)
+
         expected_official_updates = {
             "src_cn_official_tencent_agentic_rag": "2026-08-21",
             "src_cn_official_tencent_hunyuan": "2026-08-22",
@@ -549,6 +550,35 @@ class QuestionCorpusGovernanceTests(unittest.TestCase):
             row = next(row for row in fixture["entries"] if row["source_id"] == source_id)
             self.assertEqual(row["observed_updateDate"], update_date)
             self.assertEqual(by_id[source_id].date_evidence_kind, "official_last_updated")
+
+    def test_task7_question_matrix_and_sidecars_are_complete(self) -> None:
+        root = Path(__file__).parents[1] / "profile_agent/knowledge/question_banks/ai_agent_engineer_2026_h2"
+        questions = json.loads((root / "questions.json").read_text(encoding="utf-8"))
+        rows = questions["questions"]
+        self.assertEqual(len(rows), 30)
+        self.assertEqual({row["status"] for row in rows}, {"needs_review"})
+        self.assertTrue(all(any("一" <= ch <= "龥" for ch in row["question_text"]) for row in rows))
+        self.assertEqual({row["dimension_id"] for row in rows}, {f"role_dim_{i:02d}" for i in range(1, 7)})
+        self.assertEqual(sum(row["primary_mode"] == "foundation" for row in rows), 4)
+        self.assertEqual(sum(row["primary_mode"] == "project_deep_dive" for row in rows), 5)
+        self.assertEqual(sum(row["primary_mode"] == "scenario" for row in rows), 8)
+        self.assertEqual(sum(row["primary_mode"] == "system_design" for row in rows), 4)
+        self.assertEqual(sum(row["primary_mode"] == "coding" for row in rows), 3)
+        self.assertEqual(sum(row["primary_mode"] == "follow_up" for row in rows), 6)
+        self.assertTrue(all(row["source_ids"] and len(row["source_ids"]) >= 2 for row in rows))
+        self.assertEqual(len({sid for row in rows for sid in row["source_ids"]}), 20)
+        self.assertTrue(all(row["content_hash"].startswith("sha256:") for row in rows))
+        for name in ("review.json", "dedupe.json", "rights.json", "locator.json"):
+            self.assertTrue((root / name).exists())
+        self.assertEqual(len(json.loads((root / "review.json").read_text(encoding="utf-8"))["records"]), 30)
+        self.assertEqual(len(json.loads((root / "dedupe.json").read_text(encoding="utf-8"))["records"]), 30)
+        self.assertEqual(len(json.loads((root / "rights.json").read_text(encoding="utf-8"))["records"]), 60)
+        self.assertEqual(len(json.loads((root / "locator.json").read_text(encoding="utf-8"))["records"]), 60)
+        manifest = json.loads((root / "QuestionBankManifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["publication_status"], "draft")
+        self.assertEqual(manifest["active_count"], 0)
+        self.assertTrue(manifest["question_set_hash"].startswith("sha256:"))
+        self.assertTrue(manifest["sidecar_set_hash"].startswith("sha256:"))
 
     def test_task6_fixture_rejects_date_provenance_and_locator_tampering(self) -> None:
         root = Path(__file__).parents[1]
