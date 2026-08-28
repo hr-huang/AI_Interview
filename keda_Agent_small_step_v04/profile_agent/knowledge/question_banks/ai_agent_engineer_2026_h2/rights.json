@@ -534,7 +534,7 @@
     },
     {
       "question_id": "q020",
-      "source_id": "src_cn_nowcoder_byte_backend_02",
+      "source_id": "src_cn_nowcoder_aicoding_01",
       "public_access": "unknown",
       "paraphrase_only": true,
       "original_text_present": false,
@@ -548,7 +548,7 @@
     },
     {
       "question_id": "q020",
-      "source_id": "src_cn_jd_baidu_agent_2026",
+      "source_id": "src_cn_jd_baidu_agent_2026b",
       "public_access": "unknown",
       "paraphrase_only": true,
       "original_text_present": false,
@@ -590,7 +590,7 @@
     },
     {
       "question_id": "q022",
-      "source_id": "src_cn_nowcoder_byte_ads_01",
+      "source_id": "src_cn_nowcoder_byte_backend_02",
       "public_access": "unknown",
       "paraphrase_only": true,
       "original_text_present": false,
@@ -604,7 +604,7 @@
     },
     {
       "question_id": "q022",
-      "source_id": "src_cn_jd_baidu_base_2026",
+      "source_id": "src_cn_jd_baidu_agent_2026",
       "public_access": "unknown",
       "paraphrase_only": true,
       "original_text_present": false,
@@ -618,7 +618,7 @@
     },
     {
       "question_id": "q023",
-      "source_id": "src_cn_nowcoder_byte_ads_01",
+      "source_id": "src_cn_nowcoder_anruan_ai_app_01",
       "public_access": "unknown",
       "paraphrase_only": true,
       "original_text_present": false,
@@ -632,7 +632,7 @@
     },
     {
       "question_id": "q023",
-      "source_id": "src_cn_jd_baidu_base_2026",
+      "source_id": "src_cn_jd_baidu_app_platform_2026",
       "public_access": "unknown",
       "paraphrase_only": true,
       "original_text_present": false,
@@ -646,7 +646,7 @@
     },
     {
       "question_id": "q024",
-      "source_id": "src_cn_nowcoder_byte_ads_01",
+      "source_id": "src_cn_nowcoder_anruan_ai_app_01",
       "public_access": "unknown",
       "paraphrase_only": true,
       "original_text_present": false,
@@ -660,7 +660,7 @@
     },
     {
       "question_id": "q024",
-      "source_id": "src_cn_jd_baidu_base_2026",
+      "source_id": "src_cn_jd_baidu_app_platform_2026",
       "public_access": "unknown",
       "paraphrase_only": true,
       "original_text_present": false,
@@ -674,7 +674,7 @@
     },
     {
       "question_id": "q025",
-      "source_id": "src_cn_nowcoder_aicoding_01",
+      "source_id": "src_cn_nowcoder_anruan_ai_app_01",
       "public_access": "unknown",
       "paraphrase_only": true,
       "original_text_present": false,
@@ -688,7 +688,7 @@
     },
     {
       "question_id": "q025",
-      "source_id": "src_cn_jd_baidu_agent_2026b",
+      "source_id": "src_cn_jd_baidu_app_platform_2026",
       "public_access": "unknown",
       "paraphrase_only": true,
       "original_text_present": false,
@@ -758,7 +758,7 @@
     },
     {
       "question_id": "q028",
-      "source_id": "src_cn_nowcoder_anruan_ai_app_01",
+      "source_id": "src_cn_nowcoder_byte_ads_01",
       "public_access": "unknown",
       "paraphrase_only": true,
       "original_text_present": false,
@@ -772,7 +772,7 @@
     },
     {
       "question_id": "q028",
-      "source_id": "src_cn_jd_baidu_app_platform_2026",
+      "source_id": "src_cn_jd_baidu_base_2026",
       "public_access": "unknown",
       "paraphrase_only": true,
       "original_text_present": false,
@@ -786,7 +786,7 @@
     },
     {
       "question_id": "q029",
-      "source_id": "src_cn_nowcoder_anruan_ai_app_01",
+      "source_id": "src_cn_nowcoder_byte_ads_01",
       "public_access": "unknown",
       "paraphrase_only": true,
       "original_text_present": false,
@@ -800,7 +800,7 @@
     },
     {
       "question_id": "q029",
-      "source_id": "src_cn_jd_baidu_app_platform_2026",
+      "source_id": "src_cn_jd_baidu_base_2026",
       "public_access": "unknown",
       "paraphrase_only": true,
       "original_text_present": false,
@@ -814,7 +814,7 @@
     },
     {
       "question_id": "q030",
-      "source_id": "src_cn_nowcoder_anruan_ai_app_01",
+      "source_id": "src_cn_nowcoder_byte_ads_01",
       "public_access": "unknown",
       "paraphrase_only": true,
       "original_text_present": false,
@@ -828,7 +828,7 @@
     },
     {
       "question_id": "q030",
-      "source_id": "src_cn_jd_baidu_app_platform_2026",
+      "source_id": "src_cn_jd_baidu_base_2026",
       "public_access": "unknown",
       "paraphrase_only": true,
       "original_text_present": false,

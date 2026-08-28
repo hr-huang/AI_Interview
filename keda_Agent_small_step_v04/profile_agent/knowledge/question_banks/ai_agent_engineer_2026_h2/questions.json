@@ -390,7 +390,7 @@
     },
     {
       "question_id": "q008",
-      "question_text": "线上RAG发生引用过期条款事故，索引更新时间晚于合同生效日。请设计修复、回滚与防复发检查。",
+      "question_text": "线上RAG发生引用过期条款事故：合同生效日晚于当前索引的最新覆盖时间，导致新条款未被召回。请设计修复、回滚与防复发检查。",
       "role": "ai_agent_engineer",
       "role_version": "2026-H2",
       "dimension_id": "role_dim_02",
@@ -399,7 +399,7 @@
         "合规回滚"
       ],
       "question_mode": "scenario",
-      "business_constraint": "合同生效与索引更新时间冲突",
+      "business_constraint": "合同生效日晚于索引最新覆盖时间，导致新条款未被召回",
       "dimension_terms": [
         "role_dim_02",
         "业务建模",
@@ -412,7 +412,7 @@
       ],
       "difficulty": "intermediate",
       "expected_signals": [
-        "最低充分：按合同生效时间阻断旧索引引用，给出修复、回滚和防复发校验。",
+        "最低充分：比较合同生效日与索引覆盖时间，阻断旧版本引用，给出修复、回滚和防复发校验。",
         "限制：保留受影响答案清单。"
       ],
       "critical_errors": [
@@ -420,7 +420,7 @@
         "没有回滚开关"
       ],
       "follow_up_seeds": [
-        "如果候选人声称重建索引即可，追问生效日与索引日比较。",
+        "如果候选人声称重建索引即可，追问生效日、索引覆盖时间与已发答案的影响面。",
         "如果没有影响面统计，追问审计报表。"
       ],
       "company_tags": [
@@ -441,7 +441,7 @@
       "trust_level": "medium",
       "status": "needs_review",
       "version": 1,
-      "content_hash": "sha256:d5d9f3856ce42feac2e98c600319f4428a66f2b54c5511238d36f0c169301265"
+      "content_hash": "sha256:27fc1ed7a90f4c22d94b7c33169a9644a28ad345c474396f67f1bc41f413a84d"
     },
     {
       "question_id": "q009",
@@ -775,7 +775,7 @@
     },
     {
       "question_id": "q015",
-      "question_text": "请在已有Python服务中实现工具调用重试：给定接口、幂等键和失败fixture，说明输入输出测试、回归命令、AI代码审查与交付标准。",
+      "question_text": "在已有Python服务中实现接口 `call_tool(tool_name, payload, idempotency_key)` 的重试策略。输入为 `{tool_name: str, payload: object, idempotency_key: str}`，输出为 `{status: succeeded|unknown|failed, result: object|null, attempts: int}`；提供三个fixture：`transient_503`（未执行副作用）、`timeout_after_execute`（已执行但响应超时）、`validation_400`（业务拒绝）。请实现并给出单元测试、一条回归命令和交付前的一项AI生成代码审查点。",
       "role": "ai_agent_engineer",
       "role_version": "2026-H2",
       "dimension_id": "role_dim_03",
@@ -784,7 +784,7 @@
         "故障注入测试"
       ],
       "question_mode": "coding",
-      "business_constraint": "幂等重试与失败fixture",
+      "business_constraint": "工具调用重试只覆盖可证明安全的失败类型，副作用状态必须可查询",
       "dimension_terms": [
         "role_dim_03",
         "业务建模",
@@ -795,18 +795,18 @@
         "scenario",
         "system_design"
       ],
-      "difficulty": "advanced",
+      "difficulty": "intermediate",
       "expected_signals": [
-        "最低充分：实现接口、幂等键和失败fixture，区分可重试错误并覆盖输入输出、回归和AI审查。",
-        "限制：副作用操作不得盲目重试。"
+        "最低充分：只对transient_503重试；timeout_after_execute先查询幂等键，状态未知时不盲重试；validation_400直接返回；三类fixture均有测试。",
+        "限制：副作用操作不得盲目重试，输出必须保留status与attempts。"
       ],
       "critical_errors": [
         "所有异常无限重试",
         "不记录幂等键"
       ],
       "follow_up_seeds": [
-        "如果候选人声称重试安全，追问已执行未响应的判定。",
-        "如果遗漏fixture，追问如何复现重复扣款。"
+        "如果候选人声称重试安全，追问timeout_after_execute如何查询服务端幂等状态。",
+        "如果遗漏fixture，追问三类失败如何分别断言status与attempts。"
       ],
       "company_tags": [
         "国内互联网",
@@ -826,7 +826,7 @@
       "trust_level": "medium",
       "status": "needs_review",
       "version": 1,
-      "content_hash": "sha256:2ebcb3193aa0f33fd1689b7b782e616713d4e9f66f06178de715064d6636449d"
+      "content_hash": "sha256:b34536581d58dd461d4dcf28b71794e5972251183e3d88fe6ed5b2538254e765"
     },
     {
       "question_id": "q016",
@@ -995,24 +995,24 @@
     },
     {
       "question_id": "q019",
-      "question_text": "营销Agent工具调用链出现循环，平均步骤从4升到19。请设计循环检测、预算终止和人工接管策略。",
+      "question_text": "营销Agent工具调用链出现循环，平均步骤从4升到19。请从评测与安全治理角度设计循环检测、预算终止和人工接管策略；若面向初级岗，可只覆盖检测信号、停止条件和一条告警链路。",
       "role": "ai_agent_engineer",
       "role_version": "2026-H2",
-      "dimension_id": "role_dim_04",
+      "dimension_id": "role_dim_05",
       "skills": [
         "循环检测",
         "预算熔断"
       ],
       "question_mode": "scenario",
-      "business_constraint": "工具循环从4步升19步",
+      "business_constraint": "工具循环从4步升19步，需可观测熔断与人工接管",
       "dimension_terms": [
-        "role_dim_04",
+        "role_dim_05",
         "业务建模",
         "可观测性"
       ],
       "primary_mode": "scenario",
       "compatible_modes": [
-        "project_deep_dive",
+        "system_design",
         "coding"
       ],
       "difficulty": "intermediate",
@@ -1046,11 +1046,11 @@
       "trust_level": "medium",
       "status": "needs_review",
       "version": 1,
-      "content_hash": "sha256:fc726768e4e7ef17da002831984ccd64153765c47bb79c9188ff12126d9145ac"
+      "content_hash": "sha256:b3536d5e88f7608ea81358112e5ef7906dd88be8dc43cb669b7b34ffb83b4628"
     },
     {
       "question_id": "q020",
-      "question_text": "请在仓库中补齐RAG评测接口与命令：输入query和gold证据fixture，输出Recall@k与引用正确率，并说明AI协作改动的测试、回归、审查和交付。",
+      "question_text": "在已有Python服务中补齐接口 `evaluate_retrieval(query, retrieved_ids, gold_ids, k=3)`。输入为字符串query、已排序的retrieved_ids列表和gold_ids列表，输出 `{recall_at_k: float, citation_correct: bool}`；用四条固定fixture覆盖命中、部分命中、空gold和重复引用，并给出单元测试、一条回归命令和交付前一项AI生成代码审查点。",
       "role": "ai_agent_engineer",
       "role_version": "2026-H2",
       "dimension_id": "role_dim_04",
@@ -1070,38 +1070,38 @@
         "project_deep_dive",
         "scenario"
       ],
-      "difficulty": "advanced",
+      "difficulty": "intermediate",
       "expected_signals": [
-        "最低充分：实现接口、query/gold fixture输入输出、Recall@k与引用正确率，并给测试回归、AI审查交付。",
-        "限制：明确空gold和重复引用。"
+        "最低充分：按k计算Recall@k，明确空gold的返回规则，并按去重后的引用集合判断citation_correct；四条fixture均有断言。",
+        "限制：不能用字符串相似度替代gold证据匹配，测试命令必须固定fixture。"
       ],
       "critical_errors": [
         "只算字符串相似度",
         "评测命令没有固定fixture"
       ],
       "follow_up_seeds": [
-        "如果候选人声称Recall提升，追问gold证据版本。",
-        "如果遗漏引用正确率，追问错误引用如何阻断发布。"
+        "如果候选人声称Recall提升，追问k值、gold版本和空gold边界。",
+        "如果遗漏引用正确率，追问重复引用和部分命中如何断言。"
       ],
       "company_tags": [
         "国内互联网",
         "企业AI应用"
       ],
-      "source_id": "src_cn_nowcoder_byte_backend_02",
+      "source_id": "src_cn_nowcoder_aicoding_01",
       "source_ids": [
-        "src_cn_nowcoder_byte_backend_02",
-        "src_cn_jd_baidu_agent_2026"
+        "src_cn_nowcoder_aicoding_01",
+        "src_cn_jd_baidu_agent_2026b"
       ],
-      "source_url": "https://www.nowcoder.com/discuss/898592450359349248?sourceSSR=home",
-      "source_title": "字节跳动后端开发实习生二面",
+      "source_url": "https://www.nowcoder.com/discuss/914899592678805504?sourceSSR=home",
+      "source_title": "关于最近AI Coding面试的一些经验",
       "source_type": "public_interview_experience",
-      "published_at": "2026-06-22",
+      "published_at": "2026-08-06",
       "verified_at": "2026-08-27",
       "valid_until": "2027-02-23",
       "trust_level": "medium",
       "status": "needs_review",
       "version": 1,
-      "content_hash": "sha256:db2478eca34a82df71e6b26f5ecd288acc7894342257ef3c6a008b8678743521"
+      "content_hash": "sha256:67affef154e7cc0f0e86f0a0da0d6a93716fd7d0102515f29c866768f789497e"
     },
     {
       "question_id": "q021",
@@ -1160,7 +1160,7 @@
     },
     {
       "question_id": "q022",
-      "question_text": "客服Agent可读取用户画像但不得暴露手机号和地址。请制定字段级脱敏、审计日志和回答验收规则。",
+      "question_text": "客服Agent可读取用户画像但不得暴露手机号和地址。请制定字段级脱敏、审计日志和回答验收规则，并说明出现缺证据回答时如何告警和转人工。",
       "role": "ai_agent_engineer",
       "role_version": "2026-H2",
       "dimension_id": "role_dim_05",
@@ -1182,7 +1182,7 @@
       ],
       "difficulty": "intermediate",
       "expected_signals": [
-        "最低充分：定义手机号地址的脱敏、审计和回答验收样例。",
+        "最低充分：定义手机号地址的字段级脱敏、审计、回答验收，并说明缺证据回答的告警和人工路径。",
         "加分：区分展示、日志和检索副本。"
       ],
       "critical_errors": [
@@ -1197,25 +1197,25 @@
         "国内互联网",
         "企业AI应用"
       ],
-      "source_id": "src_cn_nowcoder_byte_ads_01",
+      "source_id": "src_cn_nowcoder_byte_backend_02",
       "source_ids": [
-        "src_cn_nowcoder_byte_ads_01",
-        "src_cn_jd_baidu_base_2026"
+        "src_cn_nowcoder_byte_backend_02",
+        "src_cn_jd_baidu_agent_2026"
       ],
-      "source_url": "https://www.nowcoder.com/discuss/888046680824639488?sourceSSR=home",
-      "source_title": "字节国际化广告一面面经",
+      "source_url": "https://www.nowcoder.com/discuss/898592450359349248?sourceSSR=home",
+      "source_title": "字节跳动后端开发实习生二面",
       "source_type": "public_interview_experience",
-      "published_at": "2026-05-24",
+      "published_at": "2026-06-22",
       "verified_at": "2026-08-27",
       "valid_until": "2027-02-23",
       "trust_level": "medium",
       "status": "needs_review",
       "version": 1,
-      "content_hash": "sha256:a97d30b7a453eb1b35b56d5584b3f952661306d77aef97794d5af78784154f5b"
+      "content_hash": "sha256:e81fbccf0c47b584cda0e07edb68aacd85c60cf73b5fcd2d6210fa44fcf9e138"
     },
     {
       "question_id": "q023",
-      "question_text": "华东Agent写入延迟突增且华南读取出现旧数据，峰值每秒3000请求、RTO 5分钟。请设计事故路由、一致性降级和成本权衡。",
+      "question_text": "华东Agent写入延迟突增且华南读取出现旧数据。作为初级岗的stretch题，请只设计事故路由、陈旧数据标记和RTO 5分钟内的最小降级路径，不要求完整跨区架构。",
       "role": "ai_agent_engineer",
       "role_version": "2026-H2",
       "dimension_id": "role_dim_05",
@@ -1224,7 +1224,7 @@
         "一致性降级"
       ],
       "question_mode": "scenario",
-      "business_constraint": "3000RPS、RTO 5分钟、跨区旧读",
+      "business_constraint": "跨区旧读、RTO 5分钟下的最小事故路由与降级",
       "dimension_terms": [
         "role_dim_05",
         "业务建模",
@@ -1237,11 +1237,11 @@
       ],
       "difficulty": "intermediate",
       "expected_signals": [
-        "最低充分：面对华东写入延迟和华南旧读，给出3000RPS、RTO5分钟下的路由与降级。",
-        "限制：标记陈旧数据。"
+        "最低充分：在RTO 5分钟内给出最小事故路由、陈旧数据标记和停止条件。",
+        "限制：不能静默返回旧事实。"
       ],
       "critical_errors": [
-        "强制跨区同步导致雪崩",
+        "为追求一致性强制跨区同步导致雪崩",
         "静默返回旧事实"
       ],
       "follow_up_seeds": [
@@ -1252,25 +1252,25 @@
         "国内互联网",
         "企业AI应用"
       ],
-      "source_id": "src_cn_nowcoder_byte_ads_01",
+      "source_id": "src_cn_nowcoder_anruan_ai_app_01",
       "source_ids": [
-        "src_cn_nowcoder_byte_ads_01",
-        "src_cn_jd_baidu_base_2026"
+        "src_cn_nowcoder_anruan_ai_app_01",
+        "src_cn_jd_baidu_app_platform_2026"
       ],
-      "source_url": "https://www.nowcoder.com/discuss/888046680824639488?sourceSSR=home",
-      "source_title": "字节国际化广告一面面经",
+      "source_url": "https://www.nowcoder.com/feed/main/detail/40920533fad14136bff01c3928c7e953?sourceSSR=dynamic",
+      "source_title": "安软AI应用开发实习面经",
       "source_type": "public_interview_experience",
-      "published_at": "2026-05-24",
+      "published_at": "2026-08-05",
       "verified_at": "2026-08-27",
       "valid_until": "2027-02-23",
       "trust_level": "medium",
       "status": "needs_review",
       "version": 1,
-      "content_hash": "sha256:fa8f7e3fa6c1a4941f476b09e93d6065aa282e919ec28f97794e31ef84b8e683"
+      "content_hash": "sha256:9c014a4f63eb87a6e8e65595f4df8c46779f0d817aaf0932070a4d67fa2e137a"
     },
     {
       "question_id": "q024",
-      "question_text": "请为推荐Agent设计线上架构：离线指标提升但线上转化下降时，如何接入分桶实验、漂移检测和反馈回流。",
+      "question_text": "请为推荐Agent设计一个最小线上诊断闭环：离线指标提升但线上转化下降时，先选择分桶实验与一个漂移信号，再说明反馈回流和回滚触发条件；作为初级岗stretch，不要求完整推荐架构。",
       "role": "ai_agent_engineer",
       "role_version": "2026-H2",
       "dimension_id": "role_dim_05",
@@ -1279,7 +1279,7 @@
         "实验分桶治理"
       ],
       "question_mode": "system_design",
-      "business_constraint": "转化下降与反馈漂移",
+      "business_constraint": "推荐Agent的最小线上诊断闭环与回滚触发",
       "dimension_terms": [
         "role_dim_05",
         "业务建模",
@@ -1292,8 +1292,8 @@
       ],
       "difficulty": "advanced",
       "expected_signals": [
-        "最低充分：设计离线/线上指标分桶、漂移检测、反馈回流和回滚组件。",
-        "加分：区分曝光偏差与真实转化。"
+        "最低充分：选择分桶实验、一个漂移信号、反馈回流和回滚触发条件。",
+        "限制：说明曝光偏差与真实转化的区分。"
       ],
       "critical_errors": [
         "只追离线指标",
@@ -1307,47 +1307,47 @@
         "国内互联网",
         "企业AI应用"
       ],
-      "source_id": "src_cn_nowcoder_byte_ads_01",
+      "source_id": "src_cn_nowcoder_anruan_ai_app_01",
       "source_ids": [
-        "src_cn_nowcoder_byte_ads_01",
-        "src_cn_jd_baidu_base_2026"
+        "src_cn_nowcoder_anruan_ai_app_01",
+        "src_cn_jd_baidu_app_platform_2026"
       ],
-      "source_url": "https://www.nowcoder.com/discuss/888046680824639488?sourceSSR=home",
-      "source_title": "字节国际化广告一面面经",
+      "source_url": "https://www.nowcoder.com/feed/main/detail/40920533fad14136bff01c3928c7e953?sourceSSR=dynamic",
+      "source_title": "安软AI应用开发实习面经",
       "source_type": "public_interview_experience",
-      "published_at": "2026-05-24",
+      "published_at": "2026-08-05",
       "verified_at": "2026-08-27",
       "valid_until": "2027-02-23",
       "trust_level": "medium",
       "status": "needs_review",
       "version": 1,
-      "content_hash": "sha256:68ecc8765a2ff0d7496c1acc76e5e33a73ea1e3c6814a2a96fb1355e0d0646d0"
+      "content_hash": "sha256:f09b0e9fdb3016c496af995b9c438f452bb271ca611adcd2b0a117a9dd12e057"
     },
     {
       "question_id": "q025",
-      "question_text": "上一轮你承诺所有回答都有来源。抽查发现三类问题没有证据，请改写承诺并设计可观测告警。",
+      "question_text": "上一轮你承诺所有回答都有来源。抽查发现：无检索命中、引用无法定位、来源已过期三类问题，请改写发布承诺并设计一条可测试的缺证据告警与人工路径。",
       "role": "ai_agent_engineer",
       "role_version": "2026-H2",
-      "dimension_id": "role_dim_05",
+      "dimension_id": "role_dim_04",
       "skills": [
         "来源承诺治理",
         "证据缺口告警"
       ],
       "question_mode": "scenario",
-      "business_constraint": "无证据回答的承诺边界",
+      "business_constraint": "AI交付中的来源承诺、缺证据告警与人工路径",
       "dimension_terms": [
-        "role_dim_05",
+        "role_dim_04",
         "业务建模",
         "可观测性"
       ],
       "primary_mode": "scenario",
       "compatible_modes": [
-        "system_design",
+        "project_deep_dive",
         "coding"
       ],
       "difficulty": "intermediate",
       "expected_signals": [
-        "最低充分：修正“所有回答有来源”的承诺，定义无证据状态、告警和人工路径。",
+        "最低充分：分别定义无命中、引用不可定位、来源过期三种状态，修正发布承诺并给出告警、测试和人工路径。",
         "限制：不得伪造引用。"
       ],
       "critical_errors": [
@@ -1355,28 +1355,28 @@
         "用统一免责声明掩盖缺口"
       ],
       "follow_up_seeds": [
-        "如果候选人声称可强制引用，追问无命中时的状态。",
-        "如果遗漏告警，追问缺口如何进入日报。"
+        "如果候选人声称可强制引用，追问无命中和过期来源时的发布状态。",
+        "如果遗漏测试，追问三类缺口如何进入告警日报。"
       ],
       "company_tags": [
         "国内互联网",
         "企业AI应用"
       ],
-      "source_id": "src_cn_nowcoder_aicoding_01",
+      "source_id": "src_cn_nowcoder_anruan_ai_app_01",
       "source_ids": [
-        "src_cn_nowcoder_aicoding_01",
-        "src_cn_jd_baidu_agent_2026b"
+        "src_cn_nowcoder_anruan_ai_app_01",
+        "src_cn_jd_baidu_app_platform_2026"
       ],
-      "source_url": "https://www.nowcoder.com/discuss/914899592678805504?sourceSSR=home",
-      "source_title": "关于最近AI Coding面试的一些经验",
+      "source_url": "https://www.nowcoder.com/feed/main/detail/40920533fad14136bff01c3928c7e953?sourceSSR=dynamic",
+      "source_title": "安软AI应用开发实习面经",
       "source_type": "public_interview_experience",
-      "published_at": "2026-08-06",
+      "published_at": "2026-08-05",
       "verified_at": "2026-08-27",
       "valid_until": "2027-02-23",
       "trust_level": "medium",
       "status": "needs_review",
       "version": 1,
-      "content_hash": "sha256:f7fe5d301c166a7458cea429a61de6f6cf82db57f9bb1412bd875bb3c5ca0ea2"
+      "content_hash": "sha256:4b1cb4037c7f2cd6ced455c18cf0e5352a8a35499082e930fb5102cf0224257f"
     },
     {
       "question_id": "q026",
@@ -1490,7 +1490,7 @@
     },
     {
       "question_id": "q028",
-      "question_text": "给定财务Agent仓库接口`merge_cost_events(events)`、三套异步数据fixture（账单/支付/报销）、输入输出schema和事件时间戳，请实现冲突裁决；补充单元/回归测试命令、失败调试、AI生成代码审查与交付标准。",
+      "question_text": "在已有Python服务中实现接口 `merge_cost_events(events)`。输入为事件列表，每项包含 `{source: bill|payment|expense, event_id: str, event_time: ISO-8601, amount: number}`；输出为 `{records: list, conflicts: list, timeline: list}`。给定三条固定fixture：乱序事件、重复event_id、同event_time不同source。请实现确定性的去重与冲突裁决，并给出单元测试与回归测试，以及交付前一项AI生成代码审查点。",
       "role": "ai_agent_engineer",
       "role_version": "2026-H2",
       "dimension_id": "role_dim_06",
@@ -1510,42 +1510,42 @@
         "scenario",
         "system_design"
       ],
-      "difficulty": "advanced",
+      "difficulty": "intermediate",
       "expected_signals": [
-        "最低充分：实现接口并按事件时间排序、幂等去重、冲突裁决和可追溯输出；用三套fixture覆盖输入输出、单元/回归测试、失败调试及AI审查交付。",
-        "限制：乱序、重复和同时间戳必须有确定规则。"
+        "最低充分：按event_time排序、按event_id幂等去重、对同时间戳冲突给确定规则，并输出可追溯timeline；三条fixture均有断言。",
+        "限制：不能按到达顺序覆盖财务事实，冲突不得静默丢弃。"
       ],
       "critical_errors": [
         "按到达顺序覆盖财务事实",
         "输出没有来源时间线"
       ],
       "follow_up_seeds": [
-        "如果候选人声称时间戳足够，追问时钟相同和乱序样本。",
-        "如果遗漏审查交付，追问AI生成代码如何防止金额副作用。"
+        "如果候选人声称时间戳足够，追问同event_time不同source的稳定裁决键。",
+        "如果遗漏timeline，追问如何从输出定位原始event_id。"
       ],
       "company_tags": [
         "国内互联网",
         "企业AI应用"
       ],
-      "source_id": "src_cn_nowcoder_anruan_ai_app_01",
+      "source_id": "src_cn_nowcoder_byte_ads_01",
       "source_ids": [
-        "src_cn_nowcoder_anruan_ai_app_01",
-        "src_cn_jd_baidu_app_platform_2026"
+        "src_cn_nowcoder_byte_ads_01",
+        "src_cn_jd_baidu_base_2026"
       ],
-      "source_url": "https://www.nowcoder.com/feed/main/detail/40920533fad14136bff01c3928c7e953?sourceSSR=dynamic",
-      "source_title": "安软AI应用开发实习面经",
+      "source_url": "https://www.nowcoder.com/discuss/888046680824639488?sourceSSR=home",
+      "source_title": "字节国际化广告一面面经",
       "source_type": "public_interview_experience",
-      "published_at": "2026-08-05",
+      "published_at": "2026-05-24",
       "verified_at": "2026-08-27",
       "valid_until": "2027-02-23",
       "trust_level": "medium",
       "status": "needs_review",
       "version": 1,
-      "content_hash": "sha256:9d0c5696d004d273d237841cc92a1efdf3d846efd46e7d1ed04ca26590815ca8"
+      "content_hash": "sha256:c2bbb9372b04347edf88585187d5b376ac9e71e9ee91a7c70519efb0f776f388"
     },
     {
       "question_id": "q029",
-      "question_text": "财务Agent需解释月度成本异常，三套系统延迟分别为5分钟、1小时和1天。请设计证据时间线、冲突处理、组件容量、P95 SLA与输出验收，说明一致性取舍。",
+      "question_text": "财务Agent需解释月度成本异常，三套系统延迟分别为5分钟、1小时和1天。作为初级岗的stretch题，请只设计证据时间线、陈旧证据标记和一个可验收的时效阈值，不要求完整组件容量规划。",
       "role": "ai_agent_engineer",
       "role_version": "2026-H2",
       "dimension_id": "role_dim_06",
@@ -1554,7 +1554,7 @@
         "异步一致性权衡"
       ],
       "question_mode": "system_design",
-      "business_constraint": "异步财务证据时间线、容量、P95与一致性权衡",
+      "business_constraint": "异步财务证据时间线、陈旧标记与时效阈值",
       "dimension_terms": [
         "role_dim_06",
         "业务建模",
@@ -1567,12 +1567,12 @@
       ],
       "difficulty": "advanced",
       "expected_signals": [
-        "最低充分：独立设计三套延迟源的时间线、冲突策略、容量、P95 SLA和验收。",
-        "限制：明确陈旧证据如何呈现。"
+        "最低充分：画出三套延迟源的证据时间线，定义陈旧标记和一个可验收的时效阈值。",
+        "限制：不把不同更新时间混为同一事实。"
       ],
       "critical_errors": [
         "把不同更新时间混为同一事实",
-        "没有容量或SLA预算"
+        "没有陈旧证据标记或时效阈值"
       ],
       "follow_up_seeds": [
         "如果候选人声称最终一致足够，追问月末异常的时效边界。",
@@ -1582,25 +1582,25 @@
         "国内互联网",
         "企业AI应用"
       ],
-      "source_id": "src_cn_nowcoder_anruan_ai_app_01",
+      "source_id": "src_cn_nowcoder_byte_ads_01",
       "source_ids": [
-        "src_cn_nowcoder_anruan_ai_app_01",
-        "src_cn_jd_baidu_app_platform_2026"
+        "src_cn_nowcoder_byte_ads_01",
+        "src_cn_jd_baidu_base_2026"
       ],
-      "source_url": "https://www.nowcoder.com/feed/main/detail/40920533fad14136bff01c3928c7e953?sourceSSR=dynamic",
-      "source_title": "安软AI应用开发实习面经",
+      "source_url": "https://www.nowcoder.com/discuss/888046680824639488?sourceSSR=home",
+      "source_title": "字节国际化广告一面面经",
       "source_type": "public_interview_experience",
-      "published_at": "2026-08-05",
+      "published_at": "2026-05-24",
       "verified_at": "2026-08-27",
       "valid_until": "2027-02-23",
       "trust_level": "medium",
       "status": "needs_review",
       "version": 1,
-      "content_hash": "sha256:ef6cd96df44ec377218dca3261c7a440fc0c2c13b7c79f6cf314c2bc3aab8a05"
+      "content_hash": "sha256:2480d756942f773527f04a9c2a544dcc932294aa23f765b25d488ce7dabfe93c"
     },
     {
       "question_id": "q030",
-      "question_text": "上一轮你承诺发布门会阻断高风险变更，却没有说明回滚包校验。若评测报告与线上灰度指标冲突，请追问决策顺序、证据字段和人工批准条件。",
+      "question_text": "上一轮你承诺发布门会阻断高风险变更，却没有说明回滚包校验。若评测报告与线上灰度指标冲突，请只追问回滚包哈希、一个灰度证据字段和人工批准条件。",
       "role": "ai_agent_engineer",
       "role_version": "2026-H2",
       "dimension_id": "role_dim_06",
@@ -1609,7 +1609,7 @@
         "灰度回滚核验"
       ],
       "question_mode": "follow_up",
-      "business_constraint": "发布门、回滚包校验、评测与灰度冲突",
+      "business_constraint": "发布门冲突时的最小回滚校验与人工批准",
       "dimension_terms": [
         "role_dim_06",
         "业务建模",
@@ -1622,7 +1622,7 @@
       ],
       "difficulty": "intermediate",
       "expected_signals": [
-        "最低充分：回应上一轮高风险阻断承诺，给出回滚包校验、评测与灰度冲突的决策顺序。",
+        "最低充分：在评测与灰度冲突时核验回滚包哈希、一个灰度证据字段和人工批准条件。",
         "限制：人工批准必须可审计。"
       ],
       "critical_errors": [
@@ -1630,28 +1630,28 @@
         "回滚包不可复现仍发布"
       ],
       "follow_up_seeds": [
-        "如果候选人声称发布门阻断有效，追问回滚包哈希和灰度证据。",
+        "如果候选人声称发布门阻断有效，追问回滚包哈希和该灰度证据字段。",
         "如果遗漏人工批准，追问谁能否决发布。"
       ],
       "company_tags": [
         "国内互联网",
         "企业AI应用"
       ],
-      "source_id": "src_cn_nowcoder_anruan_ai_app_01",
+      "source_id": "src_cn_nowcoder_byte_ads_01",
       "source_ids": [
-        "src_cn_nowcoder_anruan_ai_app_01",
-        "src_cn_jd_baidu_app_platform_2026"
+        "src_cn_nowcoder_byte_ads_01",
+        "src_cn_jd_baidu_base_2026"
       ],
-      "source_url": "https://www.nowcoder.com/feed/main/detail/40920533fad14136bff01c3928c7e953?sourceSSR=dynamic",
-      "source_title": "安软AI应用开发实习面经",
+      "source_url": "https://www.nowcoder.com/discuss/888046680824639488?sourceSSR=home",
+      "source_title": "字节国际化广告一面面经",
       "source_type": "public_interview_experience",
-      "published_at": "2026-08-05",
+      "published_at": "2026-05-24",
       "verified_at": "2026-08-27",
       "valid_until": "2027-02-23",
       "trust_level": "medium",
       "status": "needs_review",
       "version": 1,
-      "content_hash": "sha256:d8d075f42141eed58902470114e81f5af44705d1be0cdd19c7f5bb0ba5cab522"
+      "content_hash": "sha256:9e757e03bcf6c3faf2848b70890c8b570d43a1c968a8ebc665d17ef1ea0a7d05"
     }
   ]
 }

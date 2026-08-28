@@ -223,8 +223,8 @@
       "lifecycle": "draft",
       "question_ids": [
         "q019",
-        "q020",
-        "q021"
+        "q021",
+        "q022"
       ],
       "human_summary": "候选人记录字节后端实习二面，包含项目追问、数据库与服务稳定性问题。",
       "review_class": "dynamic",
@@ -257,9 +257,9 @@
       "trust": "medium",
       "lifecycle": "draft",
       "question_ids": [
-        "q022",
-        "q023",
-        "q024"
+        "q028",
+        "q029",
+        "q030"
       ],
       "human_summary": "候选人分享字节国际化广告一面，关注业务理解、数据处理和模型应用工程。",
       "review_class": "dynamic",
@@ -292,7 +292,7 @@
       "trust": "medium",
       "lifecycle": "draft",
       "question_ids": [
-        "q025",
+        "q020",
         "q026",
         "q027"
       ],
@@ -327,9 +327,9 @@
       "trust": "medium",
       "lifecycle": "draft",
       "question_ids": [
-        "q028",
-        "q029",
-        "q030"
+        "q023",
+        "q024",
+        "q025"
       ],
       "human_summary": "候选人记录安软AI应用开发实习技术面，覆盖AI Coding、模型选型、上下文、Agent架构、RAG评测及Redis数据库。",
       "review_class": "dynamic",
@@ -570,8 +570,8 @@
       "lifecycle": "draft",
       "question_ids": [
         "q019",
-        "q020",
-        "q021"
+        "q021",
+        "q022"
       ],
       "human_summary": "国内当前公开职位，列出大模型、Agent、RAG、多模态或工程化职责要求。",
       "review_class": "dynamic",
@@ -604,9 +604,9 @@
       "trust": "high",
       "lifecycle": "draft",
       "question_ids": [
-        "q022",
-        "q023",
-        "q024"
+        "q028",
+        "q029",
+        "q030"
       ],
       "human_summary": "百度当前校招职位，职责涵盖基础大模型训练、数据治理、Coding与Agent能力研发。",
       "review_class": "dynamic",
@@ -639,7 +639,7 @@
       "trust": "high",
       "lifecycle": "draft",
       "question_ids": [
-        "q025",
+        "q020",
         "q026",
         "q027"
       ],
@@ -674,9 +674,9 @@
       "trust": "high",
       "lifecycle": "draft",
       "question_ids": [
-        "q028",
-        "q029",
-        "q030"
+        "q023",
+        "q024",
+        "q025"
       ],
       "human_summary": "百度当前社招职位，职责涵盖Agent企业能力底座、API、CLI、Skill治理与效果评估。",
       "review_class": "dynamic",

@@ -163,10 +163,10 @@
       "cross_validation_source_ids": [
         "src_cn_official_tencent_rag"
       ],
-      "capability_summary": "候选人须证明如何处理“合同生效与索引更新时间冲突”，并用本人决策、风险判断与可观测交付结果支撑结论。",
-      "business_constraint_summary": "合同生效与索引更新时间冲突",
-      "dimension_summary": "六维边界聚焦“合同生效与索引更新时间冲突”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
-      "mode_rationale": "该题型适合识别“合同生效与索引更新时间冲突”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
+      "capability_summary": "候选人须证明如何处理“合同生效日晚于索引最新覆盖时间，导致新条款未被召回”，并用本人决策、风险判断与可观测交付结果支撑结论。",
+      "business_constraint_summary": "合同生效日晚于索引最新覆盖时间，导致新条款未被召回",
+      "dimension_summary": "六维边界聚焦“合同生效日晚于索引最新覆盖时间，导致新条款未被召回”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
+      "mode_rationale": "该题型适合识别“合同生效日晚于索引最新覆盖时间，导致新条款未被召回”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
     },
     {
       "question_id": "q009",
@@ -310,10 +310,10 @@
       "cross_validation_source_ids": [
         "src_cn_official_tencent_rag_pg"
       ],
-      "capability_summary": "候选人须证明如何处理“幂等重试与失败fixture”，并用本人决策、风险判断与可观测交付结果支撑结论。",
-      "business_constraint_summary": "幂等重试与失败fixture",
-      "dimension_summary": "六维边界聚焦“幂等重试与失败fixture”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
-      "mode_rationale": "该题型适合识别“幂等重试与失败fixture”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
+      "capability_summary": "候选人须证明如何处理“工具调用重试只覆盖可证明安全的失败类型，副作用状态必须可查询”，并用本人决策、风险判断与可观测交付结果支撑结论。",
+      "business_constraint_summary": "工具调用重试只覆盖可证明安全的失败类型，副作用状态必须可查询",
+      "dimension_summary": "六维边界聚焦“工具调用重试只覆盖可证明安全的失败类型，副作用状态必须可查询”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
+      "mode_rationale": "该题型适合识别“工具调用重试只覆盖可证明安全的失败类型，副作用状态必须可查询”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
     },
     {
       "question_id": "q016",
@@ -394,10 +394,10 @@
       "cross_validation_source_ids": [
         "src_cn_jd_baidu_agent_2026"
       ],
-      "capability_summary": "候选人须证明如何处理“工具循环从4步升19步”，并用本人决策、风险判断与可观测交付结果支撑结论。",
-      "business_constraint_summary": "工具循环从4步升19步",
-      "dimension_summary": "六维边界聚焦“工具循环从4步升19步”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
-      "mode_rationale": "该题型适合识别“工具循环从4步升19步”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
+      "capability_summary": "候选人须证明如何处理“工具循环从4步升19步，需可观测熔断与人工接管”，并用本人决策、风险判断与可观测交付结果支撑结论。",
+      "business_constraint_summary": "工具循环从4步升19步，需可观测熔断与人工接管",
+      "dimension_summary": "六维边界聚焦“工具循环从4步升19步，需可观测熔断与人工接管”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
+      "mode_rationale": "该题型适合识别“工具循环从4步升19步，需可观测熔断与人工接管”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
     },
     {
       "question_id": "q020",
@@ -410,10 +410,10 @@
       "reviewer_type": "luna",
       "reviewed_at": "2026-08-27",
       "signal_source_ids": [
-        "src_cn_nowcoder_byte_backend_02"
+        "src_cn_nowcoder_aicoding_01"
       ],
       "cross_validation_source_ids": [
-        "src_cn_jd_baidu_agent_2026"
+        "src_cn_jd_baidu_agent_2026b"
       ],
       "capability_summary": "候选人须证明如何处理“gold证据fixture与Recall@k”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "gold证据fixture与Recall@k",
@@ -452,10 +452,10 @@
       "reviewer_type": "luna",
       "reviewed_at": "2026-08-27",
       "signal_source_ids": [
-        "src_cn_nowcoder_byte_ads_01"
+        "src_cn_nowcoder_byte_backend_02"
       ],
       "cross_validation_source_ids": [
-        "src_cn_jd_baidu_base_2026"
+        "src_cn_jd_baidu_agent_2026"
       ],
       "capability_summary": "候选人须证明如何处理“画像字段脱敏、手机号地址禁曝”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "画像字段脱敏、手机号地址禁曝",
@@ -473,15 +473,15 @@
       "reviewer_type": "luna",
       "reviewed_at": "2026-08-27",
       "signal_source_ids": [
-        "src_cn_nowcoder_byte_ads_01"
+        "src_cn_nowcoder_anruan_ai_app_01"
       ],
       "cross_validation_source_ids": [
-        "src_cn_jd_baidu_base_2026"
+        "src_cn_jd_baidu_app_platform_2026"
       ],
-      "capability_summary": "候选人须证明如何处理“3000RPS、RTO 5分钟、跨区旧读”，并用本人决策、风险判断与可观测交付结果支撑结论。",
-      "business_constraint_summary": "3000RPS、RTO 5分钟、跨区旧读",
-      "dimension_summary": "六维边界聚焦“3000RPS、RTO 5分钟、跨区旧读”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
-      "mode_rationale": "该题型适合识别“3000RPS、RTO 5分钟、跨区旧读”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
+      "capability_summary": "候选人须证明如何处理“跨区旧读、RTO 5分钟下的最小事故路由与降级”，并用本人决策、风险判断与可观测交付结果支撑结论。",
+      "business_constraint_summary": "跨区旧读、RTO 5分钟下的最小事故路由与降级",
+      "dimension_summary": "六维边界聚焦“跨区旧读、RTO 5分钟下的最小事故路由与降级”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
+      "mode_rationale": "该题型适合识别“跨区旧读、RTO 5分钟下的最小事故路由与降级”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
     },
     {
       "question_id": "q024",
@@ -494,15 +494,15 @@
       "reviewer_type": "luna",
       "reviewed_at": "2026-08-27",
       "signal_source_ids": [
-        "src_cn_nowcoder_byte_ads_01"
+        "src_cn_nowcoder_anruan_ai_app_01"
       ],
       "cross_validation_source_ids": [
-        "src_cn_jd_baidu_base_2026"
+        "src_cn_jd_baidu_app_platform_2026"
       ],
-      "capability_summary": "候选人须证明如何处理“转化下降与反馈漂移”，并用本人决策、风险判断与可观测交付结果支撑结论。",
-      "business_constraint_summary": "转化下降与反馈漂移",
-      "dimension_summary": "六维边界聚焦“转化下降与反馈漂移”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
-      "mode_rationale": "该题型适合识别“转化下降与反馈漂移”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
+      "capability_summary": "候选人须证明如何处理“推荐Agent的最小线上诊断闭环与回滚触发”，并用本人决策、风险判断与可观测交付结果支撑结论。",
+      "business_constraint_summary": "推荐Agent的最小线上诊断闭环与回滚触发",
+      "dimension_summary": "六维边界聚焦“推荐Agent的最小线上诊断闭环与回滚触发”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
+      "mode_rationale": "该题型适合识别“推荐Agent的最小线上诊断闭环与回滚触发”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
     },
     {
       "question_id": "q025",
@@ -515,15 +515,15 @@
       "reviewer_type": "luna",
       "reviewed_at": "2026-08-27",
       "signal_source_ids": [
-        "src_cn_nowcoder_aicoding_01"
+        "src_cn_nowcoder_anruan_ai_app_01"
       ],
       "cross_validation_source_ids": [
-        "src_cn_jd_baidu_agent_2026b"
+        "src_cn_jd_baidu_app_platform_2026"
       ],
-      "capability_summary": "候选人须证明如何处理“无证据回答的承诺边界”，并用本人决策、风险判断与可观测交付结果支撑结论。",
-      "business_constraint_summary": "无证据回答的承诺边界",
-      "dimension_summary": "六维边界聚焦“无证据回答的承诺边界”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
-      "mode_rationale": "该题型适合识别“无证据回答的承诺边界”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
+      "capability_summary": "候选人须证明如何处理“AI交付中的来源承诺、缺证据告警与人工路径”，并用本人决策、风险判断与可观测交付结果支撑结论。",
+      "business_constraint_summary": "AI交付中的来源承诺、缺证据告警与人工路径",
+      "dimension_summary": "六维边界聚焦“AI交付中的来源承诺、缺证据告警与人工路径”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
+      "mode_rationale": "该题型适合识别“AI交付中的来源承诺、缺证据告警与人工路径”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
     },
     {
       "question_id": "q026",
@@ -578,15 +578,15 @@
       "reviewer_type": "luna",
       "reviewed_at": "2026-08-27",
       "signal_source_ids": [
-        "src_cn_nowcoder_anruan_ai_app_01"
+        "src_cn_nowcoder_byte_ads_01"
       ],
       "cross_validation_source_ids": [
-        "src_cn_jd_baidu_app_platform_2026"
+        "src_cn_jd_baidu_base_2026"
       ],
-      "capability_summary": "候选人须证明如何处理“三套异步系统的成本证据”，并用本人决策、风险判断与可观测交付结果支撑结论。",
-      "business_constraint_summary": "三套异步系统的成本证据",
-      "dimension_summary": "六维边界聚焦“三套异步系统的成本证据”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
-      "mode_rationale": "该题型适合识别“三套异步系统的成本证据”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
+      "capability_summary": "候选人须证明如何处理“三套异步财务fixture、时间戳冲突、输入输出schema”，并用本人决策、风险判断与可观测交付结果支撑结论。",
+      "business_constraint_summary": "三套异步财务fixture、时间戳冲突、输入输出schema",
+      "dimension_summary": "六维边界聚焦“三套异步财务fixture、时间戳冲突、输入输出schema”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
+      "mode_rationale": "该题型适合识别“三套异步财务fixture、时间戳冲突、输入输出schema”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
     },
     {
       "question_id": "q029",
@@ -599,15 +599,15 @@
       "reviewer_type": "luna",
       "reviewed_at": "2026-08-27",
       "signal_source_ids": [
-        "src_cn_nowcoder_anruan_ai_app_01"
+        "src_cn_nowcoder_byte_ads_01"
       ],
       "cross_validation_source_ids": [
-        "src_cn_jd_baidu_app_platform_2026"
+        "src_cn_jd_baidu_base_2026"
       ],
-      "capability_summary": "候选人须证明如何处理“子Agent矛盾与人工仲裁”，并用本人决策、风险判断与可观测交付结果支撑结论。",
-      "business_constraint_summary": "子Agent矛盾与人工仲裁",
-      "dimension_summary": "六维边界聚焦“子Agent矛盾与人工仲裁”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
-      "mode_rationale": "该题型适合识别“子Agent矛盾与人工仲裁”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
+      "capability_summary": "候选人须证明如何处理“异步财务证据时间线、陈旧标记与时效阈值”，并用本人决策、风险判断与可观测交付结果支撑结论。",
+      "business_constraint_summary": "异步财务证据时间线、陈旧标记与时效阈值",
+      "dimension_summary": "六维边界聚焦“异步财务证据时间线、陈旧标记与时效阈值”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
+      "mode_rationale": "该题型适合识别“异步财务证据时间线、陈旧标记与时效阈值”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
     },
     {
       "question_id": "q030",
@@ -620,15 +620,15 @@
       "reviewer_type": "luna",
       "reviewed_at": "2026-08-27",
       "signal_source_ids": [
-        "src_cn_nowcoder_anruan_ai_app_01"
+        "src_cn_nowcoder_byte_ads_01"
       ],
       "cross_validation_source_ids": [
-        "src_cn_jd_baidu_app_platform_2026"
+        "src_cn_jd_baidu_base_2026"
       ],
-      "capability_summary": "候选人须证明如何处理“版本差异、评测报告、回滚包与发布门”，并用本人决策、风险判断与可观测交付结果支撑结论。",
-      "business_constraint_summary": "版本差异、评测报告、回滚包与发布门",
-      "dimension_summary": "六维边界聚焦“版本差异、评测报告、回滚包与发布门”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
-      "mode_rationale": "该题型适合识别“版本差异、评测报告、回滚包与发布门”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
+      "capability_summary": "候选人须证明如何处理“发布门冲突时的最小回滚校验与人工批准”，并用本人决策、风险判断与可观测交付结果支撑结论。",
+      "business_constraint_summary": "发布门冲突时的最小回滚校验与人工批准",
+      "dimension_summary": "六维边界聚焦“发布门冲突时的最小回滚校验与人工批准”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
+      "mode_rationale": "该题型适合识别“发布门冲突时的最小回滚校验与人工批准”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
     }
   ]
 }
