@@ -17,8 +17,8 @@
       ],
       "capability_summary": "针对第1题的岗位能力：围绕32K窗口、法规保留、P95首token 1.5秒完成设计、验证与风险控制。",
       "business_constraint_summary": "32K窗口、法规保留、P95首token 1.5秒",
-      "dimension_summary": "题目特异维度 role_dim_01",
-      "mode_rationale": "题目以foundation方式考查真实业务决策。"
+      "dimension_summary": "role_dim_01：观察你负责客服Agent的上下文裁剪：会需求拆解的证据、边界与验收。",
+      "mode_rationale": "采用foundation，因为题干要求32K窗口、法规保留、P95首token 1.5秒并能观察候选人的具体决策。"
     },
     {
       "question_id": "q002",
@@ -37,8 +37,8 @@
       ],
       "capability_summary": "针对第2题的岗位能力：围绕三租户、日120万请求、禁止越权完成设计、验证与风险控制。",
       "business_constraint_summary": "三租户、日120万请求、禁止越权",
-      "dimension_summary": "题目特异维度 role_dim_01",
-      "mode_rationale": "题目以project_deep_dive方式考查真实业务决策。"
+      "dimension_summary": "role_dim_01：观察请深挖你亲自负责的订单售后Agent需求拆解的证据、边界与验收。",
+      "mode_rationale": "采用project_deep_dive，因为题干要求三租户、日120万请求、禁止越权并能观察候选人的具体决策。"
     },
     {
       "question_id": "q003",
@@ -57,8 +57,8 @@
       ],
       "capability_summary": "针对第3题的岗位能力：围绕命中率82%到61%的线上回归完成设计、验证与风险控制。",
       "business_constraint_summary": "命中率82%到61%的线上回归",
-      "dimension_summary": "题目特异维度 role_dim_01",
-      "mode_rationale": "题目以scenario方式考查真实业务决策。"
+      "dimension_summary": "role_dim_01：观察候选人项目中RAG命中率从82%降到需求拆解的证据、边界与验收。",
+      "mode_rationale": "采用scenario，因为题干要求命中率82%到61%的线上回归并能观察候选人的具体决策。"
     },
     {
       "question_id": "q004",
@@ -77,8 +77,8 @@
       ],
       "capability_summary": "针对第4题的岗位能力：围绕月末800RPS、账单只读、人工复核完成设计、验证与风险控制。",
       "business_constraint_summary": "月末800RPS、账单只读、人工复核",
-      "dimension_summary": "题目特异维度 role_dim_01",
-      "mode_rationale": "题目以system_design方式考查真实业务决策。"
+      "dimension_summary": "role_dim_01：观察支付对账Agent只读账单，月末峰值需求拆解的证据、边界与验收。",
+      "mode_rationale": "采用system_design，因为题干要求月末800RPS、账单只读、人工复核并能观察候选人的具体决策。"
     },
     {
       "question_id": "q005",
@@ -97,8 +97,8 @@
       ],
       "capability_summary": "针对第5题的岗位能力：围绕摘要不得丢截止日期、需可证明完成设计、验证与风险控制。",
       "business_constraint_summary": "摘要不得丢截止日期、需可证明",
-      "dimension_summary": "题目特异维度 role_dim_01",
-      "mode_rationale": "题目以follow_up方式考查真实业务决策。"
+      "dimension_summary": "role_dim_01：观察上一轮你声称摘要保留了全部关键约束。需求拆解的证据、边界与验收。",
+      "mode_rationale": "采用follow_up，因为题干要求摘要不得丢截止日期、需可证明并能观察候选人的具体决策。"
     },
     {
       "question_id": "q006",
@@ -117,8 +117,8 @@
       ],
       "capability_summary": "针对第6题的岗位能力：围绕库存物流客服事实冲突完成设计、验证与风险控制。",
       "business_constraint_summary": "库存物流客服事实冲突",
-      "dimension_summary": "题目特异维度 role_dim_01",
-      "mode_rationale": "题目以scenario方式考查真实业务决策。"
+      "dimension_summary": "role_dim_01：观察仓储异常Agent同时处理库存、物流需求拆解的证据、边界与验收。",
+      "mode_rationale": "采用scenario，因为题干要求库存物流客服事实冲突并能观察候选人的具体决策。"
     },
     {
       "question_id": "q007",
@@ -137,8 +137,8 @@
       ],
       "capability_summary": "针对第7题的岗位能力：围绕十万合同、单租户SLA 2秒完成设计、验证与风险控制。",
       "business_constraint_summary": "十万合同、单租户SLA 2秒",
-      "dimension_summary": "题目特异维度 role_dim_02",
-      "mode_rationale": "题目以foundation方式考查真实业务决策。"
+      "dimension_summary": "role_dim_02：观察法务检索Agent面对十万份合同，单需求拆解的证据、边界与验收。",
+      "mode_rationale": "采用foundation，因为题干要求十万合同、单租户SLA 2秒并能观察候选人的具体决策。"
     },
     {
       "question_id": "q008",
@@ -157,8 +157,8 @@
       ],
       "capability_summary": "针对第8题的岗位能力：围绕合同生效与索引更新时间冲突完成设计、验证与风险控制。",
       "business_constraint_summary": "合同生效与索引更新时间冲突",
-      "dimension_summary": "题目特异维度 role_dim_02",
-      "mode_rationale": "题目以scenario方式考查真实业务决策。"
+      "dimension_summary": "role_dim_02：观察线上RAG发生引用过期条款事故，索引需求拆解的证据、边界与验收。",
+      "mode_rationale": "采用scenario，因为题干要求合同生效与索引更新时间冲突并能观察候选人的具体决策。"
     },
     {
       "question_id": "q009",
@@ -177,8 +177,8 @@
       ],
       "capability_summary": "针对第9题的岗位能力：围绕记忆删除与重复询问实验完成设计、验证与风险控制。",
       "business_constraint_summary": "记忆删除与重复询问实验",
-      "dimension_summary": "题目特异维度 role_dim_02",
-      "mode_rationale": "题目以project_deep_dive方式考查真实业务决策。"
+      "dimension_summary": "role_dim_02：观察请深挖你亲自负责的Memory项目：需求拆解的证据、边界与验收。",
+      "mode_rationale": "采用project_deep_dive，因为题干要求记忆删除与重复询问实验并能观察候选人的具体决策。"
     },
     {
       "question_id": "q010",
@@ -197,8 +197,8 @@
       ],
       "capability_summary": "针对第10题的岗位能力：围绕拒绝意图误判造成工单副作用完成设计、验证与风险控制。",
       "business_constraint_summary": "拒绝意图误判造成工单副作用",
-      "dimension_summary": "题目特异维度 role_dim_02",
-      "mode_rationale": "题目以scenario方式考查真实业务决策。"
+      "dimension_summary": "role_dim_02：观察模型把客户拒绝意图误判为确认并关闭工需求拆解的证据、边界与验收。",
+      "mode_rationale": "采用scenario，因为题干要求拒绝意图误判造成工单副作用并能观察候选人的具体决策。"
     },
     {
       "question_id": "q011",
@@ -217,8 +217,8 @@
       ],
       "capability_summary": "针对第11题的岗位能力：围绕每会话成本0.03元完成设计、验证与风险控制。",
       "business_constraint_summary": "每会话成本0.03元",
-      "dimension_summary": "题目特异维度 role_dim_02",
-      "mode_rationale": "题目以follow_up方式考查真实业务决策。"
+      "dimension_summary": "role_dim_02：观察上一轮承诺成本受控但遗漏命中率；需给阈值和账单证据。的需求拆解的证据、边界与验收。",
+      "mode_rationale": "采用follow_up，因为题干要求客服追问成本0.03元与缓存命中率并能观察候选人的具体决策。"
     },
     {
       "question_id": "q012",
@@ -237,8 +237,8 @@
       ],
       "capability_summary": "针对第12题的岗位能力：围绕五百亿行查询与权限完成设计、验证与风险控制。",
       "business_constraint_summary": "五百亿行查询与权限",
-      "dimension_summary": "题目特异维度 role_dim_03",
-      "mode_rationale": "题目以foundation方式考查真实业务决策。"
+      "dimension_summary": "role_dim_03：观察数据平台Agent从自然语言生成查询需求拆解的证据、边界与验收。",
+      "mode_rationale": "采用foundation，因为题干要求五百亿行查询与权限并能观察候选人的具体决策。"
     },
     {
       "question_id": "q013",
@@ -257,8 +257,8 @@
       ],
       "capability_summary": "针对第13题的岗位能力：围绕20到200工具的选择退化完成设计、验证与风险控制。",
       "business_constraint_summary": "20到200工具的选择退化",
-      "dimension_summary": "题目特异维度 role_dim_03",
-      "mode_rationale": "题目以scenario方式考查真实业务决策。"
+      "dimension_summary": "role_dim_03：观察研发助手工具从20个扩展到200个后需求拆解的证据、边界与验收。",
+      "mode_rationale": "采用scenario，因为题干要求20到200工具的选择退化并能观察候选人的具体决策。"
     },
     {
       "question_id": "q014",
@@ -277,8 +277,8 @@
       ],
       "capability_summary": "针对第14题的岗位能力：围绕十万文档与提示词注入风险完成设计、验证与风险控制。",
       "business_constraint_summary": "十万文档与提示词注入风险",
-      "dimension_summary": "题目特异维度 role_dim_03",
-      "mode_rationale": "题目以system_design方式考查真实业务决策。"
+      "dimension_summary": "role_dim_03：观察为十万文档知识库设计安全检索架构：请需求拆解的证据、边界与验收。",
+      "mode_rationale": "采用system_design，因为题干要求十万文档与提示词注入风险并能观察候选人的具体决策。"
     },
     {
       "question_id": "q015",
@@ -297,8 +297,8 @@
       ],
       "capability_summary": "针对第15题的岗位能力：围绕幂等重试与失败fixture完成设计、验证与风险控制。",
       "business_constraint_summary": "幂等重试与失败fixture",
-      "dimension_summary": "题目特异维度 role_dim_03",
-      "mode_rationale": "题目以coding方式考查真实业务决策。"
+      "dimension_summary": "role_dim_03：观察请在已有Python服务中实现工具调需求拆解的证据、边界与验收。",
+      "mode_rationale": "采用coding，因为题干要求幂等重试与失败fixture并能观察候选人的具体决策。"
     },
     {
       "question_id": "q016",
@@ -317,8 +317,8 @@
       ],
       "capability_summary": "针对第16题的岗位能力：围绕已执行但超时且最多停止完成设计、验证与风险控制。",
       "business_constraint_summary": "已执行但超时且最多停止",
-      "dimension_summary": "题目特异维度 role_dim_03",
-      "mode_rationale": "题目以follow_up方式考查真实业务决策。"
+      "dimension_summary": "role_dim_03：观察上一轮你只说增加重试。若下游接口已执需求拆解的证据、边界与验收。",
+      "mode_rationale": "采用follow_up，因为题干要求已执行但超时且最多停止并能观察候选人的具体决策。"
     },
     {
       "question_id": "q017",
@@ -337,8 +337,8 @@
       ],
       "capability_summary": "针对第17题的岗位能力：围绕中英混合文档和表格完成设计、验证与风险控制。",
       "business_constraint_summary": "中英混合文档和表格",
-      "dimension_summary": "题目特异维度 role_dim_03",
-      "mode_rationale": "题目以project_deep_dive方式考查真实业务决策。"
+      "dimension_summary": "role_dim_03：观察请深挖你亲自负责的中英混合知识问答项需求拆解的证据、边界与验收。",
+      "mode_rationale": "采用project_deep_dive，因为题干要求中英混合文档和表格并能观察候选人的具体决策。"
     },
     {
       "question_id": "q018",
@@ -357,8 +357,8 @@
       ],
       "capability_summary": "针对第18题的岗位能力：围绕多模型网关成本与故障完成设计、验证与风险控制。",
       "business_constraint_summary": "多模型网关成本与故障",
-      "dimension_summary": "题目特异维度 role_dim_04",
-      "mode_rationale": "题目以project_deep_dive方式考查真实业务决策。"
+      "dimension_summary": "role_dim_04：观察请深挖你亲自负责的模型网关项目：说明需求拆解的证据、边界与验收。",
+      "mode_rationale": "采用project_deep_dive，因为题干要求多模型网关成本与故障并能观察候选人的具体决策。"
     },
     {
       "question_id": "q019",
@@ -377,8 +377,8 @@
       ],
       "capability_summary": "针对第19题的岗位能力：围绕工具循环从4步升19步完成设计、验证与风险控制。",
       "business_constraint_summary": "工具循环从4步升19步",
-      "dimension_summary": "题目特异维度 role_dim_04",
-      "mode_rationale": "题目以scenario方式考查真实业务决策。"
+      "dimension_summary": "role_dim_04：观察营销Agent工具调用链出现循环，平需求拆解的证据、边界与验收。",
+      "mode_rationale": "采用scenario，因为题干要求工具循环从4步升19步并能观察候选人的具体决策。"
     },
     {
       "question_id": "q020",
@@ -397,8 +397,8 @@
       ],
       "capability_summary": "针对第20题的岗位能力：围绕gold证据fixture与Recall@k完成设计、验证与风险控制。",
       "business_constraint_summary": "gold证据fixture与Recall@k",
-      "dimension_summary": "题目特异维度 role_dim_04",
-      "mode_rationale": "题目以coding方式考查真实业务决策。"
+      "dimension_summary": "role_dim_04：观察请在仓库中补齐RAG评测接口与命令：需求拆解的证据、边界与验收。",
+      "mode_rationale": "采用coding，因为题干要求gold证据fixture与Recall@k并能观察候选人的具体决策。"
     },
     {
       "question_id": "q021",
@@ -417,8 +417,8 @@
       ],
       "capability_summary": "针对第21题的岗位能力：围绕参数错误最多一次重试完成设计、验证与风险控制。",
       "business_constraint_summary": "参数错误最多一次重试",
-      "dimension_summary": "题目特异维度 role_dim_04",
-      "mode_rationale": "题目以follow_up方式考查真实业务决策。"
+      "dimension_summary": "role_dim_04：观察上一轮你说参数错误可重试。现在业务要需求拆解的证据、边界与验收。",
+      "mode_rationale": "采用follow_up，因为题干要求参数错误最多一次重试并能观察候选人的具体决策。"
     },
     {
       "question_id": "q022",
@@ -437,8 +437,8 @@
       ],
       "capability_summary": "针对第22题的岗位能力：围绕画像字段脱敏、手机号地址禁曝完成设计、验证与风险控制。",
       "business_constraint_summary": "画像字段脱敏、手机号地址禁曝",
-      "dimension_summary": "题目特异维度 role_dim_05",
-      "mode_rationale": "题目以foundation方式考查真实业务决策。"
+      "dimension_summary": "role_dim_05：观察客服Agent可读取用户画像但不得暴需求拆解的证据、边界与验收。",
+      "mode_rationale": "采用foundation，因为题干要求画像字段脱敏、手机号地址禁曝并能观察候选人的具体决策。"
     },
     {
       "question_id": "q023",
@@ -457,8 +457,8 @@
       ],
       "capability_summary": "针对第23题的岗位能力：围绕3000RPS、RTO 5分钟、跨区旧读完成设计、验证与风险控制。",
       "business_constraint_summary": "3000RPS、RTO 5分钟、跨区旧读",
-      "dimension_summary": "题目特异维度 role_dim_05",
-      "mode_rationale": "题目以scenario方式考查真实业务决策。"
+      "dimension_summary": "role_dim_05：观察华东Agent写入延迟突增且华南读取需求拆解的证据、边界与验收。",
+      "mode_rationale": "采用scenario，因为题干要求3000RPS、RTO 5分钟、跨区旧读并能观察候选人的具体决策。"
     },
     {
       "question_id": "q024",
@@ -477,8 +477,8 @@
       ],
       "capability_summary": "针对第24题的岗位能力：围绕转化下降与反馈漂移完成设计、验证与风险控制。",
       "business_constraint_summary": "转化下降与反馈漂移",
-      "dimension_summary": "题目特异维度 role_dim_05",
-      "mode_rationale": "题目以system_design方式考查真实业务决策。"
+      "dimension_summary": "role_dim_05：观察请为推荐Agent设计线上架构：离线需求拆解的证据、边界与验收。",
+      "mode_rationale": "采用system_design，因为题干要求转化下降与反馈漂移并能观察候选人的具体决策。"
     },
     {
       "question_id": "q025",
@@ -497,8 +497,8 @@
       ],
       "capability_summary": "针对第25题的岗位能力：围绕无证据回答的承诺边界完成设计、验证与风险控制。",
       "business_constraint_summary": "无证据回答的承诺边界",
-      "dimension_summary": "题目特异维度 role_dim_05",
-      "mode_rationale": "题目以scenario方式考查真实业务决策。"
+      "dimension_summary": "role_dim_05：观察上一轮你承诺所有回答都有来源。抽查发需求拆解的证据、边界与验收。",
+      "mode_rationale": "采用scenario，因为题干要求无证据回答的承诺边界并能观察候选人的具体决策。"
     },
     {
       "question_id": "q026",
@@ -517,8 +517,8 @@
       ],
       "capability_summary": "针对第26题的岗位能力：围绕转写错误导致退款完成设计、验证与风险控制。",
       "business_constraint_summary": "转写错误导致退款",
-      "dimension_summary": "题目特异维度 role_dim_05",
-      "mode_rationale": "题目以follow_up方式考查真实业务决策。"
+      "dimension_summary": "role_dim_05：观察上一轮声称人工兜底但未量化；需追问错误率和回滚证据。的需求拆解的证据、边界与验收。",
+      "mode_rationale": "采用follow_up，因为题干要求转写不确定性、退款副作用、人工确认并能观察候选人的具体决策。"
     },
     {
       "question_id": "q027",
@@ -537,8 +537,8 @@
       ],
       "capability_summary": "针对第27题的岗位能力：围绕SDK超时恢复与fixture完成设计、验证与风险控制。",
       "business_constraint_summary": "SDK超时恢复与fixture",
-      "dimension_summary": "题目特异维度 role_dim_05",
-      "mode_rationale": "题目以project_deep_dive方式考查真实业务决策。"
+      "dimension_summary": "role_dim_05：观察必须引用本人commit、故障样本、指标和实验；不能只讲概念。的需求拆解的证据、边界与验收。",
+      "mode_rationale": "采用project_deep_dive，因为题干要求工具SDK超时恢复项目的本人职责与证据链并能观察候选人的具体决策。"
     },
     {
       "question_id": "q028",
@@ -557,8 +557,8 @@
       ],
       "capability_summary": "针对第28题的岗位能力：围绕三套异步系统的成本证据完成设计、验证与风险控制。",
       "business_constraint_summary": "三套异步系统的成本证据",
-      "dimension_summary": "题目特异维度 role_dim_06",
-      "mode_rationale": "题目以coding方式考查真实业务决策。"
+      "dimension_summary": "role_dim_06：观察实现确定性裁决、保留证据链并覆盖异步乱序与重复事件。的需求拆解的证据、边界与验收。",
+      "mode_rationale": "采用coding，因为题干要求三套异步财务fixture、时间戳冲突、输入输出schema并能观察候选人的具体决策。"
     },
     {
       "question_id": "q029",
@@ -577,8 +577,8 @@
       ],
       "capability_summary": "针对第29题的岗位能力：围绕子Agent矛盾与人工仲裁完成设计、验证与风险控制。",
       "business_constraint_summary": "子Agent矛盾与人工仲裁",
-      "dimension_summary": "题目特异维度 role_dim_06",
-      "mode_rationale": "题目以system_design方式考查真实业务决策。"
+      "dimension_summary": "role_dim_06：观察独立系统设计必须给组件、规模、SLA和冲突降级，不依赖上一轮回答。的需求拆解的证据、边界与验收。",
+      "mode_rationale": "采用system_design，因为题干要求异步财务证据时间线、容量、P95与一致性权衡并能观察候选人的具体决策。"
     },
     {
       "question_id": "q030",
@@ -597,8 +597,8 @@
       ],
       "capability_summary": "针对第30题的岗位能力：围绕版本差异、评测报告、回滚包与发布门完成设计、验证与风险控制。",
       "business_constraint_summary": "版本差异、评测报告、回滚包与发布门",
-      "dimension_summary": "题目特异维度 role_dim_06",
-      "mode_rationale": "题目以follow_up方式考查真实业务决策。"
+      "dimension_summary": "role_dim_06：观察上一轮遗漏回滚校验；需追问字段、顺序和人工批准条件。的需求拆解的证据、边界与验收。",
+      "mode_rationale": "采用follow_up，因为题干要求发布门、回滚包校验、评测与灰度冲突并能观察候选人的具体决策。"
     }
   ]
 }

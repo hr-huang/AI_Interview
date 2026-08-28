@@ -599,6 +599,41 @@ class QuestionCorpusGovernanceTests(unittest.TestCase):
             normalized = re.sub(r"\\s+", " ", row["question_text"]).strip()
             self.assertEqual(dedupe[row["question_id"]]["semantic_hash"], "sha256:" + hashlib.sha256(normalized.encode("utf-8")).hexdigest())
 
+    def test_task7_mode_contracts_and_sidecars_are_question_specific(self) -> None:
+        root = Path(__file__).parents[1] / "profile_agent/knowledge/question_banks/ai_agent_engineer_2026_h2"
+        rows = json.loads((root / "questions.json").read_text(encoding="utf-8"))["questions"]
+        coding = [r for r in rows if r["primary_mode"] == "coding"]
+        self.assertEqual(len(coding), 3)
+        for row in coding:
+            self.assertRegex(row["question_text"], r"接口")
+            self.assertRegex(row["question_text"], r"输入.*输出|输出.*输入")
+            self.assertRegex(row["question_text"], r"fixture")
+            self.assertRegex(row["question_text"], r"测试.*回归|回归.*测试")
+            self.assertRegex(row["question_text"], r"AI.*审查")
+            self.assertRegex(row["question_text"], r"交付")
+        projects = [r for r in rows if r["primary_mode"] == "project_deep_dive"]
+        self.assertEqual(len(projects), 5)
+        for row in projects:
+            self.assertIn("候选人", row["question_text"])
+            self.assertTrue(any(token in row["question_text"] for token in ("本人", "亲自")))
+            self.assertRegex(row["question_text"], r"commit|指标|故障|实验")
+        followups = [r for r in rows if r["primary_mode"] == "follow_up"]
+        self.assertEqual(len(followups), 6)
+        for row in followups:
+            self.assertRegex(row["question_text"], r"上一轮|承诺|遗漏|声称")
+        for row in rows:
+            if row["primary_mode"] == "system_design":
+                self.assertNotIn("上一轮", row["question_text"])
+            self.assertGreaterEqual(len(row["skills"]), 3)
+            self.assertGreaterEqual(len(row["expected_signals"]), 3)
+            self.assertGreaterEqual(len(row["critical_errors"]), 3)
+            self.assertGreaterEqual(len(row["follow_up_seeds"]), 2)
+            self.assertNotIn("题目特异维度", row["dimension_terms"])
+        reviews = json.loads((root / "review.json").read_text(encoding="utf-8"))["records"]
+        self.assertGreaterEqual(len({r["dimension_summary"] for r in reviews}), 25)
+        self.assertGreaterEqual(len({r["mode_rationale"] for r in reviews}), 25)
+        self.assertNotEqual(len({r["section"] for r in json.loads((root / "locator.json").read_text(encoding="utf-8"))["records"]}), 1)
+
     def test_task6_fixture_rejects_date_provenance_and_locator_tampering(self) -> None:
         root = Path(__file__).parents[1]
         raw = json.loads((root / "profile_agent/knowledge/question_banks/ai_agent_engineer_2026_h2/QuestionSourceRegistry.json").read_text(encoding="utf-8"))

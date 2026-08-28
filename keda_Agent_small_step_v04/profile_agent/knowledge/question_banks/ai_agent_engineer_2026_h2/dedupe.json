@@ -11,7 +11,7 @@
     },
     {
       "question_id": "q002",
-      "semantic_hash": "sha256:3799e3292ad9b93762c6f2ba77a9650187235b804153d505200ae2aa129b3bfa",
+      "semantic_hash": "sha256:49806d67cd399e46b6ab3cb525ed0a16e67c62028ca2a1bdf9798f1f8cc9d073",
       "comparison_batch": "task7-v2",
       "candidate_duplicate_group": [],
       "near_duplicate_decision": "unique",
@@ -74,7 +74,7 @@
     },
     {
       "question_id": "q009",
-      "semantic_hash": "sha256:8951d2ea062ed4f50fe23d551aac24712ce42ffcde057767bf20850d70a8af33",
+      "semantic_hash": "sha256:8de6ebfe3e8da19ed4dd1869c9131d1408cb8f614fbdb9cc6a28db9ac7deea82",
       "comparison_batch": "task7-v2",
       "candidate_duplicate_group": [],
       "near_duplicate_decision": "unique",
@@ -92,7 +92,7 @@
     },
     {
       "question_id": "q011",
-      "semantic_hash": "sha256:4b760bb6bbfed3d9ffb47b069eb710eb6390ea63c296e0ff8a03afa045f8ec14",
+      "semantic_hash": "sha256:f119a29185ca563892ec04dbbfc5ef2f4ecb734b07a2de941513fae7449c3981",
       "comparison_batch": "task7-v2",
       "candidate_duplicate_group": [],
       "near_duplicate_decision": "unique",
@@ -146,7 +146,7 @@
     },
     {
       "question_id": "q017",
-      "semantic_hash": "sha256:825b34c73e79c9e6d0132eaacb966d56bf73e0d21c1de95a796b14c45f9a900a",
+      "semantic_hash": "sha256:262a90c593ab2108d2664163a81a8a96403c563d08c508b60a9fc083dec8efb2",
       "comparison_batch": "task7-v2",
       "candidate_duplicate_group": [],
       "near_duplicate_decision": "unique",
@@ -155,7 +155,7 @@
     },
     {
       "question_id": "q018",
-      "semantic_hash": "sha256:0e194229a5cb0fba7a709353343ff0db4e36838bcafc627c05c687e07dea0617",
+      "semantic_hash": "sha256:42e4999d757fff6967ff82f22b29fc528ac62a040a46236ec2168310fbe8dce6",
       "comparison_batch": "task7-v2",
       "candidate_duplicate_group": [],
       "near_duplicate_decision": "unique",
@@ -173,7 +173,7 @@
     },
     {
       "question_id": "q020",
-      "semantic_hash": "sha256:1c23feb47fe8f4c0f1f9f101b599cfda6b5a48452792ce42b17e78dab2bfdadc",
+      "semantic_hash": "sha256:9fb0436a327f17b164542d0a73e7552482d1c795feaedf50d07667d86c3a917b",
       "comparison_batch": "task7-v2",
       "candidate_duplicate_group": [],
       "near_duplicate_decision": "unique",
@@ -227,7 +227,7 @@
     },
     {
       "question_id": "q026",
-      "semantic_hash": "sha256:39d08f11e8552c6b1014ed4268605aa2df7d40b8f3a9a695370bdde3eee152c8",
+      "semantic_hash": "sha256:2849361a04a53fdf1e0b85db5737ee7f697203cc886c174aee7839e5f127501d",
       "comparison_batch": "task7-v2",
       "candidate_duplicate_group": [],
       "near_duplicate_decision": "unique",
@@ -236,7 +236,7 @@
     },
     {
       "question_id": "q027",
-      "semantic_hash": "sha256:ea3621a89995d350b3d60b1e668076446a8b2410a2566f67a9701941b20c9499",
+      "semantic_hash": "sha256:f4bf7a0b04950ab2a86553c7ad8129dc09c70bb25da24cc7176988526f7b7d90",
       "comparison_batch": "task7-v2",
       "candidate_duplicate_group": [],
       "near_duplicate_decision": "unique",
@@ -245,7 +245,7 @@
     },
     {
       "question_id": "q028",
-      "semantic_hash": "sha256:ccc300d78a2f782a254123a573a2f3d9218a86a36c0d75787843e706dcd1c00e",
+      "semantic_hash": "sha256:d52d45102ac6a654b2b903b93edd3c347d1bed24103fed8986012708c458eaeb",
       "comparison_batch": "task7-v2",
       "candidate_duplicate_group": [],
       "near_duplicate_decision": "unique",
@@ -254,7 +254,7 @@
     },
     {
       "question_id": "q029",
-      "semantic_hash": "sha256:be112cb31a2eedcb6865ce7404830b6a589b64bf347effe1925feb55a367cc5b",
+      "semantic_hash": "sha256:f58a0bb6b0f8f1db087a883d6d2a46cbad8e5345580590f83154c378144f40f1",
       "comparison_batch": "task7-v2",
       "candidate_duplicate_group": [],
       "near_duplicate_decision": "unique",
@@ -263,7 +263,7 @@
     },
     {
       "question_id": "q030",
-      "semantic_hash": "sha256:219a295c9a50b576074224409e26bde8536c47c1af1f5b164e7abf13d5d20672",
+      "semantic_hash": "sha256:8d4d88c36b85f8705d3f9a4d8c59773252c53006b00d5a6847e9009cbdec1c7f",
       "comparison_batch": "task7-v2",
       "candidate_duplicate_group": [],
       "near_duplicate_decision": "unique",
