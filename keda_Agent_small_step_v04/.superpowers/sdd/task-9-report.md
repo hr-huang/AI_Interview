@@ -195,3 +195,46 @@ configuration 和程序错误伪装成 unavailable。新增连接失败与 evalu
 Task9 禁止污染 canonical corpus，已仅恢复该被测试改写的文件，随后在
 `PYTHON_DOTENV_DISABLED=1` 隔离环境下完成 `721/721 OK`。三个既有临时 artifact
 仍未加入提交。
+
+## Candidate embedded evaluation CLI (follow-up)
+
+Added `evaluate-candidate-embedded` to `run_question_bank.py`. The command is
+dry-run by default and requires explicit `--apply-real-embedding` for the
+fixed SiliconFlow `BAAI/bge-m3` configuration. It requires explicit bank,
+registry, manifest, intents, isolated candidate index, and artifact paths;
+rejects formal production Qdrant paths; validates exactly 30 `needs_review`
+records and intents; batches record and query embedding once each; evaluates
+through an isolated local Qdrant store with `candidate_safe=True`; runs four
+reused-vector supervisor probes plus an exclusion/no-match gate; and writes a
+sanitized artifact without credentials or provider response bodies.
+
+Tests were added in `tests/test_question_corpus_candidate_embedded.py` for
+path isolation and the default no-network/no-write dry-run. The focused test
+runner could not execute in this checkout because the environment's `.venv`
+does not contain `pytest`; Python `compileall` completed successfully. Real
+embedding execution was intentionally not performed; it remains an explicit
+operator action for the parent task.
+
+### Dotenv review follow-up
+
+RED reproduced the missing dotenv load when candidate apply had no injected
+environment. GREEN now loads dotenv only after candidate preflight and only
+when no environment was injected; dry-run remains entirely provider-free.
+The new behavior test and the related zero-cost suite pass (18 tests).
+
+### Trace-preserving candidate evaluation
+
+The embedded candidate path now supplies a two-argument result provider around
+the already-batched query vectors. It preserves Qdrant hit metadata and emits
+the evaluator trace envelope without any per-intent embedding call. Added
+shape coverage passes; candidate/zero-cost tests pass (19 tests).
+The trace envelope now expands the first hit's question/source/score/index and
+match-tier fields, satisfying the evaluator's strict trace contract.
+
+### Review follow-up
+
+Probe success now follows the local Qdrant result contract (`status="hit"`),
+with a shape-oriented unittest assertion. The candidate CLI tests use only
+the standard library `unittest` runner. Focused and related unittest suites
+pass (54 tests); compileall and diffcheck pass. The full suite and real
+embedding remain parent-operator work; no network call was made here.

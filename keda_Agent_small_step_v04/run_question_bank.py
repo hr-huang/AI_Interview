@@ -37,6 +37,7 @@ from profile_agent.knowledge.qdrant_question_store import (
 from profile_agent.schemas.question_rag_schema import (
     InterviewQuestionRecord,
     MODE_POLICY_VERSION,
+    QuestionRetrievalIntent,
 )
 from profile_agent.services.question_bank_service import (
     EMBEDDING_TEXT_VERSION,
@@ -63,10 +64,12 @@ from profile_agent.services.question_corpus_evaluation import (
     MAX_EVALUATION_K,
     SYNTHETIC_HARD_NEGATIVE_CATALOG,
     evaluate_question_corpus,
+    intent_to_runtime_intent,
     load_retrieval_intents,
     stable_json_hash,
 )
 from profile_agent.services.question_retrieval_service import (
+    build_query_embedding_text,
     DeterministicFakeEmbedding,
     DETERMINISTIC_FAKE_EMBEDDING_VERSION,
 )
@@ -150,6 +153,155 @@ class QuestionIndexConfig:
 class _RawAuditPayload:
     records: list[Mapping[str, Any]]
     role_version: str | None = None
+
+
+def _validate_candidate_embedded_path(value: Path, *, label: str) -> Path:
+    path = Path(value)
+    normalized = path.as_posix().casefold().rstrip("/")
+    formal = ("/data/question_rag/qdrant", "data/question_rag/qdrant",
+              "/data/qdrant-question-index", "data/qdrant-question-index")
+    if any(normalized == marker or normalized.endswith(marker) for marker in formal):
+        raise QuestionBankConfigurationError(f"{label} must be candidate-isolated")
+    tail = "/".join(normalized.split("/")[-2:])
+    if not any(token in tail for token in ("candidate", "calibration", "tmp", "temp")):
+        raise QuestionBankConfigurationError(f"{label} must include candidate isolation marker")
+    return path
+
+
+def _candidate_probe_hit(result: Any) -> bool:
+    """Qdrant's successful local search result uses the ``hit`` status."""
+    return getattr(result, "status", None) == "hit"
+
+
+def _candidate_gate_passed(report: Any, probes: Sequence[Mapping[str, Any]], no_match: Any) -> bool:
+    return bool(getattr(report, "passed", False)) and all(
+        item.get("status") == "pass" for item in probes
+    ) and getattr(no_match, "status", None) == "no_match"
+
+
+def _candidate_embedded_result_provider(store: Any, query_vectors: Mapping[str, Sequence[float]],
+                                        *, as_of: date) -> Callable[..., Mapping[str, Any]]:
+    """Adapt local store hits to the evaluator's trace-preserving envelope."""
+    def provide(labeled_intent: Any, runtime_intent: Any) -> Mapping[str, Any]:
+        raw = store.search(intent=runtime_intent, query_vector=query_vectors[labeled_intent.intent_id],
+                           today=as_of, limit=MAX_EVALUATION_K)
+        hits = []
+        for rank, hit in enumerate(getattr(raw, "hits", ())[:MAX_EVALUATION_K], start=1):
+            record = hit.record
+            hits.append({"question_id": hit.question_id, "source_id": hit.source_id,
+                         "score": hit.score, "index_version": hit.index_version or raw.index_version,
+                         "match_tier": "exact" if (record.primary_mode or record.question_mode) == runtime_intent.question_mode else "compatible",
+                         "rank": rank})
+        status = "hit" if hits else getattr(raw, "status", "no_match")
+        trace = {"status": status, "query_vector_source": "precomputed-batch"}
+        if hits:
+            trace.update(hits[0])
+        return {"status": status, "hits": hits, "index_version": raw.index_version,
+                "trace": trace}
+    return provide
+
+
+def _run_candidate_embedded_action(args: Any, *, view: _DependencyView,
+                                   as_of: date, output: Callable[[str], None],
+                                   output_format: str) -> int:
+    """Evaluate a review-only candidate bank with exactly two embedding batches."""
+    index_path = _validate_candidate_embedded_path(args.index_path, label="index path")
+    artifact = Path(args.artifact)
+    if "data/question_rag" in artifact.as_posix().casefold():
+        raise QuestionBankConfigurationError("artifact must not be a production path")
+    loader = view.get("bank_loader", default=load_question_bank)
+    records = _call_loader(loader, args.bank, test_dependency=view.get("test_dependency", default=None))
+    if len(records) != 30:
+        raise QuestionBankValidationError("candidate bank must contain exactly 30 records")
+    statuses = {str(getattr(record, "status", "")).casefold() for record in records}
+    if statuses != {"needs_review"}:
+        raise QuestionBankValidationError("candidate bank must contain needs_review records only")
+    runtime = load_question_bank_runtime_identity(
+        records, bank_path=args.bank, source_registry_path=args.source_registry,
+        manifest_path=args.manifest_path, environment=view.get("env", default=None),
+    )
+    intents = load_retrieval_intents(args.intents, records=records, policy=runtime.policy, as_of=as_of)
+    if len(intents) != 30:
+        raise QuestionBankValidationError("candidate intents must contain exactly 30 rows")
+    base = {"action": "evaluate-candidate-embedded", "candidate_safe": True,
+            "needs_review_only": True, "records": 30, "intents": 30,
+            "dry_run": not args.apply_real_embedding, "real_embedding": bool(args.apply_real_embedding),
+            "would_network": bool(args.apply_real_embedding), "would_write": bool(args.apply_real_embedding)}
+    if not args.apply_real_embedding:
+        output(json.dumps(base, ensure_ascii=False, sort_keys=True) if output_format == "json" else "candidate embedded evaluation: dry-run")
+        return EXIT_OK
+
+    env = view.get("env", default=None)
+    if env is None:
+        try:
+            from dotenv import load_dotenv
+            load_dotenv()
+        except Exception:
+            pass
+        env = os.environ
+    try:
+        config = resolve_embedding_config(env)
+    except (EmbeddingConfigurationError, ValueError, TypeError) as exc:
+        raise QuestionBankConfigurationError("candidate embedding configuration is invalid") from exc
+    if (config.provider != DEFAULT_PROVIDER or config.model != DEFAULT_MODEL
+            or config.dimension != DEFAULT_DIMENSION):
+        raise QuestionBankConfigurationError("candidate evaluation requires the fixed SiliconFlow BGE-M3 configuration")
+    factory = view.get("embedding_factory", default=None)
+    if factory is None:
+        client = SiliconFlowEmbeddingClient.from_env(env=env)
+    else:
+        try:
+            client = factory(env=env, model=DEFAULT_MODEL, provider=DEFAULT_PROVIDER, dimension=DEFAULT_DIMENSION)
+        except TypeError:
+            client = factory()
+    store = None
+    try:
+        record_vectors = client.embed([build_question_embedding_text(record) for record in records])
+        runtime_intents = [intent_to_runtime_intent(intent, records=records) for intent in intents]
+        query_vectors_list = client.embed([build_query_embedding_text(intent, ()) for intent in runtime_intents])
+        query_vectors = {label.intent_id: vector for label, vector in zip(intents, query_vectors_list, strict=True)}
+        fingerprint = IndexFingerprint(provider=DEFAULT_PROVIDER, model=DEFAULT_MODEL,
+            dimension=DEFAULT_DIMENSION, index_version="candidate-embedded-v1",
+            embedding_text_version=EMBEDDING_TEXT_VERSION,
+            question_bank_manifest_hash=runtime.manifest_hash,
+            mode_policy_version=runtime.policy.mode_policy_version)
+        store_factory = view.get("store_factory", default=None)
+        kwargs = dict(path=index_path, fingerprint=fingerprint, candidate_safe=True,
+                      authoritative_catalog=runtime.catalog)
+        store = store_factory(**kwargs) if store_factory else QdrantQuestionStore(**kwargs)
+        store.rebuild(records, record_vectors, fingerprint)
+        report = evaluate_question_corpus(intents, records,
+                                          result_provider=_candidate_embedded_result_provider(store, query_vectors, as_of=as_of),
+                                          as_of=as_of, backend="siliconflow-local-qdrant")
+        probes = []
+        for index, label in enumerate(intents[:4], start=1):
+            result = store.search(intent=runtime_intents[index - 1], query_vector=query_vectors[label.intent_id],
+                                  today=as_of, limit=3)
+            probes.append({"probe_id": f"supervisor-{index}", "status": "pass" if _candidate_probe_hit(result) else "failed",
+                           "top3": [getattr(item, "question_id", str(item)) for item in getattr(result, "results", ())]})
+        no_match_intent = intent_to_runtime_intent(intents[0], records=records,
+                                                    excluded_question_ids=[getattr(r, "question_id") for r in records])
+        no_match = store.search(intent=no_match_intent, query_vector=query_vectors[intents[0].intent_id],
+                                today=as_of, limit=3)
+        gate_passed = _candidate_gate_passed(report, probes, no_match)
+        payload = dict(base, status="passed" if gate_passed else "failed",
+                       metrics=report.to_dict().get("metrics", {}),
+                       intent_results=report.to_dict().get("intent_results", []),
+                       embedding_batches={"records": 1, "record_items": 30, "queries": 1, "query_items": 30},
+                       provider=DEFAULT_PROVIDER, model=DEFAULT_MODEL, dimension=DEFAULT_DIMENSION,
+                       index_version="candidate-embedded-v1", manifest_hash=runtime.manifest_hash,
+                       supervisor_probes=probes,
+                       no_match_gate={"status": getattr(no_match, "status", "failed"),
+                                      "passed": getattr(no_match, "status", "") == "no_match"})
+        artifact.parent.mkdir(parents=True, exist_ok=True)
+        artifact.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+        output(json.dumps(payload, ensure_ascii=False, sort_keys=True) if output_format == "json" else f"candidate embedded evaluation: {payload['status']}")
+        return EXIT_OK if gate_passed else EXIT_OPERATION_ERROR
+    finally:
+        for owned in (store, client):
+            close = getattr(owned, "close", None)
+            if callable(close):
+                close()
 
 
 class _DependencyView:
@@ -342,6 +494,21 @@ def _build_parser() -> argparse.ArgumentParser:
                 default=None,
                 help="local 后端的显式 Qdrant HTTP(S) URL；只允许 127.0.0.1/localhost/::1",
             )
+    subparser = subparsers.add_parser(
+        "evaluate-candidate-embedded",
+        help="仅对 needs_review 候选题库执行隔离的真实 embedding 评估（默认 dry-run）",
+    )
+    subparser.add_argument("--bank", type=_parse_path, required=True)
+    subparser.add_argument("--source-registry", dest="source_registry", type=_parse_path, required=True)
+    subparser.add_argument("--manifest", dest="manifest_path", type=_parse_path, required=True)
+    subparser.add_argument("--intents", type=_parse_path, required=True)
+    subparser.add_argument("--index-path", dest="index_path", type=_parse_path, required=True)
+    subparser.add_argument("--artifact", type=_parse_path, required=True)
+    subparser.add_argument("--as-of", dest="as_of", type=_parse_date, default=None)
+    subparser.add_argument("--format", choices=("human", "json"), default="human")
+    subparser.add_argument("--json", action="store_true")
+    subparser.add_argument("--apply-real-embedding", action="store_true",
+                           help="显式允许 SiliconFlow 请求及候选隔离索引写入")
     return parser
 
 
@@ -2741,6 +2908,12 @@ def main(
             now_provider=now_provider,
             test_dependency=test_dependency,
         )
+        if args.action == "evaluate-candidate-embedded":
+            today_provider = _now_provider(view.get("now_provider", default=None))
+            as_of = _resolve_today(getattr(args, "as_of", None), today_provider)
+            return _run_candidate_embedded_action(
+                args, view=view, as_of=as_of, output=output, output_format=output_format,
+            )
         if args.action in _CORPUS_READ_ONLY_ACTIONS:
             today_provider = _now_provider(view.get("now_provider", default=None))
             as_of = _resolve_today(getattr(args, "as_of", None), today_provider)
