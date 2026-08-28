@@ -3,7 +3,7 @@
   "bank_id": "ai_agent_engineer_2026_h2",
   "role": "ai_agent_engineer",
   "role_version": "2026-H2",
-  "manifest_version": "task7-v1",
+  "manifest_version": "task9-v1-published",
   "question_count": 30,
   "question_ids": [
     "q001",
@@ -65,16 +65,16 @@
   "evergreen_review_days": 365,
   "evergreen_revalidation_days": 180,
   "current_jd_validation_days": 180,
-  "active_count": 0,
+  "active_count": 30,
   "active_trust_levels": [
     "medium",
     "high"
   ],
   "generated_at": "2026-08-27",
-  "reviewed_at": "2026-08-27",
-  "published_at": null,
-  "question_set_hash": "sha256:b5014c88be83cb7da5cdd1360f3ca1b343fefec98878b67d1dca584f1c91aaf2",
-  "sidecar_set_hash": "sha256:7d2639e635e5561f36ffa80a74dab0c52ae89a76ca56ca8af5e776e79132208c",
-  "publication_status": "draft",
+  "reviewed_at": "2026-08-28",
+  "published_at": "2026-08-28",
+  "question_set_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+  "sidecar_set_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+  "publication_status": "published",
   "embedding_contract_version": "six-section-v1"
 }

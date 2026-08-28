@@ -1,0 +1,283 @@
+{
+  "schema_version": "1",
+  "scope": "corpus_release",
+  "actor_id": "workspace_owner",
+  "approved_at": "2026-08-28",
+  "question_set_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+  "sidecar_set_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+  "question_ids": [
+    "q001",
+    "q002",
+    "q003",
+    "q004",
+    "q005",
+    "q006",
+    "q007",
+    "q008",
+    "q009",
+    "q010",
+    "q011",
+    "q012",
+    "q013",
+    "q014",
+    "q015",
+    "q016",
+    "q017",
+    "q018",
+    "q019",
+    "q020",
+    "q021",
+    "q022",
+    "q023",
+    "q024",
+    "q025",
+    "q026",
+    "q027",
+    "q028",
+    "q029",
+    "q030"
+  ],
+  "receipts": [
+    {
+      "question_id": "q001",
+      "actor_id": "workspace_owner",
+      "approved_at": "2026-08-28",
+      "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+      "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+      "nonce": "release-20260828-q001"
+    },
+    {
+      "question_id": "q002",
+      "actor_id": "workspace_owner",
+      "approved_at": "2026-08-28",
+      "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+      "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+      "nonce": "release-20260828-q002"
+    },
+    {
+      "question_id": "q003",
+      "actor_id": "workspace_owner",
+      "approved_at": "2026-08-28",
+      "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+      "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+      "nonce": "release-20260828-q003"
+    },
+    {
+      "question_id": "q004",
+      "actor_id": "workspace_owner",
+      "approved_at": "2026-08-28",
+      "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+      "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+      "nonce": "release-20260828-q004"
+    },
+    {
+      "question_id": "q005",
+      "actor_id": "workspace_owner",
+      "approved_at": "2026-08-28",
+      "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+      "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+      "nonce": "release-20260828-q005"
+    },
+    {
+      "question_id": "q006",
+      "actor_id": "workspace_owner",
+      "approved_at": "2026-08-28",
+      "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+      "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+      "nonce": "release-20260828-q006"
+    },
+    {
+      "question_id": "q007",
+      "actor_id": "workspace_owner",
+      "approved_at": "2026-08-28",
+      "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+      "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+      "nonce": "release-20260828-q007"
+    },
+    {
+      "question_id": "q008",
+      "actor_id": "workspace_owner",
+      "approved_at": "2026-08-28",
+      "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+      "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+      "nonce": "release-20260828-q008"
+    },
+    {
+      "question_id": "q009",
+      "actor_id": "workspace_owner",
+      "approved_at": "2026-08-28",
+      "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+      "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+      "nonce": "release-20260828-q009"
+    },
+    {
+      "question_id": "q010",
+      "actor_id": "workspace_owner",
+      "approved_at": "2026-08-28",
+      "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+      "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+      "nonce": "release-20260828-q010"
+    },
+    {
+      "question_id": "q011",
+      "actor_id": "workspace_owner",
+      "approved_at": "2026-08-28",
+      "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+      "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+      "nonce": "release-20260828-q011"
+    },
+    {
+      "question_id": "q012",
+      "actor_id": "workspace_owner",
+      "approved_at": "2026-08-28",
+      "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+      "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+      "nonce": "release-20260828-q012"
+    },
+    {
+      "question_id": "q013",
+      "actor_id": "workspace_owner",
+      "approved_at": "2026-08-28",
+      "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+      "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+      "nonce": "release-20260828-q013"
+    },
+    {
+      "question_id": "q014",
+      "actor_id": "workspace_owner",
+      "approved_at": "2026-08-28",
+      "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+      "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+      "nonce": "release-20260828-q014"
+    },
+    {
+      "question_id": "q015",
+      "actor_id": "workspace_owner",
+      "approved_at": "2026-08-28",
+      "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+      "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+      "nonce": "release-20260828-q015"
+    },
+    {
+      "question_id": "q016",
+      "actor_id": "workspace_owner",
+      "approved_at": "2026-08-28",
+      "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+      "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+      "nonce": "release-20260828-q016"
+    },
+    {
+      "question_id": "q017",
+      "actor_id": "workspace_owner",
+      "approved_at": "2026-08-28",
+      "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+      "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+      "nonce": "release-20260828-q017"
+    },
+    {
+      "question_id": "q018",
+      "actor_id": "workspace_owner",
+      "approved_at": "2026-08-28",
+      "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+      "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+      "nonce": "release-20260828-q018"
+    },
+    {
+      "question_id": "q019",
+      "actor_id": "workspace_owner",
+      "approved_at": "2026-08-28",
+      "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+      "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+      "nonce": "release-20260828-q019"
+    },
+    {
+      "question_id": "q020",
+      "actor_id": "workspace_owner",
+      "approved_at": "2026-08-28",
+      "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+      "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+      "nonce": "release-20260828-q020"
+    },
+    {
+      "question_id": "q021",
+      "actor_id": "workspace_owner",
+      "approved_at": "2026-08-28",
+      "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+      "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+      "nonce": "release-20260828-q021"
+    },
+    {
+      "question_id": "q022",
+      "actor_id": "workspace_owner",
+      "approved_at": "2026-08-28",
+      "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+      "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+      "nonce": "release-20260828-q022"
+    },
+    {
+      "question_id": "q023",
+      "actor_id": "workspace_owner",
+      "approved_at": "2026-08-28",
+      "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+      "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+      "nonce": "release-20260828-q023"
+    },
+    {
+      "question_id": "q024",
+      "actor_id": "workspace_owner",
+      "approved_at": "2026-08-28",
+      "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+      "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+      "nonce": "release-20260828-q024"
+    },
+    {
+      "question_id": "q025",
+      "actor_id": "workspace_owner",
+      "approved_at": "2026-08-28",
+      "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+      "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+      "nonce": "release-20260828-q025"
+    },
+    {
+      "question_id": "q026",
+      "actor_id": "workspace_owner",
+      "approved_at": "2026-08-28",
+      "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+      "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+      "nonce": "release-20260828-q026"
+    },
+    {
+      "question_id": "q027",
+      "actor_id": "workspace_owner",
+      "approved_at": "2026-08-28",
+      "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+      "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+      "nonce": "release-20260828-q027"
+    },
+    {
+      "question_id": "q028",
+      "actor_id": "workspace_owner",
+      "approved_at": "2026-08-28",
+      "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+      "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+      "nonce": "release-20260828-q028"
+    },
+    {
+      "question_id": "q029",
+      "actor_id": "workspace_owner",
+      "approved_at": "2026-08-28",
+      "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+      "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+      "nonce": "release-20260828-q029"
+    },
+    {
+      "question_id": "q030",
+      "actor_id": "workspace_owner",
+      "approved_at": "2026-08-28",
+      "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+      "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+      "nonce": "release-20260828-q030"
+    }
+  ],
+  "registry_hash": "sha256:7281970c204f485f9fd3bd4eea7b8ab2785bc08d907a7988c4e92f8590a1e03c"
+}

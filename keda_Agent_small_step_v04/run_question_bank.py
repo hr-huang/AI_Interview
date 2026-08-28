@@ -55,6 +55,7 @@ from profile_agent.services.question_corpus_governance import (
     DEFAULT_CORPUS_DIR,
     CorpusIssue,
     build_manifest_preview,
+    load_approval_registry,
     load_question_corpus_snapshot,
     validate_question_corpus,
 )
@@ -524,6 +525,10 @@ def _build_parser() -> argparse.ArgumentParser:
             "--dry-run",
             action="store_true",
             help="只执行离线治理检查，不构造模型或索引依赖",
+        )
+        subparser.add_argument(
+            "--approval-registry", type=_parse_path, default=None,
+            help="独立版本发布 approval registry（published/active 审计必需）",
         )
         if action == "evaluate-local":
             subparser.add_argument(
@@ -1901,7 +1906,16 @@ def _run_corpus_read_only_action(
     try:
         snapshot = load_question_corpus_snapshot(args.corpus_dir, as_of)
         role_pack = _load_corpus_role_pack()
-        issues = tuple(validate_question_corpus(snapshot, role_pack, as_of))
+        verifier = None
+        if getattr(args, "approval_registry", None) is not None:
+            verifier = load_approval_registry(
+                args.approval_registry,
+                expected_question_set_hash=snapshot.manifest.question_set_hash,
+                expected_sidecar_set_hash=snapshot.manifest.sidecar_set_hash,
+                expected_question_ids=[record.question_id for record in snapshot.records],
+            )
+        issues = tuple(validate_question_corpus(snapshot, role_pack, as_of,
+                                                approval_verifier=verifier))
     except (QuestionBankValidationError, TypeError, ValueError, OSError) as exc:
         return _run_corpus_structure_failure(
             args,

@@ -560,7 +560,7 @@ class QuestionCorpusGovernanceTests(unittest.TestCase):
         questions = json.loads((root / "questions.json").read_text(encoding="utf-8"))
         rows = questions["questions"]
         self.assertEqual(len(rows), 30)
-        self.assertEqual({row["status"] for row in rows}, {"needs_review"})
+        self.assertEqual({row["status"] for row in rows}, {"active"})
         self.assertTrue(all(any("一" <= ch <= "龥" for ch in row["question_text"]) for row in rows))
         self.assertEqual({row["dimension_id"] for row in rows}, {f"role_dim_{i:02d}" for i in range(1, 7)})
         self.assertEqual(sum(row["primary_mode"] == "foundation" for row in rows), 4)
@@ -579,8 +579,8 @@ class QuestionCorpusGovernanceTests(unittest.TestCase):
         self.assertEqual(len(json.loads((root / "rights.json").read_text(encoding="utf-8"))["records"]), 60)
         self.assertEqual(len(json.loads((root / "locator.json").read_text(encoding="utf-8"))["records"]), 60)
         manifest = json.loads((root / "QuestionBankManifest.json").read_text(encoding="utf-8"))
-        self.assertEqual(manifest["publication_status"], "draft")
-        self.assertEqual(manifest["active_count"], 0)
+        self.assertEqual(manifest["publication_status"], "published")
+        self.assertEqual(manifest["active_count"], 30)
         self.assertTrue(manifest["question_set_hash"].startswith("sha256:"))
         self.assertTrue(manifest["sidecar_set_hash"].startswith("sha256:"))
 

@@ -251,6 +251,15 @@ reuse the pre-batched query vectors and emit `intent_id`, `requested_mode`,
 evaluation, and zero-cost suites pass (35 tests); compileall and diffcheck pass.
 No real API or embedding call was made.
 
+### Published corpus release
+
+按 workspace owner 于 2026-08-28 的版本级确认发布 v1：30 条题目与 20 个来源进入
+active/published 生命周期；逐题 review 保留 `reviewer_type=luna`、`decision=pending_human`，
+不声称逐题人工阅读。新增独立 approval registry，以 `workspace_owner` 的 corpus-release
+receipt 绑定完整 question/sidecar hashes、30 个 question IDs 和唯一 nonce。`audit-corpus`
+显式提供 registry 时为 active=30、eligible=30、errors=0、warnings=0；缺 registry 继续
+fail-closed。receipt 内容不计入 sidecar hash，其他 sidecar 字段篡改仍会改变 hash。
+
 复审后补强 compatible probe：测试 fake store 现在严格按请求 mode 过滤，scenario
 且排除 q003/q006 时返回 no_match，随后 probe 按 `policy.compatible_order_for`
 尝试 system_design，并在保留同一排除集合的情况下命中 q004；测试同时 spy

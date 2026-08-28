@@ -19,7 +19,22 @@
       "capability_summary": "候选人须证明如何处理“32K窗口、法规保留、P95首token 1.5秒”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "32K窗口、法规保留、P95首token 1.5秒",
       "dimension_summary": "六维边界聚焦“32K窗口、法规保留、P95首token 1.5秒”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
-      "mode_rationale": "该题型适合识别“32K窗口、法规保留、P95首token 1.5秒”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
+      "mode_rationale": "该题型适合识别“32K窗口、法规保留、P95首token 1.5秒”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。",
+      "originality_confirmed": true,
+      "pii_scan_passed": true,
+      "rights_review_passed": true,
+      "difficulty_consistent": true,
+      "approval_actor": "workspace_owner",
+      "approval_timestamp": "2026-08-28",
+      "approval_receipt": {
+        "question_id": "q001",
+        "actor_id": "workspace_owner",
+        "approved_at": "2026-08-28",
+        "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+        "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+        "nonce": "release-20260828-q001"
+      },
+      "review_due_at": "2027-02-24"
     },
     {
       "question_id": "q002",
@@ -40,7 +55,22 @@
       "capability_summary": "候选人须证明如何处理“三租户、日120万请求、禁止越权”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "三租户、日120万请求、禁止越权",
       "dimension_summary": "六维边界聚焦“三租户、日120万请求、禁止越权”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
-      "mode_rationale": "该题型适合识别“三租户、日120万请求、禁止越权”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
+      "mode_rationale": "该题型适合识别“三租户、日120万请求、禁止越权”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。",
+      "originality_confirmed": true,
+      "pii_scan_passed": true,
+      "rights_review_passed": true,
+      "difficulty_consistent": true,
+      "approval_actor": "workspace_owner",
+      "approval_timestamp": "2026-08-28",
+      "approval_receipt": {
+        "question_id": "q002",
+        "actor_id": "workspace_owner",
+        "approved_at": "2026-08-28",
+        "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+        "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+        "nonce": "release-20260828-q002"
+      },
+      "review_due_at": "2027-02-24"
     },
     {
       "question_id": "q003",
@@ -61,7 +91,22 @@
       "capability_summary": "候选人须证明如何处理“命中率82%到61%的线上回归”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "命中率82%到61%的线上回归",
       "dimension_summary": "六维边界聚焦“命中率82%到61%的线上回归”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
-      "mode_rationale": "该题型适合识别“命中率82%到61%的线上回归”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
+      "mode_rationale": "该题型适合识别“命中率82%到61%的线上回归”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。",
+      "originality_confirmed": true,
+      "pii_scan_passed": true,
+      "rights_review_passed": true,
+      "difficulty_consistent": true,
+      "approval_actor": "workspace_owner",
+      "approval_timestamp": "2026-08-28",
+      "approval_receipt": {
+        "question_id": "q003",
+        "actor_id": "workspace_owner",
+        "approved_at": "2026-08-28",
+        "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+        "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+        "nonce": "release-20260828-q003"
+      },
+      "review_due_at": "2027-02-24"
     },
     {
       "question_id": "q004",
@@ -82,7 +127,22 @@
       "capability_summary": "候选人须证明如何处理“月末800RPS、账单只读、人工复核”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "月末800RPS、账单只读、人工复核",
       "dimension_summary": "六维边界聚焦“月末800RPS、账单只读、人工复核”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
-      "mode_rationale": "该题型适合识别“月末800RPS、账单只读、人工复核”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
+      "mode_rationale": "该题型适合识别“月末800RPS、账单只读、人工复核”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。",
+      "originality_confirmed": true,
+      "pii_scan_passed": true,
+      "rights_review_passed": true,
+      "difficulty_consistent": true,
+      "approval_actor": "workspace_owner",
+      "approval_timestamp": "2026-08-28",
+      "approval_receipt": {
+        "question_id": "q004",
+        "actor_id": "workspace_owner",
+        "approved_at": "2026-08-28",
+        "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+        "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+        "nonce": "release-20260828-q004"
+      },
+      "review_due_at": "2027-02-24"
     },
     {
       "question_id": "q005",
@@ -103,7 +163,22 @@
       "capability_summary": "候选人须证明如何处理“摘要不得丢截止日期、需可证明”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "摘要不得丢截止日期、需可证明",
       "dimension_summary": "六维边界聚焦“摘要不得丢截止日期、需可证明”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
-      "mode_rationale": "该题型适合识别“摘要不得丢截止日期、需可证明”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
+      "mode_rationale": "该题型适合识别“摘要不得丢截止日期、需可证明”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。",
+      "originality_confirmed": true,
+      "pii_scan_passed": true,
+      "rights_review_passed": true,
+      "difficulty_consistent": true,
+      "approval_actor": "workspace_owner",
+      "approval_timestamp": "2026-08-28",
+      "approval_receipt": {
+        "question_id": "q005",
+        "actor_id": "workspace_owner",
+        "approved_at": "2026-08-28",
+        "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+        "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+        "nonce": "release-20260828-q005"
+      },
+      "review_due_at": "2027-02-24"
     },
     {
       "question_id": "q006",
@@ -124,7 +199,22 @@
       "capability_summary": "候选人须证明如何处理“库存物流客服事实冲突”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "库存物流客服事实冲突",
       "dimension_summary": "六维边界聚焦“库存物流客服事实冲突”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
-      "mode_rationale": "该题型适合识别“库存物流客服事实冲突”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
+      "mode_rationale": "该题型适合识别“库存物流客服事实冲突”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。",
+      "originality_confirmed": true,
+      "pii_scan_passed": true,
+      "rights_review_passed": true,
+      "difficulty_consistent": true,
+      "approval_actor": "workspace_owner",
+      "approval_timestamp": "2026-08-28",
+      "approval_receipt": {
+        "question_id": "q006",
+        "actor_id": "workspace_owner",
+        "approved_at": "2026-08-28",
+        "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+        "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+        "nonce": "release-20260828-q006"
+      },
+      "review_due_at": "2027-02-24"
     },
     {
       "question_id": "q007",
@@ -145,7 +235,22 @@
       "capability_summary": "候选人须证明如何处理“十万合同、单租户SLA 2秒”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "十万合同、单租户SLA 2秒",
       "dimension_summary": "六维边界聚焦“十万合同、单租户SLA 2秒”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
-      "mode_rationale": "该题型适合识别“十万合同、单租户SLA 2秒”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
+      "mode_rationale": "该题型适合识别“十万合同、单租户SLA 2秒”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。",
+      "originality_confirmed": true,
+      "pii_scan_passed": true,
+      "rights_review_passed": true,
+      "difficulty_consistent": true,
+      "approval_actor": "workspace_owner",
+      "approval_timestamp": "2026-08-28",
+      "approval_receipt": {
+        "question_id": "q007",
+        "actor_id": "workspace_owner",
+        "approved_at": "2026-08-28",
+        "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+        "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+        "nonce": "release-20260828-q007"
+      },
+      "review_due_at": "2027-02-24"
     },
     {
       "question_id": "q008",
@@ -166,7 +271,22 @@
       "capability_summary": "候选人须证明如何处理“合同生效日晚于索引最新覆盖时间，导致新条款未被召回”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "合同生效日晚于索引最新覆盖时间，导致新条款未被召回",
       "dimension_summary": "六维边界聚焦“合同生效日晚于索引最新覆盖时间，导致新条款未被召回”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
-      "mode_rationale": "该题型适合识别“合同生效日晚于索引最新覆盖时间，导致新条款未被召回”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
+      "mode_rationale": "该题型适合识别“合同生效日晚于索引最新覆盖时间，导致新条款未被召回”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。",
+      "originality_confirmed": true,
+      "pii_scan_passed": true,
+      "rights_review_passed": true,
+      "difficulty_consistent": true,
+      "approval_actor": "workspace_owner",
+      "approval_timestamp": "2026-08-28",
+      "approval_receipt": {
+        "question_id": "q008",
+        "actor_id": "workspace_owner",
+        "approved_at": "2026-08-28",
+        "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+        "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+        "nonce": "release-20260828-q008"
+      },
+      "review_due_at": "2027-02-24"
     },
     {
       "question_id": "q009",
@@ -187,7 +307,22 @@
       "capability_summary": "候选人须证明如何处理“记忆删除与重复询问实验”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "记忆删除与重复询问实验",
       "dimension_summary": "六维边界聚焦“记忆删除与重复询问实验”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
-      "mode_rationale": "该题型适合识别“记忆删除与重复询问实验”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
+      "mode_rationale": "该题型适合识别“记忆删除与重复询问实验”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。",
+      "originality_confirmed": true,
+      "pii_scan_passed": true,
+      "rights_review_passed": true,
+      "difficulty_consistent": true,
+      "approval_actor": "workspace_owner",
+      "approval_timestamp": "2026-08-28",
+      "approval_receipt": {
+        "question_id": "q009",
+        "actor_id": "workspace_owner",
+        "approved_at": "2026-08-28",
+        "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+        "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+        "nonce": "release-20260828-q009"
+      },
+      "review_due_at": "2027-02-24"
     },
     {
       "question_id": "q010",
@@ -208,7 +343,22 @@
       "capability_summary": "候选人须证明如何处理“拒绝意图误判造成工单副作用”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "拒绝意图误判造成工单副作用",
       "dimension_summary": "六维边界聚焦“拒绝意图误判造成工单副作用”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
-      "mode_rationale": "该题型适合识别“拒绝意图误判造成工单副作用”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
+      "mode_rationale": "该题型适合识别“拒绝意图误判造成工单副作用”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。",
+      "originality_confirmed": true,
+      "pii_scan_passed": true,
+      "rights_review_passed": true,
+      "difficulty_consistent": true,
+      "approval_actor": "workspace_owner",
+      "approval_timestamp": "2026-08-28",
+      "approval_receipt": {
+        "question_id": "q010",
+        "actor_id": "workspace_owner",
+        "approved_at": "2026-08-28",
+        "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+        "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+        "nonce": "release-20260828-q010"
+      },
+      "review_due_at": "2027-02-24"
     },
     {
       "question_id": "q011",
@@ -229,7 +379,22 @@
       "capability_summary": "候选人须证明如何处理“每会话成本0.03元”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "每会话成本0.03元",
       "dimension_summary": "六维边界聚焦“每会话成本0.03元”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
-      "mode_rationale": "该题型适合识别“每会话成本0.03元”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
+      "mode_rationale": "该题型适合识别“每会话成本0.03元”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。",
+      "originality_confirmed": true,
+      "pii_scan_passed": true,
+      "rights_review_passed": true,
+      "difficulty_consistent": true,
+      "approval_actor": "workspace_owner",
+      "approval_timestamp": "2026-08-28",
+      "approval_receipt": {
+        "question_id": "q011",
+        "actor_id": "workspace_owner",
+        "approved_at": "2026-08-28",
+        "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+        "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+        "nonce": "release-20260828-q011"
+      },
+      "review_due_at": "2027-02-24"
     },
     {
       "question_id": "q012",
@@ -250,7 +415,22 @@
       "capability_summary": "候选人须证明如何处理“五百亿行查询与权限”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "五百亿行查询与权限",
       "dimension_summary": "六维边界聚焦“五百亿行查询与权限”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
-      "mode_rationale": "该题型适合识别“五百亿行查询与权限”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
+      "mode_rationale": "该题型适合识别“五百亿行查询与权限”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。",
+      "originality_confirmed": true,
+      "pii_scan_passed": true,
+      "rights_review_passed": true,
+      "difficulty_consistent": true,
+      "approval_actor": "workspace_owner",
+      "approval_timestamp": "2026-08-28",
+      "approval_receipt": {
+        "question_id": "q012",
+        "actor_id": "workspace_owner",
+        "approved_at": "2026-08-28",
+        "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+        "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+        "nonce": "release-20260828-q012"
+      },
+      "review_due_at": "2027-02-24"
     },
     {
       "question_id": "q013",
@@ -271,7 +451,22 @@
       "capability_summary": "候选人须证明如何处理“20到200工具的选择退化”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "20到200工具的选择退化",
       "dimension_summary": "六维边界聚焦“20到200工具的选择退化”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
-      "mode_rationale": "该题型适合识别“20到200工具的选择退化”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
+      "mode_rationale": "该题型适合识别“20到200工具的选择退化”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。",
+      "originality_confirmed": true,
+      "pii_scan_passed": true,
+      "rights_review_passed": true,
+      "difficulty_consistent": true,
+      "approval_actor": "workspace_owner",
+      "approval_timestamp": "2026-08-28",
+      "approval_receipt": {
+        "question_id": "q013",
+        "actor_id": "workspace_owner",
+        "approved_at": "2026-08-28",
+        "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+        "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+        "nonce": "release-20260828-q013"
+      },
+      "review_due_at": "2027-02-24"
     },
     {
       "question_id": "q014",
@@ -292,7 +487,22 @@
       "capability_summary": "候选人须证明如何处理“十万文档与提示词注入风险”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "十万文档与提示词注入风险",
       "dimension_summary": "六维边界聚焦“十万文档与提示词注入风险”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
-      "mode_rationale": "该题型适合识别“十万文档与提示词注入风险”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
+      "mode_rationale": "该题型适合识别“十万文档与提示词注入风险”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。",
+      "originality_confirmed": true,
+      "pii_scan_passed": true,
+      "rights_review_passed": true,
+      "difficulty_consistent": true,
+      "approval_actor": "workspace_owner",
+      "approval_timestamp": "2026-08-28",
+      "approval_receipt": {
+        "question_id": "q014",
+        "actor_id": "workspace_owner",
+        "approved_at": "2026-08-28",
+        "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+        "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+        "nonce": "release-20260828-q014"
+      },
+      "review_due_at": "2027-02-24"
     },
     {
       "question_id": "q015",
@@ -313,7 +523,22 @@
       "capability_summary": "候选人须证明如何处理“工具调用重试只覆盖可证明安全的失败类型，副作用状态必须可查询”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "工具调用重试只覆盖可证明安全的失败类型，副作用状态必须可查询",
       "dimension_summary": "六维边界聚焦“工具调用重试只覆盖可证明安全的失败类型，副作用状态必须可查询”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
-      "mode_rationale": "该题型适合识别“工具调用重试只覆盖可证明安全的失败类型，副作用状态必须可查询”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
+      "mode_rationale": "该题型适合识别“工具调用重试只覆盖可证明安全的失败类型，副作用状态必须可查询”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。",
+      "originality_confirmed": true,
+      "pii_scan_passed": true,
+      "rights_review_passed": true,
+      "difficulty_consistent": true,
+      "approval_actor": "workspace_owner",
+      "approval_timestamp": "2026-08-28",
+      "approval_receipt": {
+        "question_id": "q015",
+        "actor_id": "workspace_owner",
+        "approved_at": "2026-08-28",
+        "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+        "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+        "nonce": "release-20260828-q015"
+      },
+      "review_due_at": "2027-02-24"
     },
     {
       "question_id": "q016",
@@ -334,7 +559,22 @@
       "capability_summary": "候选人须证明如何处理“已执行但超时且最多停止”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "已执行但超时且最多停止",
       "dimension_summary": "六维边界聚焦“已执行但超时且最多停止”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
-      "mode_rationale": "该题型适合识别“已执行但超时且最多停止”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
+      "mode_rationale": "该题型适合识别“已执行但超时且最多停止”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。",
+      "originality_confirmed": true,
+      "pii_scan_passed": true,
+      "rights_review_passed": true,
+      "difficulty_consistent": true,
+      "approval_actor": "workspace_owner",
+      "approval_timestamp": "2026-08-28",
+      "approval_receipt": {
+        "question_id": "q016",
+        "actor_id": "workspace_owner",
+        "approved_at": "2026-08-28",
+        "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+        "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+        "nonce": "release-20260828-q016"
+      },
+      "review_due_at": "2027-02-24"
     },
     {
       "question_id": "q017",
@@ -355,7 +595,22 @@
       "capability_summary": "候选人须证明如何处理“中英混合文档和表格”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "中英混合文档和表格",
       "dimension_summary": "六维边界聚焦“中英混合文档和表格”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
-      "mode_rationale": "该题型适合识别“中英混合文档和表格”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
+      "mode_rationale": "该题型适合识别“中英混合文档和表格”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。",
+      "originality_confirmed": true,
+      "pii_scan_passed": true,
+      "rights_review_passed": true,
+      "difficulty_consistent": true,
+      "approval_actor": "workspace_owner",
+      "approval_timestamp": "2026-08-28",
+      "approval_receipt": {
+        "question_id": "q017",
+        "actor_id": "workspace_owner",
+        "approved_at": "2026-08-28",
+        "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+        "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+        "nonce": "release-20260828-q017"
+      },
+      "review_due_at": "2027-02-24"
     },
     {
       "question_id": "q018",
@@ -376,7 +631,22 @@
       "capability_summary": "候选人须证明如何处理“多模型网关成本与故障”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "多模型网关成本与故障",
       "dimension_summary": "六维边界聚焦“多模型网关成本与故障”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
-      "mode_rationale": "该题型适合识别“多模型网关成本与故障”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
+      "mode_rationale": "该题型适合识别“多模型网关成本与故障”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。",
+      "originality_confirmed": true,
+      "pii_scan_passed": true,
+      "rights_review_passed": true,
+      "difficulty_consistent": true,
+      "approval_actor": "workspace_owner",
+      "approval_timestamp": "2026-08-28",
+      "approval_receipt": {
+        "question_id": "q018",
+        "actor_id": "workspace_owner",
+        "approved_at": "2026-08-28",
+        "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+        "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+        "nonce": "release-20260828-q018"
+      },
+      "review_due_at": "2027-02-24"
     },
     {
       "question_id": "q019",
@@ -397,7 +667,22 @@
       "capability_summary": "候选人须证明如何处理“工具循环从4步升19步，需可观测熔断与人工接管”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "工具循环从4步升19步，需可观测熔断与人工接管",
       "dimension_summary": "六维边界聚焦“工具循环从4步升19步，需可观测熔断与人工接管”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
-      "mode_rationale": "该题型适合识别“工具循环从4步升19步，需可观测熔断与人工接管”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
+      "mode_rationale": "该题型适合识别“工具循环从4步升19步，需可观测熔断与人工接管”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。",
+      "originality_confirmed": true,
+      "pii_scan_passed": true,
+      "rights_review_passed": true,
+      "difficulty_consistent": true,
+      "approval_actor": "workspace_owner",
+      "approval_timestamp": "2026-08-28",
+      "approval_receipt": {
+        "question_id": "q019",
+        "actor_id": "workspace_owner",
+        "approved_at": "2026-08-28",
+        "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+        "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+        "nonce": "release-20260828-q019"
+      },
+      "review_due_at": "2027-02-24"
     },
     {
       "question_id": "q020",
@@ -418,7 +703,22 @@
       "capability_summary": "候选人须证明如何处理“gold证据fixture与Recall@k”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "gold证据fixture与Recall@k",
       "dimension_summary": "六维边界聚焦“gold证据fixture与Recall@k”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
-      "mode_rationale": "该题型适合识别“gold证据fixture与Recall@k”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
+      "mode_rationale": "该题型适合识别“gold证据fixture与Recall@k”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。",
+      "originality_confirmed": true,
+      "pii_scan_passed": true,
+      "rights_review_passed": true,
+      "difficulty_consistent": true,
+      "approval_actor": "workspace_owner",
+      "approval_timestamp": "2026-08-28",
+      "approval_receipt": {
+        "question_id": "q020",
+        "actor_id": "workspace_owner",
+        "approved_at": "2026-08-28",
+        "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+        "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+        "nonce": "release-20260828-q020"
+      },
+      "review_due_at": "2027-02-24"
     },
     {
       "question_id": "q021",
@@ -439,7 +739,22 @@
       "capability_summary": "候选人须证明如何处理“参数错误最多一次重试”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "参数错误最多一次重试",
       "dimension_summary": "六维边界聚焦“参数错误最多一次重试”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
-      "mode_rationale": "该题型适合识别“参数错误最多一次重试”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
+      "mode_rationale": "该题型适合识别“参数错误最多一次重试”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。",
+      "originality_confirmed": true,
+      "pii_scan_passed": true,
+      "rights_review_passed": true,
+      "difficulty_consistent": true,
+      "approval_actor": "workspace_owner",
+      "approval_timestamp": "2026-08-28",
+      "approval_receipt": {
+        "question_id": "q021",
+        "actor_id": "workspace_owner",
+        "approved_at": "2026-08-28",
+        "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+        "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+        "nonce": "release-20260828-q021"
+      },
+      "review_due_at": "2027-02-24"
     },
     {
       "question_id": "q022",
@@ -460,7 +775,22 @@
       "capability_summary": "候选人须证明如何处理“画像字段脱敏、手机号地址禁曝”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "画像字段脱敏、手机号地址禁曝",
       "dimension_summary": "六维边界聚焦“画像字段脱敏、手机号地址禁曝”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
-      "mode_rationale": "该题型适合识别“画像字段脱敏、手机号地址禁曝”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
+      "mode_rationale": "该题型适合识别“画像字段脱敏、手机号地址禁曝”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。",
+      "originality_confirmed": true,
+      "pii_scan_passed": true,
+      "rights_review_passed": true,
+      "difficulty_consistent": true,
+      "approval_actor": "workspace_owner",
+      "approval_timestamp": "2026-08-28",
+      "approval_receipt": {
+        "question_id": "q022",
+        "actor_id": "workspace_owner",
+        "approved_at": "2026-08-28",
+        "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+        "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+        "nonce": "release-20260828-q022"
+      },
+      "review_due_at": "2027-02-24"
     },
     {
       "question_id": "q023",
@@ -481,7 +811,22 @@
       "capability_summary": "候选人须证明如何处理“跨区旧读、RTO 5分钟下的最小事故路由与降级”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "跨区旧读、RTO 5分钟下的最小事故路由与降级",
       "dimension_summary": "六维边界聚焦“跨区旧读、RTO 5分钟下的最小事故路由与降级”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
-      "mode_rationale": "该题型适合识别“跨区旧读、RTO 5分钟下的最小事故路由与降级”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
+      "mode_rationale": "该题型适合识别“跨区旧读、RTO 5分钟下的最小事故路由与降级”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。",
+      "originality_confirmed": true,
+      "pii_scan_passed": true,
+      "rights_review_passed": true,
+      "difficulty_consistent": true,
+      "approval_actor": "workspace_owner",
+      "approval_timestamp": "2026-08-28",
+      "approval_receipt": {
+        "question_id": "q023",
+        "actor_id": "workspace_owner",
+        "approved_at": "2026-08-28",
+        "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+        "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+        "nonce": "release-20260828-q023"
+      },
+      "review_due_at": "2027-02-24"
     },
     {
       "question_id": "q024",
@@ -502,7 +847,22 @@
       "capability_summary": "候选人须证明如何处理“推荐Agent的最小线上诊断闭环与回滚触发”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "推荐Agent的最小线上诊断闭环与回滚触发",
       "dimension_summary": "六维边界聚焦“推荐Agent的最小线上诊断闭环与回滚触发”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
-      "mode_rationale": "该题型适合识别“推荐Agent的最小线上诊断闭环与回滚触发”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
+      "mode_rationale": "该题型适合识别“推荐Agent的最小线上诊断闭环与回滚触发”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。",
+      "originality_confirmed": true,
+      "pii_scan_passed": true,
+      "rights_review_passed": true,
+      "difficulty_consistent": true,
+      "approval_actor": "workspace_owner",
+      "approval_timestamp": "2026-08-28",
+      "approval_receipt": {
+        "question_id": "q024",
+        "actor_id": "workspace_owner",
+        "approved_at": "2026-08-28",
+        "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+        "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+        "nonce": "release-20260828-q024"
+      },
+      "review_due_at": "2027-02-24"
     },
     {
       "question_id": "q025",
@@ -523,7 +883,22 @@
       "capability_summary": "候选人须证明如何处理“AI交付中的来源承诺、缺证据告警与人工路径”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "AI交付中的来源承诺、缺证据告警与人工路径",
       "dimension_summary": "六维边界聚焦“AI交付中的来源承诺、缺证据告警与人工路径”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
-      "mode_rationale": "该题型适合识别“AI交付中的来源承诺、缺证据告警与人工路径”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
+      "mode_rationale": "该题型适合识别“AI交付中的来源承诺、缺证据告警与人工路径”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。",
+      "originality_confirmed": true,
+      "pii_scan_passed": true,
+      "rights_review_passed": true,
+      "difficulty_consistent": true,
+      "approval_actor": "workspace_owner",
+      "approval_timestamp": "2026-08-28",
+      "approval_receipt": {
+        "question_id": "q025",
+        "actor_id": "workspace_owner",
+        "approved_at": "2026-08-28",
+        "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+        "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+        "nonce": "release-20260828-q025"
+      },
+      "review_due_at": "2027-02-24"
     },
     {
       "question_id": "q026",
@@ -544,7 +919,22 @@
       "capability_summary": "候选人须证明如何处理“转写错误导致退款”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "转写错误导致退款",
       "dimension_summary": "六维边界聚焦“转写错误导致退款”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
-      "mode_rationale": "该题型适合识别“转写错误导致退款”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
+      "mode_rationale": "该题型适合识别“转写错误导致退款”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。",
+      "originality_confirmed": true,
+      "pii_scan_passed": true,
+      "rights_review_passed": true,
+      "difficulty_consistent": true,
+      "approval_actor": "workspace_owner",
+      "approval_timestamp": "2026-08-28",
+      "approval_receipt": {
+        "question_id": "q026",
+        "actor_id": "workspace_owner",
+        "approved_at": "2026-08-28",
+        "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+        "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+        "nonce": "release-20260828-q026"
+      },
+      "review_due_at": "2027-02-24"
     },
     {
       "question_id": "q027",
@@ -565,7 +955,22 @@
       "capability_summary": "候选人须证明如何处理“SDK超时恢复与fixture”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "SDK超时恢复与fixture",
       "dimension_summary": "六维边界聚焦“SDK超时恢复与fixture”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
-      "mode_rationale": "该题型适合识别“SDK超时恢复与fixture”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
+      "mode_rationale": "该题型适合识别“SDK超时恢复与fixture”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。",
+      "originality_confirmed": true,
+      "pii_scan_passed": true,
+      "rights_review_passed": true,
+      "difficulty_consistent": true,
+      "approval_actor": "workspace_owner",
+      "approval_timestamp": "2026-08-28",
+      "approval_receipt": {
+        "question_id": "q027",
+        "actor_id": "workspace_owner",
+        "approved_at": "2026-08-28",
+        "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+        "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+        "nonce": "release-20260828-q027"
+      },
+      "review_due_at": "2027-02-24"
     },
     {
       "question_id": "q028",
@@ -586,7 +991,22 @@
       "capability_summary": "候选人须证明如何处理“三套异步财务fixture、时间戳冲突、输入输出schema”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "三套异步财务fixture、时间戳冲突、输入输出schema",
       "dimension_summary": "六维边界聚焦“三套异步财务fixture、时间戳冲突、输入输出schema”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
-      "mode_rationale": "该题型适合识别“三套异步财务fixture、时间戳冲突、输入输出schema”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
+      "mode_rationale": "该题型适合识别“三套异步财务fixture、时间戳冲突、输入输出schema”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。",
+      "originality_confirmed": true,
+      "pii_scan_passed": true,
+      "rights_review_passed": true,
+      "difficulty_consistent": true,
+      "approval_actor": "workspace_owner",
+      "approval_timestamp": "2026-08-28",
+      "approval_receipt": {
+        "question_id": "q028",
+        "actor_id": "workspace_owner",
+        "approved_at": "2026-08-28",
+        "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+        "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+        "nonce": "release-20260828-q028"
+      },
+      "review_due_at": "2027-02-24"
     },
     {
       "question_id": "q029",
@@ -607,7 +1027,22 @@
       "capability_summary": "候选人须证明如何处理“异步财务证据时间线、陈旧标记与时效阈值”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "异步财务证据时间线、陈旧标记与时效阈值",
       "dimension_summary": "六维边界聚焦“异步财务证据时间线、陈旧标记与时效阈值”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
-      "mode_rationale": "该题型适合识别“异步财务证据时间线、陈旧标记与时效阈值”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
+      "mode_rationale": "该题型适合识别“异步财务证据时间线、陈旧标记与时效阈值”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。",
+      "originality_confirmed": true,
+      "pii_scan_passed": true,
+      "rights_review_passed": true,
+      "difficulty_consistent": true,
+      "approval_actor": "workspace_owner",
+      "approval_timestamp": "2026-08-28",
+      "approval_receipt": {
+        "question_id": "q029",
+        "actor_id": "workspace_owner",
+        "approved_at": "2026-08-28",
+        "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+        "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+        "nonce": "release-20260828-q029"
+      },
+      "review_due_at": "2027-02-24"
     },
     {
       "question_id": "q030",
@@ -628,7 +1063,22 @@
       "capability_summary": "候选人须证明如何处理“发布门冲突时的最小回滚校验与人工批准”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "发布门冲突时的最小回滚校验与人工批准",
       "dimension_summary": "六维边界聚焦“发布门冲突时的最小回滚校验与人工批准”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
-      "mode_rationale": "该题型适合识别“发布门冲突时的最小回滚校验与人工批准”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
+      "mode_rationale": "该题型适合识别“发布门冲突时的最小回滚校验与人工批准”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。",
+      "originality_confirmed": true,
+      "pii_scan_passed": true,
+      "rights_review_passed": true,
+      "difficulty_consistent": true,
+      "approval_actor": "workspace_owner",
+      "approval_timestamp": "2026-08-28",
+      "approval_receipt": {
+        "question_id": "q030",
+        "actor_id": "workspace_owner",
+        "approved_at": "2026-08-28",
+        "corpus_hash": "sha256:427edfcad41dc3ab4b103a8bf9291b6cc87dc26006bf402effc90400ec301770",
+        "sidecar_hash": "sha256:db53c40350b85f410e937ff1006bff3d48117dc005dfb255639645048b647997",
+        "nonce": "release-20260828-q030"
+      },
+      "review_due_at": "2027-02-24"
     }
   ]
 }

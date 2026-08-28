@@ -219,6 +219,62 @@ class ApprovalVerifier(Protocol):
         """Return true only for a receipt issued by the trusted registry."""
 
 
+class ExternalApprovalRegistry:
+    """Independent, immutable allowlist for a version-level release receipt."""
+
+    def __init__(self, payload: Mapping[str, Any], *, expected_question_set_hash: str | None = None,
+                 expected_sidecar_set_hash: str | None = None,
+                 expected_question_ids: Sequence[str] | None = None) -> None:
+        if payload.get("scope") != "corpus_release" or payload.get("actor_id") != "workspace_owner":
+            raise ValueError("approval registry scope or actor is invalid")
+        receipts = payload.get("receipts")
+        if not isinstance(receipts, list) or not receipts:
+            raise ValueError("approval registry receipts are required")
+        unsigned = {key: value for key, value in payload.items() if key != "registry_hash"}
+        actual_hash = "sha256:" + hashlib.sha256(
+            json.dumps(unsigned, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        if payload.get("registry_hash") != actual_hash:
+            raise ValueError("approval registry hash is invalid")
+        question_ids = payload.get("question_ids")
+        if not isinstance(question_ids, list) or len(question_ids) != len(receipts) or len(set(question_ids)) != len(question_ids):
+            raise ValueError("approval registry question set is invalid")
+        self._receipts = {}
+        nonces = set()
+        for item in receipts:
+            receipt = QuestionApprovalReceipt.model_validate(item)
+            if receipt.actor_id != "workspace_owner":
+                raise ValueError("approval receipt actor is invalid")
+            if expected_question_set_hash and receipt.corpus_hash != expected_question_set_hash:
+                raise ValueError("approval receipt corpus hash is invalid")
+            if expected_sidecar_set_hash and receipt.sidecar_hash != expected_sidecar_set_hash:
+                raise ValueError("approval receipt sidecar hash is invalid")
+            if receipt.question_id in self._receipts or not receipt.nonce or receipt.nonce in nonces:
+                raise ValueError("approval receipt nonce or question is invalid")
+            self._receipts[receipt.question_id] = receipt
+            nonces.add(receipt.nonce)
+        if set(question_ids) != set(self._receipts):
+            raise ValueError("approval registry question set does not match receipts")
+        if expected_question_ids is not None and set(question_ids) != set(expected_question_ids):
+            raise ValueError("approval registry question set does not match corpus")
+
+    def verify(self, receipt: ApprovalReceipt) -> bool:
+        expected = self._receipts.get(receipt.question_id)
+        return expected is not None and receipt == ApprovalReceipt(
+            question_id=expected.question_id, actor_id=expected.actor_id,
+            approved_at=expected.approved_at, corpus_hash=expected.corpus_hash,
+            sidecar_hash=expected.sidecar_hash, nonce=expected.nonce)
+
+
+def load_approval_registry(path: Path, *, expected_question_set_hash: str | None = None,
+                           expected_sidecar_set_hash: str | None = None,
+                           expected_question_ids: Sequence[str] | None = None) -> ExternalApprovalRegistry:
+    payload = _read_object(Path(path))
+    return ExternalApprovalRegistry(payload, expected_question_set_hash=expected_question_set_hash,
+                                    expected_sidecar_set_hash=expected_sidecar_set_hash,
+                                    expected_question_ids=expected_question_ids)
+
+
 def _ensure_date(value: Any, field_name: str) -> date:
     if isinstance(value, datetime) or not isinstance(value, date):
         raise TypeError(f"{field_name} must be a date")
@@ -531,14 +587,20 @@ def compute_sidecar_set_hash(snapshot: Any) -> str:
     """Compute the release hash for source and governance sidecars."""
 
     _, _, source_values, review_values, dedupe_values, rights_values, locator_values = _snapshot_parts(snapshot)
+    review_entries = []
+    for entry in _sidecar_entries({"records": review_values}, "records", "reviews"):
+        mapping = _safe_mapping(entry)
+        if mapping is None:
+            review_entries.append(entry)
+        else:
+            review_entries.append({key: value for key, value in mapping.items()
+                                   if key not in {"approval_receipt", "human_approval_receipt"}})
     payload = {
         "version": "sidecar-set-v1",
         "source_registry": _sidecar_entries(
             {"entries": source_values}, "entries", "sources"
         ),
-        "review": _sidecar_entries(
-            {"records": review_values}, "records", "reviews"
-        ),
+        "review": review_entries,
         "dedupe": _sidecar_entries(
             {"records": dedupe_values}, "records", "dedupe_records"
         ),
@@ -1553,9 +1615,18 @@ def validate_question_corpus(
                 _append_issue(issues, seen, "evidence_independence", f"review.json[{question_id}]", "signal and cross-validation evidence must be independent")
             decision = _value(review, "decision", _value(review, "review_status"))
             review_is_gated = _is_active_record(record) or _is_release(manifest, records)
-            if review_is_gated and decision != "approved":
+            release_receipt_ok = bool(
+                _is_release(manifest, records)
+                and decision == "pending_human"
+                and _has_human_approval(
+                    review, question_id, as_of, approval_verifier,
+                    expected_question_set_hash, expected_sidecar_set_hash,
+                )
+            )
+            effective_approved = decision == "approved" or release_receipt_ok
+            if review_is_gated and not effective_approved:
                 _append_issue(issues, seen, "review_decision", f"review.json[{question_id}].decision", "active questions require an approved review")
-            if review_is_gated and decision == "approved" and not _has_human_approval(
+            if review_is_gated and effective_approved and not _has_human_approval(
                 review,
                 question_id,
                 as_of,
@@ -1614,9 +1685,9 @@ def validate_question_corpus(
                 )
                 and _value(review, "difficulty_consistent") is True
             )
-            if (_is_active_record(record) or _is_release(manifest, records)) and decision == "approved" and not safety_passed:
+            if (_is_active_record(record) or _is_release(manifest, records)) and effective_approved and not safety_passed:
                 _append_issue(issues, seen, "review_safety", f"review.json[{question_id}]", "approved active reviews require all safety checks")
-            if _is_release(manifest, records) and decision == "pending_human":
+            if _is_release(manifest, records) and decision == "pending_human" and not release_receipt_ok:
                 _append_issue(issues, seen, "review_pending", f"review.json[{question_id}].decision", "pending_human is not an approval")
             if decision in {"rejected", "needs_revision"} and not _non_blank_text(_value(review, "rejection_reason")):
                 _append_issue(
