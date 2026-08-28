@@ -51,6 +51,12 @@ from profile_agent.services.question_corpus_governance import (
     load_question_corpus_snapshot,
     validate_question_corpus,
 )
+from profile_agent.services.question_corpus_evaluation import (
+    DEFAULT_RETRIEVAL_INTENTS_PATH,
+    EvaluationValidationError,
+    evaluate_question_corpus,
+    load_retrieval_intents,
+)
 from profile_agent.services.siliconflow_embedding_service import (
     DEFAULT_BASE_URL,
     DEFAULT_DIMENSION,
@@ -303,6 +309,19 @@ def _build_parser() -> argparse.ArgumentParser:
             action="store_true",
             help="只执行离线治理检查，不构造模型或索引依赖",
         )
+        if action == "evaluate-local":
+            subparser.add_argument(
+                "--intents",
+                type=_parse_path,
+                default=None,
+                help="JSONL 检索意图路径；默认读取题库目录中的 retrieval_intents.jsonl",
+            )
+            subparser.add_argument(
+                "--store",
+                choices=("fake", "local"),
+                default=None,
+                help="候选安全离线评测后端；fake 不访问网络，local 仅供显式 loopback double",
+            )
     return parser
 
 
@@ -1578,6 +1597,22 @@ def _run_corpus_structure_failure(
         Path("artifacts/question_corpus/validation_report.json"),
         report,
     )
+    if args.action == "evaluate-local" and getattr(args, "store", None):
+        _write_corpus_artifact(
+            Path("artifacts/question_corpus/evaluation_local.json"),
+            {
+                "action": "evaluate-local",
+                "status": "invalid",
+                "passed": False,
+                "store": args.store,
+                "as_of": as_of.isoformat(),
+                "question_count": 0,
+                "error_count": 1,
+                "warning_count": 0,
+                "issues": issue_payload,
+                "dry_run": True,
+            },
+        )
     rendered: Mapping[str, Any] = report
     if args.action == "manifest":
         rendered = {"action": "manifest", **preview, "issues": issue_payload}
@@ -1661,6 +1696,23 @@ def _run_corpus_read_only_action(
         report,
     )
 
+    # The historical no-``--store`` form remains a cheap validation preview.
+    # An explicit store selects the Task 8 evaluation harness and writes its
+    # own artifact; this separation keeps old audit callers zero-cost and
+    # preserves the fail-closed default.
+    if args.action == "evaluate-local" and getattr(args, "store", None):
+        return _run_corpus_evaluation_action(
+            args,
+            snapshot=snapshot,
+            as_of=as_of,
+            output=output,
+            output_format=output_format,
+            preview=preview,
+            issue_payload=issue_payload,
+            validation_error_count=errors,
+            validation_warning_count=warnings,
+        )
+
     if args.action == "manifest":
         rendered: Mapping[str, Any] = {
             "action": "manifest",
@@ -1670,9 +1722,8 @@ def _run_corpus_read_only_action(
             "issues": issue_payload,
         }
     elif args.action == "evaluate-local":
-        # The full labelled evaluation harness is introduced by the later
-        # corpus-evaluation task.  This action is intentionally a zero-cost
-        # validation preview until that harness is available.
+        # Without an explicit store, retain the historical zero-cost
+        # validation preview for callers that only need corpus governance.
         rendered = {
             "action": "evaluate-local",
             "status": report["status"],
@@ -1702,6 +1753,190 @@ def _run_corpus_read_only_action(
             )
         )
     return EXIT_OK if errors == 0 else EXIT_OPERATION_ERROR
+
+
+def _fake_corpus_result_provider(records: Sequence[InterviewQuestionRecord]) -> Callable[..., Mapping[str, Any]]:
+    """Build a deterministic candidate-safe provider for ``--store fake``.
+
+    The provider uses only the labeled gold and same-dimension/mode records;
+    it never embeds text, constructs a paid client, or writes an index.  It is
+    intentionally small: Task 9 owns the richer deterministic vector/local
+    Qdrant calibration adapter.
+    """
+
+    by_id = {record.question_id: record for record in records}
+
+    def provide(label: Any, _runtime_intent: Any) -> Mapping[str, Any]:
+        gold_id = getattr(label, "gold_question_id", None)
+        requested_mode = getattr(label, "requested_mode", None)
+        dimension_id = getattr(label, "dimension_id", None)
+        gold = by_id.get(gold_id)
+        if gold is None:
+            return {
+                "status": "no_match",
+                "trace": {"status": "no_match"},
+                "hits": [],
+            }
+        candidates = [gold]
+        for record in records:
+            if record.question_id == gold.question_id:
+                continue
+            if (
+                record.dimension_id == dimension_id
+                and (record.primary_mode or record.question_mode) == requested_mode
+            ):
+                candidates.append(record)
+            if len(candidates) >= 3:
+                break
+        hits: list[dict[str, Any]] = []
+        for index, record in enumerate(candidates[:3]):
+            score = round(1.0 - index * 0.01, 6)
+            hits.append(
+                {
+                    "question": record,
+                    "question_id": record.question_id,
+                    "source_id": record.source_id,
+                    "score": score,
+                    "index_version": "deterministic-fake-v1",
+                    "match_tier": "exact",
+                }
+            )
+        first = hits[0]
+        return {
+            "status": "hit",
+            "hits": hits,
+            "trace": {
+                "status": "hit",
+                "question_id": first["question_id"],
+                "source_id": first["source_id"],
+                "score": first["score"],
+                "index_version": first["index_version"],
+                "match_tier": "exact",
+            },
+        }
+
+    return provide
+
+
+def _run_corpus_evaluation_action(
+    args: argparse.Namespace,
+    *,
+    snapshot: Any,
+    as_of: date,
+    output: Callable[[str], None],
+    output_format: str,
+    preview: Mapping[str, Any],
+    issue_payload: Sequence[Mapping[str, Any]],
+    validation_error_count: int,
+    validation_warning_count: int,
+) -> int:
+    """Run the explicit fake/local corpus evaluator without provider access."""
+
+    store_kind = getattr(args, "store", None)
+    intents_path = getattr(args, "intents", None)
+    if intents_path is None:
+        intents_path = Path(args.corpus_dir) / DEFAULT_RETRIEVAL_INTENTS_PATH.name
+    payload: dict[str, Any]
+    if store_kind != "fake":
+        # Do not guess a network endpoint or instantiate Qdrant here.  A
+        # loopback adapter can be supplied by a later zero-cost calibration
+        # task; Task 8 reports the missing explicit test double honestly.
+        payload = {
+            "action": "evaluate-local",
+            "status": "invalid",
+            "passed": False,
+            "store": store_kind,
+            "as_of": as_of.isoformat(),
+            "question_count": preview.get("question_count", 0),
+            "error_count": validation_error_count + 1,
+            "warning_count": validation_warning_count,
+            "issues": [
+                *issue_payload,
+                {
+                    "code": "local_store_unavailable",
+                    "path": "--store",
+                    "message": "local evaluation requires an explicit loopback test double",
+                    "severity": "error",
+                },
+            ],
+            "dry_run": True,
+        }
+    elif validation_error_count:
+        payload = {
+            "action": "evaluate-local",
+            "status": "invalid",
+            "passed": False,
+            "store": "fake",
+            "as_of": as_of.isoformat(),
+            "question_count": preview.get("question_count", 0),
+            "error_count": validation_error_count,
+            "warning_count": validation_warning_count,
+            "issues": list(issue_payload),
+            "dry_run": True,
+        }
+    else:
+        try:
+            intents = load_retrieval_intents(
+                intents_path,
+                records=snapshot.records,
+            )
+            evaluation = evaluate_question_corpus(
+                intents,
+                snapshot.records,
+                result_provider=_fake_corpus_result_provider(snapshot.records),
+                as_of=as_of,
+                backend="deterministic-fake",
+            )
+            payload = {
+                "action": "evaluate-local",
+                "store": "fake",
+                "dry_run": True,
+                "question_count": preview.get("question_count", 0),
+                "validation_error_count": validation_error_count,
+                "validation_warning_count": validation_warning_count,
+                **evaluation.to_dict(),
+            }
+        except (EvaluationValidationError, TypeError, ValueError, OSError):
+            payload = {
+                "action": "evaluate-local",
+                "status": "invalid",
+                "passed": False,
+                "store": "fake",
+                "as_of": as_of.isoformat(),
+                "question_count": preview.get("question_count", 0),
+                "error_count": 1,
+                "warning_count": validation_warning_count,
+                "issues": [
+                    {
+                        "code": "evaluation_invalid",
+                        "path": "retrieval_intents.jsonl",
+                        "message": "retrieval intent evaluation could not be completed",
+                        "severity": "error",
+                    }
+                ],
+                "dry_run": True,
+            }
+
+    _write_corpus_artifact(
+        Path("artifacts/question_corpus/evaluation_local.json"),
+        payload,
+    )
+    if output_format == "json":
+        output(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+    else:
+        output(
+            " ".join(
+                (
+                    "EVALUATE-LOCAL",
+                    f"status={payload.get('status', 'invalid' if not payload.get('passed') else 'passed')}",
+                    f"store={store_kind}",
+                    f"questions={preview.get('question_count', 0)}",
+                    f"passed={str(bool(payload.get('passed'))).lower()}",
+                    "dry_run=true",
+                )
+            )
+        )
+    return EXIT_OK if payload.get("passed") is True else EXIT_OPERATION_ERROR
 
 
 def _safe_error_message(error: BaseException, *, category: str) -> str:
