@@ -4,7 +4,8 @@
       "question_id": "q001",
       "decision": "pending_human",
       "reviewer_ids": [
-        "luna-max-task7"
+        "luna-max-task7-author-review",
+        "luna-max-task7-independent-review"
       ],
       "reviewer": "Luna Max",
       "reviewer_type": "luna",
@@ -15,16 +16,17 @@
       "cross_validation_source_ids": [
         "src_cn_official_tencent_agentic_rag"
       ],
-      "capability_summary": "客服上下文题观察预算决策与合规边界，核心证据是裁剪规则和P95指标；foundation适合验证概念能否落到边界。",
+      "capability_summary": "候选人须证明如何处理“32K窗口、法规保留、P95首token 1.5秒”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "32K窗口、法规保留、P95首token 1.5秒",
-      "dimension_summary": "客服上下文题观察预算决策与合规边界，核心证据是裁剪规则和P95指标；foundation适合验证概念能否落到边界。",
-      "mode_rationale": "客服上下文题观察预算决策与合规边界，核心证据是裁剪规则和P95指标；foundation适合验证概念能否落到边界。"
+      "dimension_summary": "六维边界聚焦“32K窗口、法规保留、P95首token 1.5秒”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
+      "mode_rationale": "该题型适合识别“32K窗口、法规保留、P95首token 1.5秒”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
     },
     {
       "question_id": "q002",
       "decision": "pending_human",
       "reviewer_ids": [
-        "luna-max-task7"
+        "luna-max-task7-author-review",
+        "luna-max-task7-independent-review"
       ],
       "reviewer": "Luna Max",
       "reviewer_type": "luna",
@@ -35,16 +37,17 @@
       "cross_validation_source_ids": [
         "src_cn_official_tencent_agentic_rag"
       ],
-      "capability_summary": "订单售后项目题观察候选人对租户隔离的本人决策与故障证据；project_deep_dive适合核验真实项目责任。",
+      "capability_summary": "候选人须证明如何处理“三租户、日120万请求、禁止越权”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "三租户、日120万请求、禁止越权",
-      "dimension_summary": "订单售后项目题观察候选人对租户隔离的本人决策与故障证据；project_deep_dive适合核验真实项目责任。",
-      "mode_rationale": "订单售后项目题观察候选人对租户隔离的本人决策与故障证据；project_deep_dive适合核验真实项目责任。"
+      "dimension_summary": "六维边界聚焦“三租户、日120万请求、禁止越权”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
+      "mode_rationale": "该题型适合识别“三租户、日120万请求、禁止越权”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
     },
     {
       "question_id": "q003",
       "decision": "pending_human",
       "reviewer_ids": [
-        "luna-max-task7"
+        "luna-max-task7-author-review",
+        "luna-max-task7-independent-review"
       ],
       "reviewer": "Luna Max",
       "reviewer_type": "luna",
@@ -55,16 +58,17 @@
       "cross_validation_source_ids": [
         "src_cn_official_tencent_agentic_rag"
       ],
-      "capability_summary": "RAG命中率事故题观察故障定位和实验设计；scenario用突变数据检验候选人能否在不确定性下行动。",
+      "capability_summary": "候选人须证明如何处理“命中率82%到61%的线上回归”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "命中率82%到61%的线上回归",
-      "dimension_summary": "RAG命中率事故题观察故障定位和实验设计；scenario用突变数据检验候选人能否在不确定性下行动。",
-      "mode_rationale": "RAG命中率事故题观察故障定位和实验设计；scenario用突变数据检验候选人能否在不确定性下行动。"
+      "dimension_summary": "六维边界聚焦“命中率82%到61%的线上回归”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
+      "mode_rationale": "该题型适合识别“命中率82%到61%的线上回归”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
     },
     {
       "question_id": "q004",
       "decision": "pending_human",
       "reviewer_ids": [
-        "luna-max-task7"
+        "luna-max-task7-author-review",
+        "luna-max-task7-independent-review"
       ],
       "reviewer": "Luna Max",
       "reviewer_type": "luna",
@@ -75,16 +79,17 @@
       "cross_validation_source_ids": [
         "src_cn_official_tencent_hunyuan"
       ],
-      "capability_summary": "支付对账系统题观察容量、权限与人工复核权衡；system_design要求组件取舍和规模计算。",
+      "capability_summary": "候选人须证明如何处理“月末800RPS、账单只读、人工复核”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "月末800RPS、账单只读、人工复核",
-      "dimension_summary": "支付对账系统题观察容量、权限与人工复核权衡；system_design要求组件取舍和规模计算。",
-      "mode_rationale": "支付对账系统题观察容量、权限与人工复核权衡；system_design要求组件取舍和规模计算。"
+      "dimension_summary": "六维边界聚焦“月末800RPS、账单只读、人工复核”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
+      "mode_rationale": "该题型适合识别“月末800RPS、账单只读、人工复核”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
     },
     {
       "question_id": "q005",
       "decision": "pending_human",
       "reviewer_ids": [
-        "luna-max-task7"
+        "luna-max-task7-author-review",
+        "luna-max-task7-independent-review"
       ],
       "reviewer": "Luna Max",
       "reviewer_type": "luna",
@@ -95,16 +100,17 @@
       "cross_validation_source_ids": [
         "src_cn_official_tencent_hunyuan"
       ],
-      "capability_summary": "上下文摘要追问题观察候选人对上一轮无损承诺的证据补全；follow_up直接追问声明缺口。",
+      "capability_summary": "候选人须证明如何处理“摘要不得丢截止日期、需可证明”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "摘要不得丢截止日期、需可证明",
-      "dimension_summary": "上下文摘要追问题观察候选人对上一轮无损承诺的证据补全；follow_up直接追问声明缺口。",
-      "mode_rationale": "上下文摘要追问题观察候选人对上一轮无损承诺的证据补全；follow_up直接追问声明缺口。"
+      "dimension_summary": "六维边界聚焦“摘要不得丢截止日期、需可证明”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
+      "mode_rationale": "该题型适合识别“摘要不得丢截止日期、需可证明”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
     },
     {
       "question_id": "q006",
       "decision": "pending_human",
       "reviewer_ids": [
-        "luna-max-task7"
+        "luna-max-task7-author-review",
+        "luna-max-task7-independent-review"
       ],
       "reviewer": "Luna Max",
       "reviewer_type": "luna",
@@ -115,16 +121,17 @@
       "cross_validation_source_ids": [
         "src_cn_official_tencent_hunyuan"
       ],
-      "capability_summary": "仓储异常题观察多源事实裁决与安全拒答；scenario用同时发生的事件检验应急边界。",
+      "capability_summary": "候选人须证明如何处理“库存物流客服事实冲突”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "库存物流客服事实冲突",
-      "dimension_summary": "仓储异常题观察多源事实裁决与安全拒答；scenario用同时发生的事件检验应急边界。",
-      "mode_rationale": "仓储异常题观察多源事实裁决与安全拒答；scenario用同时发生的事件检验应急边界。"
+      "dimension_summary": "六维边界聚焦“库存物流客服事实冲突”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
+      "mode_rationale": "该题型适合识别“库存物流客服事实冲突”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
     },
     {
       "question_id": "q007",
       "decision": "pending_human",
       "reviewer_ids": [
-        "luna-max-task7"
+        "luna-max-task7-author-review",
+        "luna-max-task7-independent-review"
       ],
       "reviewer": "Luna Max",
       "reviewer_type": "luna",
@@ -135,16 +142,17 @@
       "cross_validation_source_ids": [
         "src_cn_official_tencent_rag"
       ],
-      "capability_summary": "法务检索基础题观察切分与召回的适用边界；foundation检验概念到SLA的落地。",
+      "capability_summary": "候选人须证明如何处理“十万合同、单租户SLA 2秒”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "十万合同、单租户SLA 2秒",
-      "dimension_summary": "法务检索基础题观察切分与召回的适用边界；foundation检验概念到SLA的落地。",
-      "mode_rationale": "法务检索基础题观察切分与召回的适用边界；foundation检验概念到SLA的落地。"
+      "dimension_summary": "六维边界聚焦“十万合同、单租户SLA 2秒”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
+      "mode_rationale": "该题型适合识别“十万合同、单租户SLA 2秒”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
     },
     {
       "question_id": "q008",
       "decision": "pending_human",
       "reviewer_ids": [
-        "luna-max-task7"
+        "luna-max-task7-author-review",
+        "luna-max-task7-independent-review"
       ],
       "reviewer": "Luna Max",
       "reviewer_type": "luna",
@@ -155,16 +163,17 @@
       "cross_validation_source_ids": [
         "src_cn_official_tencent_rag"
       ],
-      "capability_summary": "过期条款事故题观察版本治理与合规回滚；scenario要求面对已发生事故给出止血路径。",
+      "capability_summary": "候选人须证明如何处理“合同生效与索引更新时间冲突”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "合同生效与索引更新时间冲突",
-      "dimension_summary": "过期条款事故题观察版本治理与合规回滚；scenario要求面对已发生事故给出止血路径。",
-      "mode_rationale": "过期条款事故题观察版本治理与合规回滚；scenario要求面对已发生事故给出止血路径。"
+      "dimension_summary": "六维边界聚焦“合同生效与索引更新时间冲突”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
+      "mode_rationale": "该题型适合识别“合同生效与索引更新时间冲突”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
     },
     {
       "question_id": "q009",
       "decision": "pending_human",
       "reviewer_ids": [
-        "luna-max-task7"
+        "luna-max-task7-author-review",
+        "luna-max-task7-independent-review"
       ],
       "reviewer": "Luna Max",
       "reviewer_type": "luna",
@@ -175,16 +184,17 @@
       "cross_validation_source_ids": [
         "src_cn_official_tencent_rag"
       ],
-      "capability_summary": "Memory项目题观察候选人本人对写入与删除的设计证据；project_deep_dive适合追问实验和责任。",
+      "capability_summary": "候选人须证明如何处理“记忆删除与重复询问实验”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "记忆删除与重复询问实验",
-      "dimension_summary": "Memory项目题观察候选人本人对写入与删除的设计证据；project_deep_dive适合追问实验和责任。",
-      "mode_rationale": "Memory项目题观察候选人本人对写入与删除的设计证据；project_deep_dive适合追问实验和责任。"
+      "dimension_summary": "六维边界聚焦“记忆删除与重复询问实验”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
+      "mode_rationale": "该题型适合识别“记忆删除与重复询问实验”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
     },
     {
       "question_id": "q010",
       "decision": "pending_human",
       "reviewer_ids": [
-        "luna-max-task7"
+        "luna-max-task7-author-review",
+        "luna-max-task7-independent-review"
       ],
       "reviewer": "Luna Max",
       "reviewer_type": "luna",
@@ -195,16 +205,17 @@
       "cross_validation_source_ids": [
         "src_cn_official_tencent_agent_node"
       ],
-      "capability_summary": "工单误关事故题观察副作用控制与状态机；scenario以错误结果检验安全转换。",
+      "capability_summary": "候选人须证明如何处理“拒绝意图误判造成工单副作用”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "拒绝意图误判造成工单副作用",
-      "dimension_summary": "工单误关事故题观察副作用控制与状态机；scenario以错误结果检验安全转换。",
-      "mode_rationale": "工单误关事故题观察副作用控制与状态机；scenario以错误结果检验安全转换。"
+      "dimension_summary": "六维边界聚焦“拒绝意图误判造成工单副作用”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
+      "mode_rationale": "该题型适合识别“拒绝意图误判造成工单副作用”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
     },
     {
       "question_id": "q011",
       "decision": "pending_human",
       "reviewer_ids": [
-        "luna-max-task7"
+        "luna-max-task7-author-review",
+        "luna-max-task7-independent-review"
       ],
       "reviewer": "Luna Max",
       "reviewer_type": "luna",
@@ -215,16 +226,17 @@
       "cross_validation_source_ids": [
         "src_cn_official_tencent_agent_node"
       ],
-      "capability_summary": "跨轮客服追问观察成本承诺的量化补全；follow_up针对上一轮遗漏指标。",
+      "capability_summary": "候选人须证明如何处理“每会话成本0.03元”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "每会话成本0.03元",
-      "dimension_summary": "跨轮客服追问观察成本承诺的量化补全；follow_up针对上一轮遗漏指标。",
-      "mode_rationale": "跨轮客服追问观察成本承诺的量化补全；follow_up针对上一轮遗漏指标。"
+      "dimension_summary": "六维边界聚焦“每会话成本0.03元”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
+      "mode_rationale": "该题型适合识别“每会话成本0.03元”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
     },
     {
       "question_id": "q012",
       "decision": "pending_human",
       "reviewer_ids": [
-        "luna-max-task7"
+        "luna-max-task7-author-review",
+        "luna-max-task7-independent-review"
       ],
       "reviewer": "Luna Max",
       "reviewer_type": "luna",
@@ -235,16 +247,17 @@
       "cross_validation_source_ids": [
         "src_cn_official_tencent_agent_node"
       ],
-      "capability_summary": "自然语言查数基础题观察权限、性能和反馈边界；foundation适合检验应用边界而非定义术语。",
+      "capability_summary": "候选人须证明如何处理“五百亿行查询与权限”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "五百亿行查询与权限",
-      "dimension_summary": "自然语言查数基础题观察权限、性能和反馈边界；foundation适合检验应用边界而非定义术语。",
-      "mode_rationale": "自然语言查数基础题观察权限、性能和反馈边界；foundation适合检验应用边界而非定义术语。"
+      "dimension_summary": "六维边界聚焦“五百亿行查询与权限”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
+      "mode_rationale": "该题型适合识别“五百亿行查询与权限”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
     },
     {
       "question_id": "q013",
       "decision": "pending_human",
       "reviewer_ids": [
-        "luna-max-task7"
+        "luna-max-task7-author-review",
+        "luna-max-task7-independent-review"
       ],
       "reviewer": "Luna Max",
       "reviewer_type": "luna",
@@ -255,16 +268,17 @@
       "cross_validation_source_ids": [
         "src_cn_official_tencent_rag_pg"
       ],
-      "capability_summary": "工具膨胀事故题观察发现、参数与评测闭环；scenario检验变化后的治理动作。",
+      "capability_summary": "候选人须证明如何处理“20到200工具的选择退化”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "20到200工具的选择退化",
-      "dimension_summary": "工具膨胀事故题观察发现、参数与评测闭环；scenario检验变化后的治理动作。",
-      "mode_rationale": "工具膨胀事故题观察发现、参数与评测闭环；scenario检验变化后的治理动作。"
+      "dimension_summary": "六维边界聚焦“20到200工具的选择退化”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
+      "mode_rationale": "该题型适合识别“20到200工具的选择退化”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
     },
     {
       "question_id": "q014",
       "decision": "pending_human",
       "reviewer_ids": [
-        "luna-max-task7"
+        "luna-max-task7-author-review",
+        "luna-max-task7-independent-review"
       ],
       "reviewer": "Luna Max",
       "reviewer_type": "luna",
@@ -275,16 +289,17 @@
       "cross_validation_source_ids": [
         "src_cn_official_tencent_rag_pg"
       ],
-      "capability_summary": "安全检索系统题观察内容与控制平面隔离；system_design要求给出可落地组件边界。",
+      "capability_summary": "候选人须证明如何处理“十万文档与提示词注入风险”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "十万文档与提示词注入风险",
-      "dimension_summary": "安全检索系统题观察内容与控制平面隔离；system_design要求给出可落地组件边界。",
-      "mode_rationale": "安全检索系统题观察内容与控制平面隔离；system_design要求给出可落地组件边界。"
+      "dimension_summary": "六维边界聚焦“十万文档与提示词注入风险”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
+      "mode_rationale": "该题型适合识别“十万文档与提示词注入风险”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
     },
     {
       "question_id": "q015",
       "decision": "pending_human",
       "reviewer_ids": [
-        "luna-max-task7"
+        "luna-max-task7-author-review",
+        "luna-max-task7-independent-review"
       ],
       "reviewer": "Luna Max",
       "reviewer_type": "luna",
@@ -295,16 +310,17 @@
       "cross_validation_source_ids": [
         "src_cn_official_tencent_rag_pg"
       ],
-      "capability_summary": "工具重试编码题观察幂等、测试和交付审查；coding要求可运行实现而非口头架构。",
+      "capability_summary": "候选人须证明如何处理“幂等重试与失败fixture”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "幂等重试与失败fixture",
-      "dimension_summary": "工具重试编码题观察幂等、测试和交付审查；coding要求可运行实现而非口头架构。",
-      "mode_rationale": "工具重试编码题观察幂等、测试和交付审查；coding要求可运行实现而非口头架构。"
+      "dimension_summary": "六维边界聚焦“幂等重试与失败fixture”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
+      "mode_rationale": "该题型适合识别“幂等重试与失败fixture”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
     },
     {
       "question_id": "q016",
       "decision": "pending_human",
       "reviewer_ids": [
-        "luna-max-task7"
+        "luna-max-task7-author-review",
+        "luna-max-task7-independent-review"
       ],
       "reviewer": "Luna Max",
       "reviewer_type": "luna",
@@ -315,16 +331,17 @@
       "cross_validation_source_ids": [
         "src_cn_jd_baidu_agentic_2026"
       ],
-      "capability_summary": "重试追问题观察对上一轮泛化方案的边界补全；follow_up围绕已执行未响应缺口追问。",
+      "capability_summary": "候选人须证明如何处理“已执行但超时且最多停止”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "已执行但超时且最多停止",
-      "dimension_summary": "重试追问题观察对上一轮泛化方案的边界补全；follow_up围绕已执行未响应缺口追问。",
-      "mode_rationale": "重试追问题观察对上一轮泛化方案的边界补全；follow_up围绕已执行未响应缺口追问。"
+      "dimension_summary": "六维边界聚焦“已执行但超时且最多停止”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
+      "mode_rationale": "该题型适合识别“已执行但超时且最多停止”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
     },
     {
       "question_id": "q017",
       "decision": "pending_human",
       "reviewer_ids": [
-        "luna-max-task7"
+        "luna-max-task7-author-review",
+        "luna-max-task7-independent-review"
       ],
       "reviewer": "Luna Max",
       "reviewer_type": "luna",
@@ -335,16 +352,17 @@
       "cross_validation_source_ids": [
         "src_cn_jd_baidu_agentic_2026"
       ],
-      "capability_summary": "混合文档项目题观察解析与引用的真实责任边界；project_deep_dive要求本人证据。",
+      "capability_summary": "候选人须证明如何处理“中英混合文档和表格”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "中英混合文档和表格",
-      "dimension_summary": "混合文档项目题观察解析与引用的真实责任边界；project_deep_dive要求本人证据。",
-      "mode_rationale": "混合文档项目题观察解析与引用的真实责任边界；project_deep_dive要求本人证据。"
+      "dimension_summary": "六维边界聚焦“中英混合文档和表格”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
+      "mode_rationale": "该题型适合识别“中英混合文档和表格”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
     },
     {
       "question_id": "q018",
       "decision": "pending_human",
       "reviewer_ids": [
-        "luna-max-task7"
+        "luna-max-task7-author-review",
+        "luna-max-task7-independent-review"
       ],
       "reviewer": "Luna Max",
       "reviewer_type": "luna",
@@ -355,16 +373,17 @@
       "cross_validation_source_ids": [
         "src_cn_jd_baidu_agentic_2026"
       ],
-      "capability_summary": "模型网关项目题观察适配层的本人决策、成本与故障证据；project_deep_dive适合验证效果。",
+      "capability_summary": "候选人须证明如何处理“多模型网关成本与故障”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "多模型网关成本与故障",
-      "dimension_summary": "模型网关项目题观察适配层的本人决策、成本与故障证据；project_deep_dive适合验证效果。",
-      "mode_rationale": "模型网关项目题观察适配层的本人决策、成本与故障证据；project_deep_dive适合验证效果。"
+      "dimension_summary": "六维边界聚焦“多模型网关成本与故障”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
+      "mode_rationale": "该题型适合识别“多模型网关成本与故障”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
     },
     {
       "question_id": "q019",
       "decision": "pending_human",
       "reviewer_ids": [
-        "luna-max-task7"
+        "luna-max-task7-author-review",
+        "luna-max-task7-independent-review"
       ],
       "reviewer": "Luna Max",
       "reviewer_type": "luna",
@@ -375,16 +394,17 @@
       "cross_validation_source_ids": [
         "src_cn_jd_baidu_agent_2026"
       ],
-      "capability_summary": "工具循环事故题观察Agent控制流与熔断；scenario要求处理线上变化和副作用。",
+      "capability_summary": "候选人须证明如何处理“工具循环从4步升19步”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "工具循环从4步升19步",
-      "dimension_summary": "工具循环事故题观察Agent控制流与熔断；scenario要求处理线上变化和副作用。",
-      "mode_rationale": "工具循环事故题观察Agent控制流与熔断；scenario要求处理线上变化和副作用。"
+      "dimension_summary": "六维边界聚焦“工具循环从4步升19步”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
+      "mode_rationale": "该题型适合识别“工具循环从4步升19步”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
     },
     {
       "question_id": "q020",
       "decision": "pending_human",
       "reviewer_ids": [
-        "luna-max-task7"
+        "luna-max-task7-author-review",
+        "luna-max-task7-independent-review"
       ],
       "reviewer": "Luna Max",
       "reviewer_type": "luna",
@@ -395,16 +415,17 @@
       "cross_validation_source_ids": [
         "src_cn_jd_baidu_agent_2026"
       ],
-      "capability_summary": "RAG评测编码题观察指标实现和证据契约；coding要求仓库接口与可回归命令。",
+      "capability_summary": "候选人须证明如何处理“gold证据fixture与Recall@k”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "gold证据fixture与Recall@k",
-      "dimension_summary": "RAG评测编码题观察指标实现和证据契约；coding要求仓库接口与可回归命令。",
-      "mode_rationale": "RAG评测编码题观察指标实现和证据契约；coding要求仓库接口与可回归命令。"
+      "dimension_summary": "六维边界聚焦“gold证据fixture与Recall@k”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
+      "mode_rationale": "该题型适合识别“gold证据fixture与Recall@k”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
     },
     {
       "question_id": "q021",
       "decision": "pending_human",
       "reviewer_ids": [
-        "luna-max-task7"
+        "luna-max-task7-author-review",
+        "luna-max-task7-independent-review"
       ],
       "reviewer": "Luna Max",
       "reviewer_type": "luna",
@@ -415,16 +436,17 @@
       "cross_validation_source_ids": [
         "src_cn_jd_baidu_agent_2026"
       ],
-      "capability_summary": "工具参数追问题观察对上一轮重试承诺的约束补全；follow_up针对次数限制。",
+      "capability_summary": "候选人须证明如何处理“参数错误最多一次重试”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "参数错误最多一次重试",
-      "dimension_summary": "工具参数追问题观察对上一轮重试承诺的约束补全；follow_up针对次数限制。",
-      "mode_rationale": "工具参数追问题观察对上一轮重试承诺的约束补全；follow_up针对次数限制。"
+      "dimension_summary": "六维边界聚焦“参数错误最多一次重试”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
+      "mode_rationale": "该题型适合识别“参数错误最多一次重试”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
     },
     {
       "question_id": "q022",
       "decision": "pending_human",
       "reviewer_ids": [
-        "luna-max-task7"
+        "luna-max-task7-author-review",
+        "luna-max-task7-independent-review"
       ],
       "reviewer": "Luna Max",
       "reviewer_type": "luna",
@@ -435,16 +457,17 @@
       "cross_validation_source_ids": [
         "src_cn_jd_baidu_base_2026"
       ],
-      "capability_summary": "画像隐私基础题观察字段级安全边界；foundation适合检验安全规则的应用化。",
+      "capability_summary": "候选人须证明如何处理“画像字段脱敏、手机号地址禁曝”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "画像字段脱敏、手机号地址禁曝",
-      "dimension_summary": "画像隐私基础题观察字段级安全边界；foundation适合检验安全规则的应用化。",
-      "mode_rationale": "画像隐私基础题观察字段级安全边界；foundation适合检验安全规则的应用化。"
+      "dimension_summary": "六维边界聚焦“画像字段脱敏、手机号地址禁曝”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
+      "mode_rationale": "该题型适合识别“画像字段脱敏、手机号地址禁曝”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
     },
     {
       "question_id": "q023",
       "decision": "pending_human",
       "reviewer_ids": [
-        "luna-max-task7"
+        "luna-max-task7-author-review",
+        "luna-max-task7-independent-review"
       ],
       "reviewer": "Luna Max",
       "reviewer_type": "luna",
@@ -455,16 +478,17 @@
       "cross_validation_source_ids": [
         "src_cn_jd_baidu_base_2026"
       ],
-      "capability_summary": "跨区延迟事故题观察一致性与恢复权衡；scenario用突增和旧读检验应急设计。",
+      "capability_summary": "候选人须证明如何处理“3000RPS、RTO 5分钟、跨区旧读”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "3000RPS、RTO 5分钟、跨区旧读",
-      "dimension_summary": "跨区延迟事故题观察一致性与恢复权衡；scenario用突增和旧读检验应急设计。",
-      "mode_rationale": "跨区延迟事故题观察一致性与恢复权衡；scenario用突增和旧读检验应急设计。"
+      "dimension_summary": "六维边界聚焦“3000RPS、RTO 5分钟、跨区旧读”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
+      "mode_rationale": "该题型适合识别“3000RPS、RTO 5分钟、跨区旧读”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
     },
     {
       "question_id": "q024",
       "decision": "pending_human",
       "reviewer_ids": [
-        "luna-max-task7"
+        "luna-max-task7-author-review",
+        "luna-max-task7-independent-review"
       ],
       "reviewer": "Luna Max",
       "reviewer_type": "luna",
@@ -475,16 +499,17 @@
       "cross_validation_source_ids": [
         "src_cn_jd_baidu_base_2026"
       ],
-      "capability_summary": "推荐系统设计题观察实验、漂移与反馈架构；system_design要求独立给出组件和权衡。",
+      "capability_summary": "候选人须证明如何处理“转化下降与反馈漂移”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "转化下降与反馈漂移",
-      "dimension_summary": "推荐系统设计题观察实验、漂移与反馈架构；system_design要求独立给出组件和权衡。",
-      "mode_rationale": "推荐系统设计题观察实验、漂移与反馈架构；system_design要求独立给出组件和权衡。"
+      "dimension_summary": "六维边界聚焦“转化下降与反馈漂移”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
+      "mode_rationale": "该题型适合识别“转化下降与反馈漂移”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
     },
     {
       "question_id": "q025",
       "decision": "pending_human",
       "reviewer_ids": [
-        "luna-max-task7"
+        "luna-max-task7-author-review",
+        "luna-max-task7-independent-review"
       ],
       "reviewer": "Luna Max",
       "reviewer_type": "luna",
@@ -495,16 +520,17 @@
       "cross_validation_source_ids": [
         "src_cn_jd_baidu_agent_2026b"
       ],
-      "capability_summary": "来源缺口事故题观察证据诚实与告警；scenario检验承诺在异常下如何收敛。",
+      "capability_summary": "候选人须证明如何处理“无证据回答的承诺边界”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "无证据回答的承诺边界",
-      "dimension_summary": "来源缺口事故题观察证据诚实与告警；scenario检验承诺在异常下如何收敛。",
-      "mode_rationale": "来源缺口事故题观察证据诚实与告警；scenario检验承诺在异常下如何收敛。"
+      "dimension_summary": "六维边界聚焦“无证据回答的承诺边界”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
+      "mode_rationale": "该题型适合识别“无证据回答的承诺边界”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
     },
     {
       "question_id": "q026",
       "decision": "pending_human",
       "reviewer_ids": [
-        "luna-max-task7"
+        "luna-max-task7-author-review",
+        "luna-max-task7-independent-review"
       ],
       "reviewer": "Luna Max",
       "reviewer_type": "luna",
@@ -515,16 +541,17 @@
       "cross_validation_source_ids": [
         "src_cn_jd_baidu_agent_2026b"
       ],
-      "capability_summary": "语音客服项目追问题观察上一轮人工兜底声明的量化证据；follow_up适合沿强声明追问。",
+      "capability_summary": "候选人须证明如何处理“转写错误导致退款”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "转写错误导致退款",
-      "dimension_summary": "语音客服项目追问题观察上一轮人工兜底声明的量化证据；follow_up适合沿强声明追问。",
-      "mode_rationale": "语音客服项目追问题观察上一轮人工兜底声明的量化证据；follow_up适合沿强声明追问。"
+      "dimension_summary": "六维边界聚焦“转写错误导致退款”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
+      "mode_rationale": "该题型适合识别“转写错误导致退款”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
     },
     {
       "question_id": "q027",
       "decision": "pending_human",
       "reviewer_ids": [
-        "luna-max-task7"
+        "luna-max-task7-author-review",
+        "luna-max-task7-independent-review"
       ],
       "reviewer": "Luna Max",
       "reviewer_type": "luna",
@@ -535,16 +562,17 @@
       "cross_validation_source_ids": [
         "src_cn_jd_baidu_agent_2026b"
       ],
-      "capability_summary": "工具SDK项目深挖题观察本人职责、故障和实验；project_deep_dive天然要求可验证经历而非现场编码。",
+      "capability_summary": "候选人须证明如何处理“SDK超时恢复与fixture”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "SDK超时恢复与fixture",
-      "dimension_summary": "工具SDK项目深挖题观察本人职责、故障和实验；project_deep_dive天然要求可验证经历而非现场编码。",
-      "mode_rationale": "工具SDK项目深挖题观察本人职责、故障和实验；project_deep_dive天然要求可验证经历而非现场编码。"
+      "dimension_summary": "六维边界聚焦“SDK超时恢复与fixture”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
+      "mode_rationale": "该题型适合识别“SDK超时恢复与fixture”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
     },
     {
       "question_id": "q028",
       "decision": "pending_human",
       "reviewer_ids": [
-        "luna-max-task7"
+        "luna-max-task7-author-review",
+        "luna-max-task7-independent-review"
       ],
       "reviewer": "Luna Max",
       "reviewer_type": "luna",
@@ -555,16 +583,17 @@
       "cross_validation_source_ids": [
         "src_cn_jd_baidu_app_platform_2026"
       ],
-      "capability_summary": "三套异步财务数据编码题观察排序、去重、冲突裁决和可追溯输出；coding要求实现与测试闭环。",
+      "capability_summary": "候选人须证明如何处理“三套异步系统的成本证据”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "三套异步系统的成本证据",
-      "dimension_summary": "三套异步财务数据编码题观察排序、去重、冲突裁决和可追溯输出；coding要求实现与测试闭环。",
-      "mode_rationale": "三套异步财务数据编码题观察排序、去重、冲突裁决和可追溯输出；coding要求实现与测试闭环。"
+      "dimension_summary": "六维边界聚焦“三套异步系统的成本证据”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
+      "mode_rationale": "该题型适合识别“三套异步系统的成本证据”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
     },
     {
       "question_id": "q029",
       "decision": "pending_human",
       "reviewer_ids": [
-        "luna-max-task7"
+        "luna-max-task7-author-review",
+        "luna-max-task7-independent-review"
       ],
       "reviewer": "Luna Max",
       "reviewer_type": "luna",
@@ -575,16 +604,17 @@
       "cross_validation_source_ids": [
         "src_cn_jd_baidu_app_platform_2026"
       ],
-      "capability_summary": "财务异常系统题观察时间线、容量与一致性权衡；system_design不依赖上一轮回答。",
+      "capability_summary": "候选人须证明如何处理“子Agent矛盾与人工仲裁”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "子Agent矛盾与人工仲裁",
-      "dimension_summary": "财务异常系统题观察时间线、容量与一致性权衡；system_design不依赖上一轮回答。",
-      "mode_rationale": "财务异常系统题观察时间线、容量与一致性权衡；system_design不依赖上一轮回答。"
+      "dimension_summary": "六维边界聚焦“子Agent矛盾与人工仲裁”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
+      "mode_rationale": "该题型适合识别“子Agent矛盾与人工仲裁”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
     },
     {
       "question_id": "q030",
       "decision": "pending_human",
       "reviewer_ids": [
-        "luna-max-task7"
+        "luna-max-task7-author-review",
+        "luna-max-task7-independent-review"
       ],
       "reviewer": "Luna Max",
       "reviewer_type": "luna",
@@ -595,10 +625,10 @@
       "cross_validation_source_ids": [
         "src_cn_jd_baidu_app_platform_2026"
       ],
-      "capability_summary": "发布门追问题观察上一轮高风险阻断承诺的审计补全；follow_up用于验证强声明的执行证据。",
+      "capability_summary": "候选人须证明如何处理“版本差异、评测报告、回滚包与发布门”，并用本人决策、风险判断与可观测交付结果支撑结论。",
       "business_constraint_summary": "版本差异、评测报告、回滚包与发布门",
-      "dimension_summary": "发布门追问题观察上一轮高风险阻断承诺的审计补全；follow_up用于验证强声明的执行证据。",
-      "mode_rationale": "发布门追问题观察上一轮高风险阻断承诺的审计补全；follow_up用于验证强声明的执行证据。"
+      "dimension_summary": "六维边界聚焦“版本差异、评测报告、回滚包与发布门”：观察约束建模、证据质量和失败处置，验收证据是指标、样本或实验。",
+      "mode_rationale": "该题型适合识别“版本差异、评测报告、回滚包与发布门”的能力边界，因为回答过程能暴露决策取舍、验证证据和降级路径。"
     }
   ]
 }

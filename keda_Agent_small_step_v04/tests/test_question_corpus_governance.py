@@ -634,6 +634,26 @@ class QuestionCorpusGovernanceTests(unittest.TestCase):
         self.assertGreaterEqual(len({r["mode_rationale"] for r in reviews}), 25)
         self.assertNotEqual(len({r["section"] for r in json.loads((root / "locator.json").read_text(encoding="utf-8"))["records"]}), 1)
 
+    def test_task7_review_events_and_source_projections_are_explicit(self) -> None:
+        root = Path(__file__).parents[1] / "profile_agent/knowledge/question_banks/ai_agent_engineer_2026_h2"
+        questions = json.loads((root / "questions.json").read_text(encoding="utf-8"))["questions"]
+        reviews = json.loads((root / "review.json").read_text(encoding="utf-8"))["records"]
+        registry = {r["source_id"]: r for r in json.loads((root / "QuestionSourceRegistry.json").read_text(encoding="utf-8"))["entries"]}
+        self.assertEqual(len(reviews), 30)
+        for review in reviews:
+            self.assertEqual(review["decision"], "pending_human")
+            self.assertEqual(review["reviewer_type"], "luna")
+            self.assertEqual(len(review["reviewer_ids"]), 2)
+            self.assertEqual(len(set(review["reviewer_ids"])), 2)
+            self.assertTrue(all("human" not in x for x in review["reviewer_ids"]))
+            self.assertNotEqual(review["capability_summary"], review["dimension_summary"])
+            self.assertNotEqual(review["dimension_summary"], review["mode_rationale"])
+            self.assertNotIn("role_dim_", review["dimension_summary"])
+        for row in questions:
+            source = registry[row["source_id"]]
+            for field, registry_field in (("source_url", "canonical_url"), ("source_title", "title"), ("source_type", "source_type"), ("published_at", "published_at"), ("trust_level", "trust")):
+                self.assertEqual(row[field], source[registry_field], msg=f"derived projection drift: {row['question_id']} {field}")
+
     def test_task6_fixture_rejects_date_provenance_and_locator_tampering(self) -> None:
         root = Path(__file__).parents[1]
         raw = json.loads((root / "profile_agent/knowledge/question_banks/ai_agent_engineer_2026_h2/QuestionSourceRegistry.json").read_text(encoding="utf-8"))
