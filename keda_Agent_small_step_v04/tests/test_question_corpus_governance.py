@@ -505,6 +505,13 @@ class QuestionCorpusGovernanceTests(unittest.TestCase):
         ))
         fixture = json.loads((root / "artifacts/question_corpus/task6_source_evidence_fixture.json").read_text(encoding="utf-8"))
         by_id = {entry.source_id: entry for entry in registry.entries}
+        expected_jd = {
+            "src_cn_jd_baidu_agentic_2026": ("2026-05-12", "2026-08-03"),
+            "src_cn_jd_baidu_agent_2026": ("2026-04-03", "2026-07-21"),
+            "src_cn_jd_baidu_base_2026": ("2026-07-08", "2026-07-21"),
+            "src_cn_jd_baidu_agent_2026b": ("2026-07-08", "2026-07-21"),
+            "src_cn_jd_baidu_app_platform_2026": ("2026-07-21", "2026-08-10"),
+        }
         self.assertEqual(set(by_id), {entry["source_id"] for entry in fixture["entries"]})
         for expected in fixture["entries"]:
             actual = by_id[expected["source_id"]]
@@ -524,6 +531,24 @@ class QuestionCorpusGovernanceTests(unittest.TestCase):
             if expected["query_required"]:
                 self.assertIn("sourceSSR=", actual.canonical_url)
                 self.assertIn(actual.canonical_url.split("sourceSSR=", 1)[1], actual.date_evidence_locator)
+            if actual.source_type == "current_enterprise_jd":
+                publish_date, update_date = expected_jd[actual.source_id]
+                self.assertEqual(expected["observed_publishDate"], publish_date)
+                self.assertEqual(expected["observed_updateDate"], update_date)
+                self.assertEqual(expected["currentness"], "page_posted_at")
+                self.assertEqual(actual.date_evidence_kind, "jd_page_posted_at")
+                self.assertTrue(expected["isValid"])
+        expected_official_updates = {
+            "src_cn_official_tencent_agentic_rag": "2026-08-21",
+            "src_cn_official_tencent_hunyuan": "2026-08-22",
+            "src_cn_official_tencent_rag": "2026-04-16",
+            "src_cn_official_tencent_agent_node": "2026-02-12",
+            "src_cn_official_tencent_rag_pg": "2026-08-20",
+        }
+        for source_id, update_date in expected_official_updates.items():
+            row = next(row for row in fixture["entries"] if row["source_id"] == source_id)
+            self.assertEqual(row["observed_updateDate"], update_date)
+            self.assertEqual(by_id[source_id].date_evidence_kind, "official_last_updated")
 
     def test_task6_fixture_rejects_date_provenance_and_locator_tampering(self) -> None:
         root = Path(__file__).parents[1]

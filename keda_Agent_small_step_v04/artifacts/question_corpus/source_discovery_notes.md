@@ -4,9 +4,9 @@ Corpus as-of: 2026-08-27. Final registry is China-priority: 10 Chinese public in
 
 ## Accepted: 20 (10 interview + 5 official + 5 JD)
 
-Each interview entry is a firsthand or explicitly secondary Chinese-language experience with visible publication date and structured `date_evidence_kind=visible_published_date`; official entries use `official_last_updated`; JD entries use `accessed_current_jd` and do not pretend to have a publication date. Query requirements and observed title/date/provenance are frozen in `task6_source_evidence_fixture.json`; all remain `draft` with empty `question_ids` for Task7.
+Each interview entry is a firsthand or explicitly secondary Chinese-language experience with visible publication date and structured `date_evidence_kind=visible_published_date`; official entries use `official_last_updated` with页面最近更新时间；JD entries use `jd_page_posted_at` with独立页面 publishDate/updateDate，不用访问日冒充职位日期。Query requirements and observed title/date/provenance are frozen in `task6_source_evidence_fixture.json`; all remain `draft` with empty `question_ids` for Task7.
 
-Interview dates: 10/10 fall in 2025-08-27..2026-08-27 and 10/10 fall in 2026-02-28..2026-08-27. Domestic share is 10/10 interviews and 10/10 official/JD. Dimensions collectively cover role_dim_01..role_dim_06. Each source has a non-empty date evidence locator and raw date checked against the model date. All five百度 JD entries now use `jd_page_posted_at` with page dates 2026-07-21 or 2026-08-10;访问日期仅作为复核辅助，不替代页面职位日期。
+Interview dates: 10/10 fall in 2025-08-27..2026-08-27 and 10/10 fall in 2026-02-28..2026-08-27. Domestic share is 10/10 interviews and 10/10 official/JD. Dimensions collectively cover role_dim_01..role_dim_06. Each source has a non-empty date evidence locator and raw date checked against the model date. 百度 JD 页面 publish/update 分别为：J99969 2026-05-12/2026-08-03、J99071 2026-04-03/2026-07-21、J101234 2026-07-08/2026-07-21、J101017 2026-07-08/2026-07-21、J103341 2026-07-21/2026-08-10。
 
 ## Rejected: 4
 
