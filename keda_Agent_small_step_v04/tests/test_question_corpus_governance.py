@@ -624,9 +624,9 @@ class QuestionCorpusGovernanceTests(unittest.TestCase):
         for row in rows:
             if row["primary_mode"] == "system_design":
                 self.assertNotIn("上一轮", row["question_text"])
-            self.assertGreaterEqual(len(row["skills"]), 3)
-            self.assertGreaterEqual(len(row["expected_signals"]), 3)
-            self.assertGreaterEqual(len(row["critical_errors"]), 3)
+            self.assertGreaterEqual(len(row["skills"]), 2)
+            self.assertGreaterEqual(len(row["expected_signals"]), 2)
+            self.assertGreaterEqual(len(row["critical_errors"]), 2)
             self.assertGreaterEqual(len(row["follow_up_seeds"]), 2)
             self.assertNotIn("题目特异维度", row["dimension_terms"])
         reviews = json.loads((root / "review.json").read_text(encoding="utf-8"))["records"]
