@@ -1,0 +1,99 @@
+{
+  "run_date": "2026-08-28",
+  "input": {
+    "jd_file": "测试jd.docx",
+    "resume_file": "测试简历.docx",
+    "jd_extraction": {
+      "file_type": "docx",
+      "text_chars": 543,
+      "used_ocr_pages": []
+    },
+    "resume_extraction": {
+      "file_type": "docx",
+      "text_chars": 1873,
+      "used_ocr_pages": []
+    }
+  },
+  "cost_control": {
+    "llm_provider": "qwen",
+    "llm_model": "qwen3.8-max",
+    "llm_provider_calls": 9,
+    "llm_call_breakdown": {
+      "JobProfile": 1,
+      "ResumeProfile": 1,
+      "CompetencyDraftModel": 1,
+      "InterviewPlanDraft": 3,
+      "GeneratedQuestion": 2,
+      "TurnAssessment": 1
+    },
+    "embedding_provider": "siliconflow",
+    "embedding_model": "BAAI/bge-m3",
+    "embedding_calls": 2,
+    "rerank_calls": 0,
+    "secrets_in_artifact": false
+  },
+  "stages": {
+    "document_extraction": "passed",
+    "resume_understanding": "passed",
+    "job_understanding": "passed",
+    "competency_modeling": "passed",
+    "planner": "passed_after_transfer_guard_fix",
+    "qdrant_retrieval": "passed",
+    "question_generation": "passed",
+    "answer_assessment": "passed",
+    "dynamic_follow_up": "passed",
+    "final_report": "not_run_pending_follow_up_answer"
+  },
+  "planner": {
+    "target_count": 4,
+    "max_questions": 14,
+    "gating_dimensions_reached": [
+      "role_dim_01",
+      "role_dim_02",
+      "role_dim_05"
+    ],
+    "competencies": [
+      "Agent 架构设计与状态管理",
+      "RAG 链路工程化与检索优化",
+      "Prompt 工程与工具调用集成",
+      "Python 后端工程与异步编程",
+      "系统可观测性与效果评测",
+      "基础设施与部署运维基础",
+      "真实业务交付与协作能力"
+    ]
+  },
+  "turns": [
+    {
+      "turn_id": "turn_001",
+      "target_id": "target_01",
+      "requirement_id": "target_01_req_02",
+      "question_mode": "scenario",
+      "rag_question_id": "q003",
+      "rag_status": "hit",
+      "generated_question": "在你实现的「1主助手+7专业助手」多Agent架构中，若将并发执行策略从串行改为全并行以优化响应时间，但运行环境被限制为仅允许同时维持3个外部API连接且无消息队列缓冲，请描述你会如何改造原有的状态管理与路由逻辑来处理资源竞争，并具体说明当第4个Agent因连接耗尽而阻塞时，系统应执行怎样的失败恢复机制以保证主流程不中断？",
+      "answer_assessment": "low_relevance_strong_contradiction",
+      "next_action": "follow_up"
+    },
+    {
+      "turn_id": "turn_002",
+      "target_id": "target_01",
+      "requirement_id": "target_01_req_02",
+      "question_mode": "follow_up",
+      "rag_question_id": "q005",
+      "rag_status": "hit",
+      "generated_question": "在你上一轮提到的「1主助手+7专业助手」架构中，当长对话触发摘要压缩后，若后续并发调用的3个专业Agent中有2个依赖被摘要覆盖的历史约束（如截止日期或权限范围），你会如何在状态管理或路由层设计一个可验证的机制来检测并防止因摘要丢失关键信息而导致的并发任务静默失败？",
+      "answer_pending": true
+    }
+  ],
+  "quality_observations": [
+    "DOCX 入口可直接解析两份中文文件，无需 OCR 或视觉模型。",
+    "首轮问题贴合 JD、简历项目和 Planner 的新并发约束；模型没有泄露答案。",
+    "候选人回答没有回应题目中的并发连接限制，TurnAssessment 正确标为低相关并生成强反证。",
+    "Supervisor 没有重复首题，而是对同一 requirement 动态切换 follow_up。",
+    "q003/q005 的题库标签为 role_dim_01，但题面技能与当前并发/摘要约束存在一定偏差；当前生成器通过业务约束改写后可用，题库标签和召回排序仍需后续优化。"
+  ],
+  "demo_decision": {
+    "ready_to_copy_to_demo_frontend": false,
+    "reason": "真实链路已跑通，但本次只完成一轮回答后的追问，尚未形成完整企业评估报告；同时题库素材标签仍有优化空间。"
+  }
+}
