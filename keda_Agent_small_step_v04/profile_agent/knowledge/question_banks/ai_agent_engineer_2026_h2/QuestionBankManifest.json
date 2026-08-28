@@ -73,8 +73,8 @@
   "generated_at": "2026-08-27",
   "reviewed_at": "2026-08-27",
   "published_at": null,
-  "question_set_hash": "sha256:6fec8756b5587f0e09e29fc03df8b753ce8c332eb55d8ef81eb999a50e633baf",
-  "sidecar_set_hash": "sha256:c2cc85ddf0a838a4f071297dd02c0d0411ee9a92a51c8e8dd813bd6b84014379",
+  "question_set_hash": "sha256:d75cf8ec7da121ae84feb3ba7b8068469ad32ccc1ae73df3dee4a27491b1c04b",
+  "sidecar_set_hash": "sha256:79371e8d3c78e2b21d38f1bddd9a6f2da3a0ea33f8d812a22a7d8bc1fb23a047",
   "publication_status": "draft",
   "embedding_contract_version": "six-section-v1"
 }

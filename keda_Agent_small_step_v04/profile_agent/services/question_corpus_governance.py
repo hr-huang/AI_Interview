@@ -62,6 +62,13 @@ DEFAULT_CORPUS_DIR = Path(
 )
 MANIFEST_SCHEMA_VERSION = "2"
 EMBEDDING_CONTRACT_VERSION = EMBEDDING_TEXT_VERSION
+
+
+def compute_question_semantic_hash(record: InterviewQuestionRecord | Mapping[str, Any]) -> str:
+    """Return the stable semantic fingerprint of normalized question text."""
+    text = record.question_text if isinstance(record, InterviewQuestionRecord) else record["question_text"]
+    normalized = re.sub(r"\s+", " ", str(text)).strip()
+    return "sha256:" + hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 V2_MANIFEST_REQUIRED_FIELDS = frozenset(
     {
         "schema_version",
@@ -1423,7 +1430,7 @@ def validate_question_corpus(
         record = record_by_id.get(question_id)
         if record is not None:
             try:
-                expected_semantic_hash = compute_question_content_hash(record)
+                expected_semantic_hash = compute_question_semantic_hash(record)
             except (AttributeError, TypeError, ValueError):
                 expected_semantic_hash = None
             if semantic_hash != expected_semantic_hash:
@@ -1432,7 +1439,7 @@ def validate_question_corpus(
                     seen,
                     "dedupe_semantic_hash",
                     f"dedupe.json[{question_id}].semantic_hash",
-                    "semantic_hash must equal the canonical question content hash",
+                    "semantic_hash must equal SHA-256 of normalized question_text",
                 )
         candidates = _value(
             dedupe,

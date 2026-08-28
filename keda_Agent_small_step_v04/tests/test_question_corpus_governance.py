@@ -4,6 +4,8 @@ from copy import deepcopy
 from dataclasses import FrozenInstanceError
 from datetime import date
 import json
+import hashlib
+import re
 from pathlib import Path
 import tempfile
 import unittest
@@ -14,6 +16,7 @@ from profile_agent.services.question_corpus_governance import (
     CorpusIssue,
     V2_MANIFEST_REQUIRED_FIELDS,
     build_manifest_preview,
+    compute_question_semantic_hash,
     compute_question_set_hash,
     compute_sidecar_set_hash,
     load_question_corpus_snapshot,
@@ -96,6 +99,7 @@ class QuestionCorpusGovernanceTests(unittest.TestCase):
             values.update(
                 {
                     "dimension_id": dimension,
+                    "question_text": f"请为{question_id}设计可验证的Agent方案，并说明约束、失败边界和验收证据。",
                     "question_mode": mode,
                     "primary_mode": mode,
                     "compatible_modes": [],
@@ -148,7 +152,7 @@ class QuestionCorpusGovernanceTests(unittest.TestCase):
             dedupe.append(
                 QuestionDedupeRecord(
                     question_id=question_id,
-                    semantic_hash=record.content_hash,
+                    semantic_hash=compute_question_semantic_hash(record),
                     comparison_batch="batch-2026-08-27",
                     near_duplicate_decision="clear",
                     decision="unique",
@@ -579,6 +583,21 @@ class QuestionCorpusGovernanceTests(unittest.TestCase):
         self.assertEqual(manifest["active_count"], 0)
         self.assertTrue(manifest["question_set_hash"].startswith("sha256:"))
         self.assertTrue(manifest["sidecar_set_hash"].startswith("sha256:"))
+
+    def test_task7_questions_are_unique_specific_and_hash_consistent(self) -> None:
+        root = Path(__file__).parents[1] / "profile_agent/knowledge/question_banks/ai_agent_engineer_2026_h2"
+        rows = json.loads((root / "questions.json").read_text(encoding="utf-8"))["questions"]
+        self.assertEqual(len({row["question_text"] for row in rows}), 30)
+        self.assertGreaterEqual(len({row["business_constraint"] for row in rows}), 20)
+        self.assertGreaterEqual(len({row["expected_signals"][0] for row in rows}), 20)
+        self.assertGreaterEqual(len({row["follow_up_seeds"][0] for row in rows}), 20)
+        coding = [row for row in rows if row["primary_mode"] == "coding"]
+        self.assertEqual(len(coding), 3)
+        self.assertTrue(all(re.search(r"(接口|输入|输出|测试|回归|仓库)", row["question_text"]) for row in coding))
+        dedupe = {row["question_id"]: row for row in json.loads((root / "dedupe.json").read_text(encoding="utf-8"))["records"]}
+        for row in rows:
+            normalized = re.sub(r"\\s+", " ", row["question_text"]).strip()
+            self.assertEqual(dedupe[row["question_id"]]["semantic_hash"], "sha256:" + hashlib.sha256(normalized.encode("utf-8")).hexdigest())
 
     def test_task6_fixture_rejects_date_provenance_and_locator_tampering(self) -> None:
         root = Path(__file__).parents[1]

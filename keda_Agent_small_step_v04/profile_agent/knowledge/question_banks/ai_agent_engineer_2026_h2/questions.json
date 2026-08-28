@@ -5,7 +5,7 @@
   "questions": [
     {
       "question_id": "q001",
-      "question_text": "在国内企业的上下文压缩与权限边界场景中，业务方要求你负责一个可上线的 Agent 方案。请结合输入、状态、工具和验证环节说明你的设计取舍，并指出如何用数据证明方案满足约束。",
+      "question_text": "你负责客服Agent的上下文裁剪：会话窗口32K、法规条款必须保留、P95首token 1.5秒。请给出保留优先级和线上验收指标。",
       "role": "ai_agent_engineer",
       "role_version": "2026-H2",
       "dimension_id": "role_dim_01",
@@ -15,7 +15,7 @@
         "故障恢复"
       ],
       "question_mode": "foundation",
-      "business_constraint": "必须隔离租户数据；单次请求成本受预算约束；高风险写操作需要人工确认。",
+      "business_constraint": "32K窗口、法规保留、P95首token 1.5秒",
       "dimension_terms": [
         "role_dim_01",
         "业务建模",
@@ -28,18 +28,15 @@
       ],
       "difficulty": "intermediate",
       "expected_signals": [
-        "明确业务目标与成功指标",
-        "说明失败路径和验证方法",
-        "给出安全与成本边界"
+        "最低充分条件：围绕32K窗口、法规保留、P95首token 1.5秒给出可执行方案和验收；加分表现：量化监控或实验；限制项：不越权且说明失败边界。"
       ],
       "critical_errors": [
-        "只描述模型调用而无系统状态",
-        "把面经答案当作事实照搬",
-        "忽略权限、租户隔离或回滚"
+        "忽略32K窗口、法规保留、P95首token 1.5秒",
+        "只描述模型调用而没有状态、证据或回滚",
+        "把来源摘要当作候选人事实"
       ],
       "follow_up_seeds": [
-        "如果线上指标下降如何定位？",
-        "若工具返回不确定结果如何避免重复副作用？"
+        "若回答未覆盖32K窗口、法规保留、P95首token 1.5秒，请追问具体证据、阈值和降级路径。"
       ],
       "company_tags": [
         "国内互联网",
@@ -59,11 +56,11 @@
       "trust_level": "medium",
       "status": "needs_review",
       "version": 1,
-      "content_hash": "sha256:f13f622032ac7a540532f44579f9a77e677cc1e13af720aadbfc0450f525dccd"
+      "content_hash": "sha256:b053ad115232d4437da532a148872a6275b341419b88bc5748de4e79c349b4f2"
     },
     {
       "question_id": "q002",
-      "question_text": "在国内企业的多租户知识库检索场景中，业务方要求你负责一个可上线的 Agent 方案。请结合输入、状态、工具和验证环节说明你的设计取舍，并指出如何用数据证明方案满足约束。",
+      "question_text": "订单售后Agent接入三个租户，每日120万请求。请说明租户隔离、引用证据和越权请求的边界设计。",
       "role": "ai_agent_engineer",
       "role_version": "2026-H2",
       "dimension_id": "role_dim_01",
@@ -73,7 +70,7 @@
         "故障恢复"
       ],
       "question_mode": "project_deep_dive",
-      "business_constraint": "必须隔离租户数据；单次请求成本受预算约束；高风险写操作需要人工确认。",
+      "business_constraint": "三租户、日120万请求、禁止越权",
       "dimension_terms": [
         "role_dim_01",
         "业务建模",
@@ -86,18 +83,15 @@
       ],
       "difficulty": "intermediate",
       "expected_signals": [
-        "明确业务目标与成功指标",
-        "说明失败路径和验证方法",
-        "给出安全与成本边界"
+        "最低充分条件：围绕三租户、日120万请求、禁止越权给出可执行方案和验收；加分表现：量化监控或实验；限制项：不越权且说明失败边界。"
       ],
       "critical_errors": [
-        "只描述模型调用而无系统状态",
-        "把面经答案当作事实照搬",
-        "忽略权限、租户隔离或回滚"
+        "忽略三租户、日120万请求、禁止越权",
+        "只描述模型调用而没有状态、证据或回滚",
+        "把来源摘要当作候选人事实"
       ],
       "follow_up_seeds": [
-        "如果线上指标下降如何定位？",
-        "若工具返回不确定结果如何避免重复副作用？"
+        "若回答未覆盖三租户、日120万请求、禁止越权，请追问具体证据、阈值和降级路径。"
       ],
       "company_tags": [
         "国内互联网",
@@ -117,11 +111,11 @@
       "trust_level": "medium",
       "status": "needs_review",
       "version": 1,
-      "content_hash": "sha256:0ed7b3f9999b60e74963e7199034f6fd8398ae4c0d987082482c4d8b1d3f2b4c"
+      "content_hash": "sha256:b6bf0d46d4a48a339404b813827b122536a81023368833634e9b51b60e800538"
     },
     {
       "question_id": "q003",
-      "question_text": "在国内企业的工具调用失败恢复场景中，业务方要求你负责一个可上线的 Agent 方案。请结合输入、状态、工具和验证环节说明你的设计取舍，并指出如何用数据证明方案满足约束。",
+      "question_text": "候选人项目中RAG命中率从82%降到61%，但离线集不变。请基于可验证日志设计排查路径并指出应补的实验。",
       "role": "ai_agent_engineer",
       "role_version": "2026-H2",
       "dimension_id": "role_dim_01",
@@ -131,7 +125,7 @@
         "故障恢复"
       ],
       "question_mode": "scenario",
-      "business_constraint": "必须隔离租户数据；单次请求成本受预算约束；高风险写操作需要人工确认。",
+      "business_constraint": "命中率82%到61%的线上回归",
       "dimension_terms": [
         "role_dim_01",
         "业务建模",
@@ -144,18 +138,15 @@
       ],
       "difficulty": "intermediate",
       "expected_signals": [
-        "明确业务目标与成功指标",
-        "说明失败路径和验证方法",
-        "给出安全与成本边界"
+        "最低充分条件：围绕命中率82%到61%的线上回归给出可执行方案和验收；加分表现：量化监控或实验；限制项：不越权且说明失败边界。"
       ],
       "critical_errors": [
-        "只描述模型调用而无系统状态",
-        "把面经答案当作事实照搬",
-        "忽略权限、租户隔离或回滚"
+        "忽略命中率82%到61%的线上回归",
+        "只描述模型调用而没有状态、证据或回滚",
+        "把来源摘要当作候选人事实"
       ],
       "follow_up_seeds": [
-        "如果线上指标下降如何定位？",
-        "若工具返回不确定结果如何避免重复副作用？"
+        "若回答未覆盖命中率82%到61%的线上回归，请追问具体证据、阈值和降级路径。"
       ],
       "company_tags": [
         "国内互联网",
@@ -175,11 +166,11 @@
       "trust_level": "medium",
       "status": "needs_review",
       "version": 1,
-      "content_hash": "sha256:0b28f81247cd29085fbbef9646e1f53d6c931220a79f1db528af3253cb515e3f"
+      "content_hash": "sha256:37e0d54483fa4c37547b4ff27c774d12f708fbfc3b929db7f5d8ac8ed679ff09"
     },
     {
       "question_id": "q004",
-      "question_text": "在国内企业的离线评测集设计场景中，业务方要求你负责一个可上线的 Agent 方案。请结合输入、状态、工具和验证环节说明你的设计取舍，并指出如何用数据证明方案满足约束。",
+      "question_text": "支付对账Agent只读账单，月末峰值每秒800请求。请权衡同步工具调用、队列和人工复核，并给出组件取舍。",
       "role": "ai_agent_engineer",
       "role_version": "2026-H2",
       "dimension_id": "role_dim_01",
@@ -189,7 +180,7 @@
         "故障恢复"
       ],
       "question_mode": "system_design",
-      "business_constraint": "必须隔离租户数据；单次请求成本受预算约束；高风险写操作需要人工确认。",
+      "business_constraint": "月末800RPS、账单只读、人工复核",
       "dimension_terms": [
         "role_dim_01",
         "业务建模",
@@ -202,18 +193,15 @@
       ],
       "difficulty": "advanced",
       "expected_signals": [
-        "明确业务目标与成功指标",
-        "说明失败路径和验证方法",
-        "给出安全与成本边界"
+        "最低充分条件：围绕月末800RPS、账单只读、人工复核给出可执行方案和验收；加分表现：量化监控或实验；限制项：不越权且说明失败边界。"
       ],
       "critical_errors": [
-        "只描述模型调用而无系统状态",
-        "把面经答案当作事实照搬",
-        "忽略权限、租户隔离或回滚"
+        "忽略月末800RPS、账单只读、人工复核",
+        "只描述模型调用而没有状态、证据或回滚",
+        "把来源摘要当作候选人事实"
       ],
       "follow_up_seeds": [
-        "如果线上指标下降如何定位？",
-        "若工具返回不确定结果如何避免重复副作用？"
+        "若回答未覆盖月末800RPS、账单只读、人工复核，请追问具体证据、阈值和降级路径。"
       ],
       "company_tags": [
         "国内互联网",
@@ -233,11 +221,11 @@
       "trust_level": "medium",
       "status": "needs_review",
       "version": 1,
-      "content_hash": "sha256:f89f8357434664099600d13daf689e14188b3cc9217f50201304fc0e68055fba"
+      "content_hash": "sha256:e7b31ae98e17d4c4f22ff45a2267077d262627e6506ca441e50017117fc7a332"
     },
     {
       "question_id": "q005",
-      "question_text": "在国内企业的模型成本与延迟预算场景中，业务方要求你负责一个可上线的 Agent 方案。请结合输入、状态、工具和验证环节说明你的设计取舍，并指出如何用数据证明方案满足约束。",
+      "question_text": "上一轮你声称摘要保留了全部关键约束。若长对话出现截止日期丢失，请说明如何证明摘要策略没有造成风险。",
       "role": "ai_agent_engineer",
       "role_version": "2026-H2",
       "dimension_id": "role_dim_01",
@@ -247,7 +235,7 @@
         "故障恢复"
       ],
       "question_mode": "follow_up",
-      "business_constraint": "必须隔离租户数据；单次请求成本受预算约束；高风险写操作需要人工确认。",
+      "business_constraint": "摘要不得丢截止日期、需可证明",
       "dimension_terms": [
         "role_dim_01",
         "业务建模",
@@ -260,18 +248,15 @@
       ],
       "difficulty": "intermediate",
       "expected_signals": [
-        "明确业务目标与成功指标",
-        "说明失败路径和验证方法",
-        "给出安全与成本边界"
+        "最低充分条件：围绕摘要不得丢截止日期、需可证明给出可执行方案和验收；加分表现：量化监控或实验；限制项：不越权且说明失败边界。"
       ],
       "critical_errors": [
-        "只描述模型调用而无系统状态",
-        "把面经答案当作事实照搬",
-        "忽略权限、租户隔离或回滚"
+        "忽略摘要不得丢截止日期、需可证明",
+        "只描述模型调用而没有状态、证据或回滚",
+        "把来源摘要当作候选人事实"
       ],
       "follow_up_seeds": [
-        "如果线上指标下降如何定位？",
-        "若工具返回不确定结果如何避免重复副作用？"
+        "若回答未覆盖摘要不得丢截止日期、需可证明，请追问具体证据、阈值和降级路径。"
       ],
       "company_tags": [
         "国内互联网",
@@ -291,11 +276,11 @@
       "trust_level": "medium",
       "status": "needs_review",
       "version": 1,
-      "content_hash": "sha256:34b7dde35d9032d1813aee1a17e4347645da53b7cf12bb0e4f0fbb8118d6f66b"
+      "content_hash": "sha256:6ee3b60881cd4bf556797b3c2425dcc28f650e37d936cb20992e2768d6f9d687"
     },
     {
       "question_id": "q006",
-      "question_text": "在国内企业的Memory 生命周期场景中，业务方要求你负责一个可上线的 Agent 方案。请结合输入、状态、工具和验证环节说明你的设计取舍，并指出如何用数据证明方案满足约束。",
+      "question_text": "仓储异常Agent同时处理库存、物流和客服事件。请制定上下文冲突时的事实优先级及拒答条件。",
       "role": "ai_agent_engineer",
       "role_version": "2026-H2",
       "dimension_id": "role_dim_01",
@@ -305,7 +290,7 @@
         "故障恢复"
       ],
       "question_mode": "scenario",
-      "business_constraint": "必须隔离租户数据；单次请求成本受预算约束；高风险写操作需要人工确认。",
+      "business_constraint": "库存物流客服事实冲突",
       "dimension_terms": [
         "role_dim_01",
         "业务建模",
@@ -318,18 +303,15 @@
       ],
       "difficulty": "intermediate",
       "expected_signals": [
-        "明确业务目标与成功指标",
-        "说明失败路径和验证方法",
-        "给出安全与成本边界"
+        "最低充分条件：围绕库存物流客服事实冲突给出可执行方案和验收；加分表现：量化监控或实验；限制项：不越权且说明失败边界。"
       ],
       "critical_errors": [
-        "只描述模型调用而无系统状态",
-        "把面经答案当作事实照搬",
-        "忽略权限、租户隔离或回滚"
+        "忽略库存物流客服事实冲突",
+        "只描述模型调用而没有状态、证据或回滚",
+        "把来源摘要当作候选人事实"
       ],
       "follow_up_seeds": [
-        "如果线上指标下降如何定位？",
-        "若工具返回不确定结果如何避免重复副作用？"
+        "若回答未覆盖库存物流客服事实冲突，请追问具体证据、阈值和降级路径。"
       ],
       "company_tags": [
         "国内互联网",
@@ -349,11 +331,11 @@
       "trust_level": "medium",
       "status": "needs_review",
       "version": 1,
-      "content_hash": "sha256:e50a5a2f075cbd468f10966bb90d4b17a715b91c4a64f7a6f0f15307a2732445"
+      "content_hash": "sha256:b00fecfcbe47f6bbf6578f21528a728b8c6e5c7eef03f52a3d21d1d9133a7959"
     },
     {
       "question_id": "q007",
-      "question_text": "在国内企业的Agent 任务拆解场景中，业务方要求你负责一个可上线的 Agent 方案。请结合输入、状态、工具和验证环节说明你的设计取舍，并指出如何用数据证明方案满足约束。",
+      "question_text": "法务检索Agent面对十万份合同，单租户延迟SLA为2秒。请选择切分、召回和重排策略并说明边界。",
       "role": "ai_agent_engineer",
       "role_version": "2026-H2",
       "dimension_id": "role_dim_02",
@@ -363,7 +345,7 @@
         "故障恢复"
       ],
       "question_mode": "foundation",
-      "business_constraint": "必须隔离租户数据；单次请求成本受预算约束；高风险写操作需要人工确认。",
+      "business_constraint": "十万合同、单租户SLA 2秒",
       "dimension_terms": [
         "role_dim_02",
         "业务建模",
@@ -376,18 +358,15 @@
       ],
       "difficulty": "intermediate",
       "expected_signals": [
-        "明确业务目标与成功指标",
-        "说明失败路径和验证方法",
-        "给出安全与成本边界"
+        "最低充分条件：围绕十万合同、单租户SLA 2秒给出可执行方案和验收；加分表现：量化监控或实验；限制项：不越权且说明失败边界。"
       ],
       "critical_errors": [
-        "只描述模型调用而无系统状态",
-        "把面经答案当作事实照搬",
-        "忽略权限、租户隔离或回滚"
+        "忽略十万合同、单租户SLA 2秒",
+        "只描述模型调用而没有状态、证据或回滚",
+        "把来源摘要当作候选人事实"
       ],
       "follow_up_seeds": [
-        "如果线上指标下降如何定位？",
-        "若工具返回不确定结果如何避免重复副作用？"
+        "若回答未覆盖十万合同、单租户SLA 2秒，请追问具体证据、阈值和降级路径。"
       ],
       "company_tags": [
         "国内互联网",
@@ -407,11 +386,11 @@
       "trust_level": "medium",
       "status": "needs_review",
       "version": 1,
-      "content_hash": "sha256:b1edc8e60289692bb28a2af8b8e76815ab92be554253457166f8762c317dda36"
+      "content_hash": "sha256:c8f8b669526d53395bf69cc063faaab07421d39a6c051d651162d2ccd111a7ea"
     },
     {
       "question_id": "q008",
-      "question_text": "在国内企业的RAG 召回与重排场景中，业务方要求你负责一个可上线的 Agent 方案。请结合输入、状态、工具和验证环节说明你的设计取舍，并指出如何用数据证明方案满足约束。",
+      "question_text": "线上RAG发生引用过期条款事故，索引更新时间晚于合同生效日。请设计修复、回滚与防复发检查。",
       "role": "ai_agent_engineer",
       "role_version": "2026-H2",
       "dimension_id": "role_dim_02",
@@ -421,7 +400,7 @@
         "故障恢复"
       ],
       "question_mode": "scenario",
-      "business_constraint": "必须隔离租户数据；单次请求成本受预算约束；高风险写操作需要人工确认。",
+      "business_constraint": "合同生效与索引更新时间冲突",
       "dimension_terms": [
         "role_dim_02",
         "业务建模",
@@ -434,18 +413,15 @@
       ],
       "difficulty": "intermediate",
       "expected_signals": [
-        "明确业务目标与成功指标",
-        "说明失败路径和验证方法",
-        "给出安全与成本边界"
+        "最低充分条件：围绕合同生效与索引更新时间冲突给出可执行方案和验收；加分表现：量化监控或实验；限制项：不越权且说明失败边界。"
       ],
       "critical_errors": [
-        "只描述模型调用而无系统状态",
-        "把面经答案当作事实照搬",
-        "忽略权限、租户隔离或回滚"
+        "忽略合同生效与索引更新时间冲突",
+        "只描述模型调用而没有状态、证据或回滚",
+        "把来源摘要当作候选人事实"
       ],
       "follow_up_seeds": [
-        "如果线上指标下降如何定位？",
-        "若工具返回不确定结果如何避免重复副作用？"
+        "若回答未覆盖合同生效与索引更新时间冲突，请追问具体证据、阈值和降级路径。"
       ],
       "company_tags": [
         "国内互联网",
@@ -465,11 +441,11 @@
       "trust_level": "medium",
       "status": "needs_review",
       "version": 1,
-      "content_hash": "sha256:199cd3320b1714adce6dc6d9c97351fca92d36579676a3ed3b9174a43a38a657"
+      "content_hash": "sha256:3a58f34e05e4b4771f0ed662bfbd1f94cec245cf56cc2c5a9a0599334228da8d"
     },
     {
       "question_id": "q009",
-      "question_text": "在国内企业的AI Coding 协作交付场景中，业务方要求你负责一个可上线的 Agent 方案。请结合输入、状态、工具和验证环节说明你的设计取舍，并指出如何用数据证明方案满足约束。",
+      "question_text": "候选人项目宣称Memory降低了重复询问。请说明记忆写入触发证据、删除机制和可复现实验。",
       "role": "ai_agent_engineer",
       "role_version": "2026-H2",
       "dimension_id": "role_dim_02",
@@ -479,7 +455,7 @@
         "故障恢复"
       ],
       "question_mode": "project_deep_dive",
-      "business_constraint": "必须隔离租户数据；单次请求成本受预算约束；高风险写操作需要人工确认。",
+      "business_constraint": "记忆删除与重复询问实验",
       "dimension_terms": [
         "role_dim_02",
         "业务建模",
@@ -492,18 +468,15 @@
       ],
       "difficulty": "intermediate",
       "expected_signals": [
-        "明确业务目标与成功指标",
-        "说明失败路径和验证方法",
-        "给出安全与成本边界"
+        "最低充分条件：围绕记忆删除与重复询问实验给出可执行方案和验收；加分表现：量化监控或实验；限制项：不越权且说明失败边界。"
       ],
       "critical_errors": [
-        "只描述模型调用而无系统状态",
-        "把面经答案当作事实照搬",
-        "忽略权限、租户隔离或回滚"
+        "忽略记忆删除与重复询问实验",
+        "只描述模型调用而没有状态、证据或回滚",
+        "把来源摘要当作候选人事实"
       ],
       "follow_up_seeds": [
-        "如果线上指标下降如何定位？",
-        "若工具返回不确定结果如何避免重复副作用？"
+        "若回答未覆盖记忆删除与重复询问实验，请追问具体证据、阈值和降级路径。"
       ],
       "company_tags": [
         "国内互联网",
@@ -523,11 +496,11 @@
       "trust_level": "medium",
       "status": "needs_review",
       "version": 1,
-      "content_hash": "sha256:6154b8b884ec1157c5a394527f4dc4bd106f6e0530aa414f89ad3f86dff98f55"
+      "content_hash": "sha256:8d6fee86b868ef2d451a34aacf1f938174e35e66801754601c7f1a17b5a4158d"
     },
     {
       "question_id": "q010",
-      "question_text": "在国内企业的安全审计与人工接管场景中，业务方要求你负责一个可上线的 Agent 方案。请结合输入、状态、工具和验证环节说明你的设计取舍，并指出如何用数据证明方案满足约束。",
+      "question_text": "模型把客户拒绝意图误判为确认并关闭工单。请设计意图不确定时的安全状态机和人工接管点。",
       "role": "ai_agent_engineer",
       "role_version": "2026-H2",
       "dimension_id": "role_dim_02",
@@ -537,7 +510,7 @@
         "故障恢复"
       ],
       "question_mode": "scenario",
-      "business_constraint": "必须隔离租户数据；单次请求成本受预算约束；高风险写操作需要人工确认。",
+      "business_constraint": "拒绝意图误判造成工单副作用",
       "dimension_terms": [
         "role_dim_02",
         "业务建模",
@@ -550,18 +523,15 @@
       ],
       "difficulty": "intermediate",
       "expected_signals": [
-        "明确业务目标与成功指标",
-        "说明失败路径和验证方法",
-        "给出安全与成本边界"
+        "最低充分条件：围绕拒绝意图误判造成工单副作用给出可执行方案和验收；加分表现：量化监控或实验；限制项：不越权且说明失败边界。"
       ],
       "critical_errors": [
-        "只描述模型调用而无系统状态",
-        "把面经答案当作事实照搬",
-        "忽略权限、租户隔离或回滚"
+        "忽略拒绝意图误判造成工单副作用",
+        "只描述模型调用而没有状态、证据或回滚",
+        "把来源摘要当作候选人事实"
       ],
       "follow_up_seeds": [
-        "如果线上指标下降如何定位？",
-        "若工具返回不确定结果如何避免重复副作用？"
+        "若回答未覆盖拒绝意图误判造成工单副作用，请追问具体证据、阈值和降级路径。"
       ],
       "company_tags": [
         "国内互联网",
@@ -581,11 +551,11 @@
       "trust_level": "medium",
       "status": "needs_review",
       "version": 1,
-      "content_hash": "sha256:4ec81e012c6690b10e0355a295f931f055c055bd261c2a5adda2b9ca12de2813"
+      "content_hash": "sha256:ff18ca6ce1a5846b4cacea67f65edb7d1fd7fef71ca80b79dd117329becdb426"
     },
     {
       "question_id": "q011",
-      "question_text": "在国内企业的上下文压缩与权限边界场景中，业务方要求你负责一个可上线的 Agent 方案。请结合输入、状态、工具和验证环节说明你的设计取舍，并指出如何用数据证明方案满足约束。",
+      "question_text": "你要为客服Agent增加跨轮追问，上下文成本上限每会话0.03元。请给出缓存、摘要和降级组合。",
       "role": "ai_agent_engineer",
       "role_version": "2026-H2",
       "dimension_id": "role_dim_02",
@@ -595,7 +565,7 @@
         "故障恢复"
       ],
       "question_mode": "follow_up",
-      "business_constraint": "必须隔离租户数据；单次请求成本受预算约束；高风险写操作需要人工确认。",
+      "business_constraint": "每会话成本0.03元",
       "dimension_terms": [
         "role_dim_02",
         "业务建模",
@@ -608,18 +578,15 @@
       ],
       "difficulty": "intermediate",
       "expected_signals": [
-        "明确业务目标与成功指标",
-        "说明失败路径和验证方法",
-        "给出安全与成本边界"
+        "最低充分条件：围绕每会话成本0.03元给出可执行方案和验收；加分表现：量化监控或实验；限制项：不越权且说明失败边界。"
       ],
       "critical_errors": [
-        "只描述模型调用而无系统状态",
-        "把面经答案当作事实照搬",
-        "忽略权限、租户隔离或回滚"
+        "忽略每会话成本0.03元",
+        "只描述模型调用而没有状态、证据或回滚",
+        "把来源摘要当作候选人事实"
       ],
       "follow_up_seeds": [
-        "如果线上指标下降如何定位？",
-        "若工具返回不确定结果如何避免重复副作用？"
+        "若回答未覆盖每会话成本0.03元，请追问具体证据、阈值和降级路径。"
       ],
       "company_tags": [
         "国内互联网",
@@ -639,11 +606,11 @@
       "trust_level": "medium",
       "status": "needs_review",
       "version": 1,
-      "content_hash": "sha256:38c28f3742f6225ef9c35f48f46c9093cb2cc375fcbc9045c3e7d5f56bbcb08b"
+      "content_hash": "sha256:1f30fdd640073538a85327e8c99da79e4fe2e1e38fbb5a046f36ac85161cc680"
     },
     {
       "question_id": "q012",
-      "question_text": "在国内企业的多租户知识库检索场景中，业务方要求你负责一个可上线的 Agent 方案。请结合输入、状态、工具和验证环节说明你的设计取舍，并指出如何用数据证明方案满足约束。",
+      "question_text": "数据平台Agent从自然语言生成查询，数据规模五百亿行。请说明权限注入、SQL验证和超时反馈。",
       "role": "ai_agent_engineer",
       "role_version": "2026-H2",
       "dimension_id": "role_dim_03",
@@ -653,7 +620,7 @@
         "故障恢复"
       ],
       "question_mode": "foundation",
-      "business_constraint": "必须隔离租户数据；单次请求成本受预算约束；高风险写操作需要人工确认。",
+      "business_constraint": "五百亿行查询与权限",
       "dimension_terms": [
         "role_dim_03",
         "业务建模",
@@ -666,18 +633,15 @@
       ],
       "difficulty": "intermediate",
       "expected_signals": [
-        "明确业务目标与成功指标",
-        "说明失败路径和验证方法",
-        "给出安全与成本边界"
+        "最低充分条件：围绕五百亿行查询与权限给出可执行方案和验收；加分表现：量化监控或实验；限制项：不越权且说明失败边界。"
       ],
       "critical_errors": [
-        "只描述模型调用而无系统状态",
-        "把面经答案当作事实照搬",
-        "忽略权限、租户隔离或回滚"
+        "忽略五百亿行查询与权限",
+        "只描述模型调用而没有状态、证据或回滚",
+        "把来源摘要当作候选人事实"
       ],
       "follow_up_seeds": [
-        "如果线上指标下降如何定位？",
-        "若工具返回不确定结果如何避免重复副作用？"
+        "若回答未覆盖五百亿行查询与权限，请追问具体证据、阈值和降级路径。"
       ],
       "company_tags": [
         "国内互联网",
@@ -697,11 +661,11 @@
       "trust_level": "medium",
       "status": "needs_review",
       "version": 1,
-      "content_hash": "sha256:3a1b03a01274249b218566d8cb3a7fc16b05add59a96b346d9d610c7b5655031"
+      "content_hash": "sha256:386a783146193e075220ce3bb3b1646dad5f014d5a2157a8a17035611908e2c4"
     },
     {
       "question_id": "q013",
-      "question_text": "在国内企业的工具调用失败恢复场景中，业务方要求你负责一个可上线的 Agent 方案。请结合输入、状态、工具和验证环节说明你的设计取舍，并指出如何用数据证明方案满足约束。",
+      "question_text": "研发助手工具从20个扩展到200个后选择准确率下降。请设计分层发现、参数校验和评测集。",
       "role": "ai_agent_engineer",
       "role_version": "2026-H2",
       "dimension_id": "role_dim_03",
@@ -711,7 +675,7 @@
         "故障恢复"
       ],
       "question_mode": "scenario",
-      "business_constraint": "必须隔离租户数据；单次请求成本受预算约束；高风险写操作需要人工确认。",
+      "business_constraint": "20到200工具的选择退化",
       "dimension_terms": [
         "role_dim_03",
         "业务建模",
@@ -724,18 +688,15 @@
       ],
       "difficulty": "intermediate",
       "expected_signals": [
-        "明确业务目标与成功指标",
-        "说明失败路径和验证方法",
-        "给出安全与成本边界"
+        "最低充分条件：围绕20到200工具的选择退化给出可执行方案和验收；加分表现：量化监控或实验；限制项：不越权且说明失败边界。"
       ],
       "critical_errors": [
-        "只描述模型调用而无系统状态",
-        "把面经答案当作事实照搬",
-        "忽略权限、租户隔离或回滚"
+        "忽略20到200工具的选择退化",
+        "只描述模型调用而没有状态、证据或回滚",
+        "把来源摘要当作候选人事实"
       ],
       "follow_up_seeds": [
-        "如果线上指标下降如何定位？",
-        "若工具返回不确定结果如何避免重复副作用？"
+        "若回答未覆盖20到200工具的选择退化，请追问具体证据、阈值和降级路径。"
       ],
       "company_tags": [
         "国内互联网",
@@ -755,11 +716,11 @@
       "trust_level": "medium",
       "status": "needs_review",
       "version": 1,
-      "content_hash": "sha256:37d22035840fc2e61314f90442ab1e8e2b4a362c9f9a1a56f16c00a9f18dd57d"
+      "content_hash": "sha256:ea58f748d39eb8d8c655b4456e859ee31e02ae0c236c0dc7c07dc35a5a8912d6"
     },
     {
       "question_id": "q014",
-      "question_text": "在国内企业的离线评测集设计场景中，业务方要求你负责一个可上线的 Agent 方案。请结合输入、状态、工具和验证环节说明你的设计取舍，并指出如何用数据证明方案满足约束。",
+      "question_text": "为十万文档知识库设计安全检索架构：请说明提示词注入隔离、结果标记、重排和生成前验证的组件边界。",
       "role": "ai_agent_engineer",
       "role_version": "2026-H2",
       "dimension_id": "role_dim_03",
@@ -769,7 +730,7 @@
         "故障恢复"
       ],
       "question_mode": "system_design",
-      "business_constraint": "必须隔离租户数据；单次请求成本受预算约束；高风险写操作需要人工确认。",
+      "business_constraint": "十万文档与提示词注入风险",
       "dimension_terms": [
         "role_dim_03",
         "业务建模",
@@ -782,18 +743,15 @@
       ],
       "difficulty": "advanced",
       "expected_signals": [
-        "明确业务目标与成功指标",
-        "说明失败路径和验证方法",
-        "给出安全与成本边界"
+        "最低充分条件：围绕十万文档与提示词注入风险给出可执行方案和验收；加分表现：量化监控或实验；限制项：不越权且说明失败边界。"
       ],
       "critical_errors": [
-        "只描述模型调用而无系统状态",
-        "把面经答案当作事实照搬",
-        "忽略权限、租户隔离或回滚"
+        "忽略十万文档与提示词注入风险",
+        "只描述模型调用而没有状态、证据或回滚",
+        "把来源摘要当作候选人事实"
       ],
       "follow_up_seeds": [
-        "如果线上指标下降如何定位？",
-        "若工具返回不确定结果如何避免重复副作用？"
+        "若回答未覆盖十万文档与提示词注入风险，请追问具体证据、阈值和降级路径。"
       ],
       "company_tags": [
         "国内互联网",
@@ -813,11 +771,11 @@
       "trust_level": "medium",
       "status": "needs_review",
       "version": 1,
-      "content_hash": "sha256:a06afb7d96eac7d607088d69fa0f3b4772602e418eb539c864938ab9abb7425a"
+      "content_hash": "sha256:21822ccb6b96e615a8853fe005cea265c0ccec65181e165e8df2323bdac6ae54"
     },
     {
       "question_id": "q015",
-      "question_text": "在国内企业的模型成本与延迟预算场景中，业务方要求你负责一个可上线的 Agent 方案。请结合输入、状态、工具和验证环节说明你的设计取舍，并指出如何用数据证明方案满足约束。",
+      "question_text": "请在已有Python服务中实现工具调用重试：给定接口、幂等键和失败fixture，说明输入输出测试、回归命令、AI代码审查与交付标准。",
       "role": "ai_agent_engineer",
       "role_version": "2026-H2",
       "dimension_id": "role_dim_03",
@@ -827,7 +785,7 @@
         "故障恢复"
       ],
       "question_mode": "coding",
-      "business_constraint": "必须隔离租户数据；单次请求成本受预算约束；高风险写操作需要人工确认。",
+      "business_constraint": "幂等重试与失败fixture",
       "dimension_terms": [
         "role_dim_03",
         "业务建模",
@@ -840,18 +798,15 @@
       ],
       "difficulty": "advanced",
       "expected_signals": [
-        "明确业务目标与成功指标",
-        "说明失败路径和验证方法",
-        "给出安全与成本边界"
+        "最低充分条件：围绕幂等重试与失败fixture给出可执行方案和验收；加分表现：量化监控或实验；限制项：不越权且说明失败边界。"
       ],
       "critical_errors": [
-        "只描述模型调用而无系统状态",
-        "把面经答案当作事实照搬",
-        "忽略权限、租户隔离或回滚"
+        "忽略幂等重试与失败fixture",
+        "只描述模型调用而没有状态、证据或回滚",
+        "把来源摘要当作候选人事实"
       ],
       "follow_up_seeds": [
-        "如果线上指标下降如何定位？",
-        "若工具返回不确定结果如何避免重复副作用？"
+        "若回答未覆盖幂等重试与失败fixture，请追问具体证据、阈值和降级路径。"
       ],
       "company_tags": [
         "国内互联网",
@@ -871,11 +826,11 @@
       "trust_level": "medium",
       "status": "needs_review",
       "version": 1,
-      "content_hash": "sha256:6fa209fe04df10fe42a63a4056a5e7d156d71b75a81e8f68f7b8ea1e86fdedac"
+      "content_hash": "sha256:9b10a6a3ca98ea6385a3022b6ac50e164f808a56007fb40fe240a01f9cd33268"
     },
     {
       "question_id": "q016",
-      "question_text": "在国内企业的Memory 生命周期场景中，业务方要求你负责一个可上线的 Agent 方案。请结合输入、状态、工具和验证环节说明你的设计取舍，并指出如何用数据证明方案满足约束。",
+      "question_text": "上一轮你只说增加重试。若下游接口已执行但响应超时，请补充幂等证据、查询方式和停止条件。",
       "role": "ai_agent_engineer",
       "role_version": "2026-H2",
       "dimension_id": "role_dim_03",
@@ -885,7 +840,7 @@
         "故障恢复"
       ],
       "question_mode": "follow_up",
-      "business_constraint": "必须隔离租户数据；单次请求成本受预算约束；高风险写操作需要人工确认。",
+      "business_constraint": "已执行但超时且最多停止",
       "dimension_terms": [
         "role_dim_03",
         "业务建模",
@@ -898,18 +853,15 @@
       ],
       "difficulty": "intermediate",
       "expected_signals": [
-        "明确业务目标与成功指标",
-        "说明失败路径和验证方法",
-        "给出安全与成本边界"
+        "最低充分条件：围绕已执行但超时且最多停止给出可执行方案和验收；加分表现：量化监控或实验；限制项：不越权且说明失败边界。"
       ],
       "critical_errors": [
-        "只描述模型调用而无系统状态",
-        "把面经答案当作事实照搬",
-        "忽略权限、租户隔离或回滚"
+        "忽略已执行但超时且最多停止",
+        "只描述模型调用而没有状态、证据或回滚",
+        "把来源摘要当作候选人事实"
       ],
       "follow_up_seeds": [
-        "如果线上指标下降如何定位？",
-        "若工具返回不确定结果如何避免重复副作用？"
+        "若回答未覆盖已执行但超时且最多停止，请追问具体证据、阈值和降级路径。"
       ],
       "company_tags": [
         "国内互联网",
@@ -929,11 +881,11 @@
       "trust_level": "medium",
       "status": "needs_review",
       "version": 1,
-      "content_hash": "sha256:af07e9e81bfccf883bba5b8b12af05ba43f0003790932be46d8dcf4c3677bfea"
+      "content_hash": "sha256:51373a9a221b8dc988717b64fa6f57e05ae4ae3f8c4210cc720a36b13adfe5fe"
     },
     {
       "question_id": "q017",
-      "question_text": "在国内企业的Agent 任务拆解场景中，业务方要求你负责一个可上线的 Agent 方案。请结合输入、状态、工具和验证环节说明你的设计取舍，并指出如何用数据证明方案满足约束。",
+      "question_text": "企业知识问答项目支持中英混合文档和表格。请拆解解析、索引、召回与答案引用的责任边界。",
       "role": "ai_agent_engineer",
       "role_version": "2026-H2",
       "dimension_id": "role_dim_03",
@@ -943,7 +895,7 @@
         "故障恢复"
       ],
       "question_mode": "project_deep_dive",
-      "business_constraint": "必须隔离租户数据；单次请求成本受预算约束；高风险写操作需要人工确认。",
+      "business_constraint": "中英混合文档和表格",
       "dimension_terms": [
         "role_dim_03",
         "业务建模",
@@ -956,18 +908,15 @@
       ],
       "difficulty": "intermediate",
       "expected_signals": [
-        "明确业务目标与成功指标",
-        "说明失败路径和验证方法",
-        "给出安全与成本边界"
+        "最低充分条件：围绕中英混合文档和表格给出可执行方案和验收；加分表现：量化监控或实验；限制项：不越权且说明失败边界。"
       ],
       "critical_errors": [
-        "只描述模型调用而无系统状态",
-        "把面经答案当作事实照搬",
-        "忽略权限、租户隔离或回滚"
+        "忽略中英混合文档和表格",
+        "只描述模型调用而没有状态、证据或回滚",
+        "把来源摘要当作候选人事实"
       ],
       "follow_up_seeds": [
-        "如果线上指标下降如何定位？",
-        "若工具返回不确定结果如何避免重复副作用？"
+        "若回答未覆盖中英混合文档和表格，请追问具体证据、阈值和降级路径。"
       ],
       "company_tags": [
         "国内互联网",
@@ -987,11 +936,11 @@
       "trust_level": "medium",
       "status": "needs_review",
       "version": 1,
-      "content_hash": "sha256:65044c214ca4f98ea9c2dc5bf6746b99baf8219dbd5f7ccf08cb92de70a785e7"
+      "content_hash": "sha256:610c53453627f561e536dabab366fe7e3bad7ed1bc26618aa0fa7768314456d9"
     },
     {
       "question_id": "q018",
-      "question_text": "在国内企业的RAG 召回与重排场景中，业务方要求你负责一个可上线的 Agent 方案。请结合输入、状态、工具和验证环节说明你的设计取舍，并指出如何用数据证明方案满足约束。",
+      "question_text": "候选人项目将多个模型统一成一个网关。请用请求追踪、成本账单和故障样本证明适配层降低了风险。",
       "role": "ai_agent_engineer",
       "role_version": "2026-H2",
       "dimension_id": "role_dim_04",
@@ -1001,7 +950,7 @@
         "故障恢复"
       ],
       "question_mode": "project_deep_dive",
-      "business_constraint": "必须隔离租户数据；单次请求成本受预算约束；高风险写操作需要人工确认。",
+      "business_constraint": "多模型网关成本与故障",
       "dimension_terms": [
         "role_dim_04",
         "业务建模",
@@ -1014,18 +963,15 @@
       ],
       "difficulty": "intermediate",
       "expected_signals": [
-        "明确业务目标与成功指标",
-        "说明失败路径和验证方法",
-        "给出安全与成本边界"
+        "最低充分条件：围绕多模型网关成本与故障给出可执行方案和验收；加分表现：量化监控或实验；限制项：不越权且说明失败边界。"
       ],
       "critical_errors": [
-        "只描述模型调用而无系统状态",
-        "把面经答案当作事实照搬",
-        "忽略权限、租户隔离或回滚"
+        "忽略多模型网关成本与故障",
+        "只描述模型调用而没有状态、证据或回滚",
+        "把来源摘要当作候选人事实"
       ],
       "follow_up_seeds": [
-        "如果线上指标下降如何定位？",
-        "若工具返回不确定结果如何避免重复副作用？"
+        "若回答未覆盖多模型网关成本与故障，请追问具体证据、阈值和降级路径。"
       ],
       "company_tags": [
         "国内互联网",
@@ -1045,11 +991,11 @@
       "trust_level": "medium",
       "status": "needs_review",
       "version": 1,
-      "content_hash": "sha256:d6a0897bd34b335ffcf533627526c7fba970403ddc0044fade5b2ab5d58f490d"
+      "content_hash": "sha256:cb7d19005ed856daf07be91b8584623e950e588605bc64e4b49d6f85fe8f6a4f"
     },
     {
       "question_id": "q019",
-      "question_text": "在国内企业的AI Coding 协作交付场景中，业务方要求你负责一个可上线的 Agent 方案。请结合输入、状态、工具和验证环节说明你的设计取舍，并指出如何用数据证明方案满足约束。",
+      "question_text": "营销Agent工具调用链出现循环，平均步骤从4升到19。请设计循环检测、预算终止和人工接管策略。",
       "role": "ai_agent_engineer",
       "role_version": "2026-H2",
       "dimension_id": "role_dim_04",
@@ -1059,7 +1005,7 @@
         "故障恢复"
       ],
       "question_mode": "scenario",
-      "business_constraint": "必须隔离租户数据；单次请求成本受预算约束；高风险写操作需要人工确认。",
+      "business_constraint": "工具循环从4步升19步",
       "dimension_terms": [
         "role_dim_04",
         "业务建模",
@@ -1072,18 +1018,15 @@
       ],
       "difficulty": "intermediate",
       "expected_signals": [
-        "明确业务目标与成功指标",
-        "说明失败路径和验证方法",
-        "给出安全与成本边界"
+        "最低充分条件：围绕工具循环从4步升19步给出可执行方案和验收；加分表现：量化监控或实验；限制项：不越权且说明失败边界。"
       ],
       "critical_errors": [
-        "只描述模型调用而无系统状态",
-        "把面经答案当作事实照搬",
-        "忽略权限、租户隔离或回滚"
+        "忽略工具循环从4步升19步",
+        "只描述模型调用而没有状态、证据或回滚",
+        "把来源摘要当作候选人事实"
       ],
       "follow_up_seeds": [
-        "如果线上指标下降如何定位？",
-        "若工具返回不确定结果如何避免重复副作用？"
+        "若回答未覆盖工具循环从4步升19步，请追问具体证据、阈值和降级路径。"
       ],
       "company_tags": [
         "国内互联网",
@@ -1103,11 +1046,11 @@
       "trust_level": "medium",
       "status": "needs_review",
       "version": 1,
-      "content_hash": "sha256:9a79b12f8cda711410a130ded7a73b5f60e2b99562e1aa1dedda702a544e996e"
+      "content_hash": "sha256:d38d492e4d5c353e23dc7a2d96d41c11525cb4f1e5457e0ebbaf30869c5d83d7"
     },
     {
       "question_id": "q020",
-      "question_text": "在国内企业的安全审计与人工接管场景中，业务方要求你负责一个可上线的 Agent 方案。请结合输入、状态、工具和验证环节说明你的设计取舍，并指出如何用数据证明方案满足约束。",
+      "question_text": "请在仓库中补齐RAG评测命令：输入query和gold证据fixture，输出Recall@k与引用正确率，并说明AI协作改动的测试、回归和审查。",
       "role": "ai_agent_engineer",
       "role_version": "2026-H2",
       "dimension_id": "role_dim_04",
@@ -1117,7 +1060,7 @@
         "故障恢复"
       ],
       "question_mode": "coding",
-      "business_constraint": "必须隔离租户数据；单次请求成本受预算约束；高风险写操作需要人工确认。",
+      "business_constraint": "gold证据fixture与Recall@k",
       "dimension_terms": [
         "role_dim_04",
         "业务建模",
@@ -1130,18 +1073,15 @@
       ],
       "difficulty": "advanced",
       "expected_signals": [
-        "明确业务目标与成功指标",
-        "说明失败路径和验证方法",
-        "给出安全与成本边界"
+        "最低充分条件：围绕gold证据fixture与Recall@k给出可执行方案和验收；加分表现：量化监控或实验；限制项：不越权且说明失败边界。"
       ],
       "critical_errors": [
-        "只描述模型调用而无系统状态",
-        "把面经答案当作事实照搬",
-        "忽略权限、租户隔离或回滚"
+        "忽略gold证据fixture与Recall@k",
+        "只描述模型调用而没有状态、证据或回滚",
+        "把来源摘要当作候选人事实"
       ],
       "follow_up_seeds": [
-        "如果线上指标下降如何定位？",
-        "若工具返回不确定结果如何避免重复副作用？"
+        "若回答未覆盖gold证据fixture与Recall@k，请追问具体证据、阈值和降级路径。"
       ],
       "company_tags": [
         "国内互联网",
@@ -1161,11 +1101,11 @@
       "trust_level": "medium",
       "status": "needs_review",
       "version": 1,
-      "content_hash": "sha256:6d3d708049cf7bdbc1630eebaf20c60fabb950b1e55b082d56d0aaaa2ec29be5"
+      "content_hash": "sha256:97adb23ae7c8f144f8f991bf5d4d7b5d06ea114a3bbf67699e49519abd9918c5"
     },
     {
       "question_id": "q021",
-      "question_text": "在国内企业的上下文压缩与权限边界场景中，业务方要求你负责一个可上线的 Agent 方案。请结合输入、状态、工具和验证环节说明你的设计取舍，并指出如何用数据证明方案满足约束。",
+      "question_text": "上一轮你说参数错误可重试。现在业务要求不能重试超过一次，请设计结构化错误、澄清问题与降级响应。",
       "role": "ai_agent_engineer",
       "role_version": "2026-H2",
       "dimension_id": "role_dim_04",
@@ -1175,7 +1115,7 @@
         "故障恢复"
       ],
       "question_mode": "follow_up",
-      "business_constraint": "必须隔离租户数据；单次请求成本受预算约束；高风险写操作需要人工确认。",
+      "business_constraint": "参数错误最多一次重试",
       "dimension_terms": [
         "role_dim_04",
         "业务建模",
@@ -1188,18 +1128,15 @@
       ],
       "difficulty": "intermediate",
       "expected_signals": [
-        "明确业务目标与成功指标",
-        "说明失败路径和验证方法",
-        "给出安全与成本边界"
+        "最低充分条件：围绕参数错误最多一次重试给出可执行方案和验收；加分表现：量化监控或实验；限制项：不越权且说明失败边界。"
       ],
       "critical_errors": [
-        "只描述模型调用而无系统状态",
-        "把面经答案当作事实照搬",
-        "忽略权限、租户隔离或回滚"
+        "忽略参数错误最多一次重试",
+        "只描述模型调用而没有状态、证据或回滚",
+        "把来源摘要当作候选人事实"
       ],
       "follow_up_seeds": [
-        "如果线上指标下降如何定位？",
-        "若工具返回不确定结果如何避免重复副作用？"
+        "若回答未覆盖参数错误最多一次重试，请追问具体证据、阈值和降级路径。"
       ],
       "company_tags": [
         "国内互联网",
@@ -1219,11 +1156,11 @@
       "trust_level": "medium",
       "status": "needs_review",
       "version": 1,
-      "content_hash": "sha256:7877c560b83a5b4125d8b728fae4bdb39d428f1ed46b1831e9c6f344e7e36636"
+      "content_hash": "sha256:b4089ca35cc6aefa8e457b95d5afdef2e30c93673dee0b674f013e19ccd7b23c"
     },
     {
       "question_id": "q022",
-      "question_text": "在国内企业的多租户知识库检索场景中，业务方要求你负责一个可上线的 Agent 方案。请结合输入、状态、工具和验证环节说明你的设计取舍，并指出如何用数据证明方案满足约束。",
+      "question_text": "客服Agent可读取用户画像但不得暴露手机号和地址。请制定字段级脱敏、审计日志和回答验收规则。",
       "role": "ai_agent_engineer",
       "role_version": "2026-H2",
       "dimension_id": "role_dim_05",
@@ -1233,7 +1170,7 @@
         "故障恢复"
       ],
       "question_mode": "foundation",
-      "business_constraint": "必须隔离租户数据；单次请求成本受预算约束；高风险写操作需要人工确认。",
+      "business_constraint": "画像字段脱敏、手机号地址禁曝",
       "dimension_terms": [
         "role_dim_05",
         "业务建模",
@@ -1246,18 +1183,15 @@
       ],
       "difficulty": "intermediate",
       "expected_signals": [
-        "明确业务目标与成功指标",
-        "说明失败路径和验证方法",
-        "给出安全与成本边界"
+        "最低充分条件：围绕画像字段脱敏、手机号地址禁曝给出可执行方案和验收；加分表现：量化监控或实验；限制项：不越权且说明失败边界。"
       ],
       "critical_errors": [
-        "只描述模型调用而无系统状态",
-        "把面经答案当作事实照搬",
-        "忽略权限、租户隔离或回滚"
+        "忽略画像字段脱敏、手机号地址禁曝",
+        "只描述模型调用而没有状态、证据或回滚",
+        "把来源摘要当作候选人事实"
       ],
       "follow_up_seeds": [
-        "如果线上指标下降如何定位？",
-        "若工具返回不确定结果如何避免重复副作用？"
+        "若回答未覆盖画像字段脱敏、手机号地址禁曝，请追问具体证据、阈值和降级路径。"
       ],
       "company_tags": [
         "国内互联网",
@@ -1277,11 +1211,11 @@
       "trust_level": "medium",
       "status": "needs_review",
       "version": 1,
-      "content_hash": "sha256:da8db0c40e625f3631c51cc7f57ebf9d15ea7283442560adf36ec47de4cdacd5"
+      "content_hash": "sha256:e4054f5b9264b6657c7e20648bdf06dc3233a0cdcbdd659721680f06c2a2a76c"
     },
     {
       "question_id": "q023",
-      "question_text": "在国内企业的工具调用失败恢复场景中，业务方要求你负责一个可上线的 Agent 方案。请结合输入、状态、工具和验证环节说明你的设计取舍，并指出如何用数据证明方案满足约束。",
+      "question_text": "华东Agent写入延迟突增且华南读取出现旧数据，峰值每秒3000请求、RTO 5分钟。请设计事故路由、一致性降级和成本权衡。",
       "role": "ai_agent_engineer",
       "role_version": "2026-H2",
       "dimension_id": "role_dim_05",
@@ -1291,7 +1225,7 @@
         "故障恢复"
       ],
       "question_mode": "scenario",
-      "business_constraint": "必须隔离租户数据；单次请求成本受预算约束；高风险写操作需要人工确认。",
+      "business_constraint": "3000RPS、RTO 5分钟、跨区旧读",
       "dimension_terms": [
         "role_dim_05",
         "业务建模",
@@ -1304,18 +1238,15 @@
       ],
       "difficulty": "intermediate",
       "expected_signals": [
-        "明确业务目标与成功指标",
-        "说明失败路径和验证方法",
-        "给出安全与成本边界"
+        "最低充分条件：围绕3000RPS、RTO 5分钟、跨区旧读给出可执行方案和验收；加分表现：量化监控或实验；限制项：不越权且说明失败边界。"
       ],
       "critical_errors": [
-        "只描述模型调用而无系统状态",
-        "把面经答案当作事实照搬",
-        "忽略权限、租户隔离或回滚"
+        "忽略3000RPS、RTO 5分钟、跨区旧读",
+        "只描述模型调用而没有状态、证据或回滚",
+        "把来源摘要当作候选人事实"
       ],
       "follow_up_seeds": [
-        "如果线上指标下降如何定位？",
-        "若工具返回不确定结果如何避免重复副作用？"
+        "若回答未覆盖3000RPS、RTO 5分钟、跨区旧读，请追问具体证据、阈值和降级路径。"
       ],
       "company_tags": [
         "国内互联网",
@@ -1335,11 +1266,11 @@
       "trust_level": "medium",
       "status": "needs_review",
       "version": 1,
-      "content_hash": "sha256:fa5dec2ef142b6d3c6a839efb446212e512f98287344f3b73cf7e9469a282057"
+      "content_hash": "sha256:eade927923174791a213dc8bc3c0d063c901a456fbcf0f48653e796ee189c7bd"
     },
     {
       "question_id": "q024",
-      "question_text": "在国内企业的离线评测集设计场景中，业务方要求你负责一个可上线的 Agent 方案。请结合输入、状态、工具和验证环节说明你的设计取舍，并指出如何用数据证明方案满足约束。",
+      "question_text": "请为推荐Agent设计线上架构：离线指标提升但线上转化下降时，如何接入分桶实验、漂移检测和反馈回流。",
       "role": "ai_agent_engineer",
       "role_version": "2026-H2",
       "dimension_id": "role_dim_05",
@@ -1349,7 +1280,7 @@
         "故障恢复"
       ],
       "question_mode": "system_design",
-      "business_constraint": "必须隔离租户数据；单次请求成本受预算约束；高风险写操作需要人工确认。",
+      "business_constraint": "转化下降与反馈漂移",
       "dimension_terms": [
         "role_dim_05",
         "业务建模",
@@ -1362,18 +1293,15 @@
       ],
       "difficulty": "advanced",
       "expected_signals": [
-        "明确业务目标与成功指标",
-        "说明失败路径和验证方法",
-        "给出安全与成本边界"
+        "最低充分条件：围绕转化下降与反馈漂移给出可执行方案和验收；加分表现：量化监控或实验；限制项：不越权且说明失败边界。"
       ],
       "critical_errors": [
-        "只描述模型调用而无系统状态",
-        "把面经答案当作事实照搬",
-        "忽略权限、租户隔离或回滚"
+        "忽略转化下降与反馈漂移",
+        "只描述模型调用而没有状态、证据或回滚",
+        "把来源摘要当作候选人事实"
       ],
       "follow_up_seeds": [
-        "如果线上指标下降如何定位？",
-        "若工具返回不确定结果如何避免重复副作用？"
+        "若回答未覆盖转化下降与反馈漂移，请追问具体证据、阈值和降级路径。"
       ],
       "company_tags": [
         "国内互联网",
@@ -1393,11 +1321,11 @@
       "trust_level": "medium",
       "status": "needs_review",
       "version": 1,
-      "content_hash": "sha256:6b73ae66193f32a982d020810a97e508dd9d57cb5be087f0120c3f4860673587"
+      "content_hash": "sha256:7c80c66d61ccce69466faf52cd55fb1c960bd32de95b06f91616b729eeeea39b"
     },
     {
       "question_id": "q025",
-      "question_text": "在国内企业的模型成本与延迟预算场景中，业务方要求你负责一个可上线的 Agent 方案。请结合输入、状态、工具和验证环节说明你的设计取舍，并指出如何用数据证明方案满足约束。",
+      "question_text": "上一轮你承诺所有回答都有来源。抽查发现三类问题没有证据，请改写承诺并设计可观测告警。",
       "role": "ai_agent_engineer",
       "role_version": "2026-H2",
       "dimension_id": "role_dim_05",
@@ -1407,7 +1335,7 @@
         "故障恢复"
       ],
       "question_mode": "scenario",
-      "business_constraint": "必须隔离租户数据；单次请求成本受预算约束；高风险写操作需要人工确认。",
+      "business_constraint": "无证据回答的承诺边界",
       "dimension_terms": [
         "role_dim_05",
         "业务建模",
@@ -1420,18 +1348,15 @@
       ],
       "difficulty": "intermediate",
       "expected_signals": [
-        "明确业务目标与成功指标",
-        "说明失败路径和验证方法",
-        "给出安全与成本边界"
+        "最低充分条件：围绕无证据回答的承诺边界给出可执行方案和验收；加分表现：量化监控或实验；限制项：不越权且说明失败边界。"
       ],
       "critical_errors": [
-        "只描述模型调用而无系统状态",
-        "把面经答案当作事实照搬",
-        "忽略权限、租户隔离或回滚"
+        "忽略无证据回答的承诺边界",
+        "只描述模型调用而没有状态、证据或回滚",
+        "把来源摘要当作候选人事实"
       ],
       "follow_up_seeds": [
-        "如果线上指标下降如何定位？",
-        "若工具返回不确定结果如何避免重复副作用？"
+        "若回答未覆盖无证据回答的承诺边界，请追问具体证据、阈值和降级路径。"
       ],
       "company_tags": [
         "国内互联网",
@@ -1451,11 +1376,11 @@
       "trust_level": "medium",
       "status": "needs_review",
       "version": 1,
-      "content_hash": "sha256:d5f7448ae65769d74663a456c55fb92e13232f98673852606ab68a9a47e2f765"
+      "content_hash": "sha256:b737fc1390d3148383e5734b51a490807d0091fde8cd9b64e47dbb2de13af8de"
     },
     {
       "question_id": "q026",
-      "question_text": "在国内企业的Memory 生命周期场景中，业务方要求你负责一个可上线的 Agent 方案。请结合输入、状态、工具和验证环节说明你的设计取舍，并指出如何用数据证明方案满足约束。",
+      "question_text": "候选人语音客服项目存在转写错别字，Agent据此执行退款。请用项目证据说明多模态不确定性、二次确认和风险指标。",
       "role": "ai_agent_engineer",
       "role_version": "2026-H2",
       "dimension_id": "role_dim_05",
@@ -1465,7 +1390,7 @@
         "故障恢复"
       ],
       "question_mode": "follow_up",
-      "business_constraint": "必须隔离租户数据；单次请求成本受预算约束；高风险写操作需要人工确认。",
+      "business_constraint": "转写错误导致退款",
       "dimension_terms": [
         "role_dim_05",
         "业务建模",
@@ -1478,18 +1403,15 @@
       ],
       "difficulty": "intermediate",
       "expected_signals": [
-        "明确业务目标与成功指标",
-        "说明失败路径和验证方法",
-        "给出安全与成本边界"
+        "最低充分条件：围绕转写错误导致退款给出可执行方案和验收；加分表现：量化监控或实验；限制项：不越权且说明失败边界。"
       ],
       "critical_errors": [
-        "只描述模型调用而无系统状态",
-        "把面经答案当作事实照搬",
-        "忽略权限、租户隔离或回滚"
+        "忽略转写错误导致退款",
+        "只描述模型调用而没有状态、证据或回滚",
+        "把来源摘要当作候选人事实"
       ],
       "follow_up_seeds": [
-        "如果线上指标下降如何定位？",
-        "若工具返回不确定结果如何避免重复副作用？"
+        "若回答未覆盖转写错误导致退款，请追问具体证据、阈值和降级路径。"
       ],
       "company_tags": [
         "国内互联网",
@@ -1509,11 +1431,11 @@
       "trust_level": "medium",
       "status": "needs_review",
       "version": 1,
-      "content_hash": "sha256:d17c219434f6169c20018af678e42857152075be0f0713784b87062735b91602"
+      "content_hash": "sha256:68ecd1a10ac3b12f05c9b07ff42032d06d82949e1703ffa46ecb3038139bc812"
     },
     {
       "question_id": "q027",
-      "question_text": "在国内企业的Agent 任务拆解场景中，业务方要求你负责一个可上线的 Agent 方案。请结合输入、状态、工具和验证环节说明你的设计取舍，并指出如何用数据证明方案满足约束。",
+      "question_text": "请在现有工具SDK实现超时恢复：提供伪代码接口、成功与失败fixture、输入输出断言、回归测试和AI代码审查清单。",
       "role": "ai_agent_engineer",
       "role_version": "2026-H2",
       "dimension_id": "role_dim_05",
@@ -1523,7 +1445,7 @@
         "故障恢复"
       ],
       "question_mode": "project_deep_dive",
-      "business_constraint": "必须隔离租户数据；单次请求成本受预算约束；高风险写操作需要人工确认。",
+      "business_constraint": "SDK超时恢复与fixture",
       "dimension_terms": [
         "role_dim_05",
         "业务建模",
@@ -1536,18 +1458,15 @@
       ],
       "difficulty": "intermediate",
       "expected_signals": [
-        "明确业务目标与成功指标",
-        "说明失败路径和验证方法",
-        "给出安全与成本边界"
+        "最低充分条件：围绕SDK超时恢复与fixture给出可执行方案和验收；加分表现：量化监控或实验；限制项：不越权且说明失败边界。"
       ],
       "critical_errors": [
-        "只描述模型调用而无系统状态",
-        "把面经答案当作事实照搬",
-        "忽略权限、租户隔离或回滚"
+        "忽略SDK超时恢复与fixture",
+        "只描述模型调用而没有状态、证据或回滚",
+        "把来源摘要当作候选人事实"
       ],
       "follow_up_seeds": [
-        "如果线上指标下降如何定位？",
-        "若工具返回不确定结果如何避免重复副作用？"
+        "若回答未覆盖SDK超时恢复与fixture，请追问具体证据、阈值和降级路径。"
       ],
       "company_tags": [
         "国内互联网",
@@ -1567,11 +1486,11 @@
       "trust_level": "medium",
       "status": "needs_review",
       "version": 1,
-      "content_hash": "sha256:198cc6900b4bd8e084cfd27f770b64c65f66dae2920b672638e441852d9f8211"
+      "content_hash": "sha256:ed40605b014f13e5478d7e54c0e5c142e8cff6ea115437e0aa5678249ea9382b"
     },
     {
       "question_id": "q028",
-      "question_text": "在国内企业的RAG 召回与重排场景中，业务方要求你负责一个可上线的 Agent 方案。请结合输入、状态、工具和验证环节说明你的设计取舍，并指出如何用数据证明方案满足约束。",
+      "question_text": "财务Agent解释月度成本异常，数据来自三套延迟不同的系统。请设计证据时间线、冲突处理和输出验收。",
       "role": "ai_agent_engineer",
       "role_version": "2026-H2",
       "dimension_id": "role_dim_06",
@@ -1581,7 +1500,7 @@
         "故障恢复"
       ],
       "question_mode": "coding",
-      "business_constraint": "必须隔离租户数据；单次请求成本受预算约束；高风险写操作需要人工确认。",
+      "business_constraint": "三套异步系统的成本证据",
       "dimension_terms": [
         "role_dim_06",
         "业务建模",
@@ -1594,18 +1513,15 @@
       ],
       "difficulty": "advanced",
       "expected_signals": [
-        "明确业务目标与成功指标",
-        "说明失败路径和验证方法",
-        "给出安全与成本边界"
+        "最低充分条件：围绕三套异步系统的成本证据给出可执行方案和验收；加分表现：量化监控或实验；限制项：不越权且说明失败边界。"
       ],
       "critical_errors": [
-        "只描述模型调用而无系统状态",
-        "把面经答案当作事实照搬",
-        "忽略权限、租户隔离或回滚"
+        "忽略三套异步系统的成本证据",
+        "只描述模型调用而没有状态、证据或回滚",
+        "把来源摘要当作候选人事实"
       ],
       "follow_up_seeds": [
-        "如果线上指标下降如何定位？",
-        "若工具返回不确定结果如何避免重复副作用？"
+        "若回答未覆盖三套异步系统的成本证据，请追问具体证据、阈值和降级路径。"
       ],
       "company_tags": [
         "国内互联网",
@@ -1625,11 +1541,11 @@
       "trust_level": "medium",
       "status": "needs_review",
       "version": 1,
-      "content_hash": "sha256:a7249d866bf1617c50fc42266e551a723e13c7a0e28a4f07dab46ba70023c39a"
+      "content_hash": "sha256:f13138a2216c25952239d0d76a7e7bcedef6c015f96e1af3ff51f5381b1890e6"
     },
     {
       "question_id": "q029",
-      "question_text": "在国内企业的AI Coding 协作交付场景中，业务方要求你负责一个可上线的 Agent 方案。请结合输入、状态、工具和验证环节说明你的设计取舍，并指出如何用数据证明方案满足约束。",
+      "question_text": "上一轮你选择多Agent协作。若子Agent返回矛盾结论，请给出仲裁证据、降级路径和人工追问。",
       "role": "ai_agent_engineer",
       "role_version": "2026-H2",
       "dimension_id": "role_dim_06",
@@ -1639,7 +1555,7 @@
         "故障恢复"
       ],
       "question_mode": "system_design",
-      "business_constraint": "必须隔离租户数据；单次请求成本受预算约束；高风险写操作需要人工确认。",
+      "business_constraint": "子Agent矛盾与人工仲裁",
       "dimension_terms": [
         "role_dim_06",
         "业务建模",
@@ -1652,18 +1568,15 @@
       ],
       "difficulty": "advanced",
       "expected_signals": [
-        "明确业务目标与成功指标",
-        "说明失败路径和验证方法",
-        "给出安全与成本边界"
+        "最低充分条件：围绕子Agent矛盾与人工仲裁给出可执行方案和验收；加分表现：量化监控或实验；限制项：不越权且说明失败边界。"
       ],
       "critical_errors": [
-        "只描述模型调用而无系统状态",
-        "把面经答案当作事实照搬",
-        "忽略权限、租户隔离或回滚"
+        "忽略子Agent矛盾与人工仲裁",
+        "只描述模型调用而没有状态、证据或回滚",
+        "把来源摘要当作候选人事实"
       ],
       "follow_up_seeds": [
-        "如果线上指标下降如何定位？",
-        "若工具返回不确定结果如何避免重复副作用？"
+        "若回答未覆盖子Agent矛盾与人工仲裁，请追问具体证据、阈值和降级路径。"
       ],
       "company_tags": [
         "国内互联网",
@@ -1683,11 +1596,11 @@
       "trust_level": "medium",
       "status": "needs_review",
       "version": 1,
-      "content_hash": "sha256:30d7e96e2b6ac265b668ff7c2a49634f743cd45e6c314a27248912073cc539f5"
+      "content_hash": "sha256:8510dded52b1152683d4d19e2d924f067ccba24aa9d2f1e0a742f8f60bd2fa79"
     },
     {
       "question_id": "q030",
-      "question_text": "在国内企业的安全审计与人工接管场景中，业务方要求你负责一个可上线的 Agent 方案。请结合输入、状态、工具和验证环节说明你的设计取舍，并指出如何用数据证明方案满足约束。",
+      "question_text": "请为客服Agent设计发布验收：输入版本、差异、评测报告和回滚包，输出是否可上线，并说明AI生成脚本的测试与审查。",
       "role": "ai_agent_engineer",
       "role_version": "2026-H2",
       "dimension_id": "role_dim_06",
@@ -1697,7 +1610,7 @@
         "故障恢复"
       ],
       "question_mode": "follow_up",
-      "business_constraint": "必须隔离租户数据；单次请求成本受预算约束；高风险写操作需要人工确认。",
+      "business_constraint": "版本差异、评测报告、回滚包与发布门",
       "dimension_terms": [
         "role_dim_06",
         "业务建模",
@@ -1710,18 +1623,15 @@
       ],
       "difficulty": "intermediate",
       "expected_signals": [
-        "明确业务目标与成功指标",
-        "说明失败路径和验证方法",
-        "给出安全与成本边界"
+        "最低充分条件：围绕版本差异、评测报告、回滚包与发布门给出可执行方案和验收；加分表现：量化监控或实验；限制项：不越权且说明失败边界。"
       ],
       "critical_errors": [
-        "只描述模型调用而无系统状态",
-        "把面经答案当作事实照搬",
-        "忽略权限、租户隔离或回滚"
+        "忽略版本差异、评测报告、回滚包与发布门",
+        "只描述模型调用而没有状态、证据或回滚",
+        "把来源摘要当作候选人事实"
       ],
       "follow_up_seeds": [
-        "如果线上指标下降如何定位？",
-        "若工具返回不确定结果如何避免重复副作用？"
+        "若回答未覆盖版本差异、评测报告、回滚包与发布门，请追问具体证据、阈值和降级路径。"
       ],
       "company_tags": [
         "国内互联网",
@@ -1741,7 +1651,7 @@
       "trust_level": "medium",
       "status": "needs_review",
       "version": 1,
-      "content_hash": "sha256:2cdcc765646195e1d3f9875a51e89907f23c4de7baeb1b9c1d900e99f0fc6274"
+      "content_hash": "sha256:3773c4d284b83145c882657445e4aac38341058892e7d2a69007a296186a7940"
     }
   ]
 }

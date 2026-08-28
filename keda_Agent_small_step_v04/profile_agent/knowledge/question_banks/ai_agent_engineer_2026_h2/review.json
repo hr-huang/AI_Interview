@@ -15,10 +15,10 @@
       "cross_validation_source_ids": [
         "src_cn_official_tencent_agentic_rag"
       ],
-      "capability_summary": "覆盖业务建模、Agent编排、检索评测与安全边界。",
-      "business_constraint_summary": "租户隔离、成本预算和高风险操作人工确认。",
-      "dimension_summary": "role_dim_01",
-      "mode_rationale": "按冻结题型矩阵配置，保留兼容路由供检索降级。"
+      "capability_summary": "针对第1题的岗位能力：围绕32K窗口、法规保留、P95首token 1.5秒完成设计、验证与风险控制。",
+      "business_constraint_summary": "32K窗口、法规保留、P95首token 1.5秒",
+      "dimension_summary": "题目特异维度 role_dim_01",
+      "mode_rationale": "题目以foundation方式考查真实业务决策。"
     },
     {
       "question_id": "q002",
@@ -35,10 +35,10 @@
       "cross_validation_source_ids": [
         "src_cn_official_tencent_agentic_rag"
       ],
-      "capability_summary": "覆盖业务建模、Agent编排、检索评测与安全边界。",
-      "business_constraint_summary": "租户隔离、成本预算和高风险操作人工确认。",
-      "dimension_summary": "role_dim_01",
-      "mode_rationale": "按冻结题型矩阵配置，保留兼容路由供检索降级。"
+      "capability_summary": "针对第2题的岗位能力：围绕三租户、日120万请求、禁止越权完成设计、验证与风险控制。",
+      "business_constraint_summary": "三租户、日120万请求、禁止越权",
+      "dimension_summary": "题目特异维度 role_dim_01",
+      "mode_rationale": "题目以project_deep_dive方式考查真实业务决策。"
     },
     {
       "question_id": "q003",
@@ -55,10 +55,10 @@
       "cross_validation_source_ids": [
         "src_cn_official_tencent_agentic_rag"
       ],
-      "capability_summary": "覆盖业务建模、Agent编排、检索评测与安全边界。",
-      "business_constraint_summary": "租户隔离、成本预算和高风险操作人工确认。",
-      "dimension_summary": "role_dim_01",
-      "mode_rationale": "按冻结题型矩阵配置，保留兼容路由供检索降级。"
+      "capability_summary": "针对第3题的岗位能力：围绕命中率82%到61%的线上回归完成设计、验证与风险控制。",
+      "business_constraint_summary": "命中率82%到61%的线上回归",
+      "dimension_summary": "题目特异维度 role_dim_01",
+      "mode_rationale": "题目以scenario方式考查真实业务决策。"
     },
     {
       "question_id": "q004",
@@ -75,10 +75,10 @@
       "cross_validation_source_ids": [
         "src_cn_official_tencent_hunyuan"
       ],
-      "capability_summary": "覆盖业务建模、Agent编排、检索评测与安全边界。",
-      "business_constraint_summary": "租户隔离、成本预算和高风险操作人工确认。",
-      "dimension_summary": "role_dim_01",
-      "mode_rationale": "按冻结题型矩阵配置，保留兼容路由供检索降级。"
+      "capability_summary": "针对第4题的岗位能力：围绕月末800RPS、账单只读、人工复核完成设计、验证与风险控制。",
+      "business_constraint_summary": "月末800RPS、账单只读、人工复核",
+      "dimension_summary": "题目特异维度 role_dim_01",
+      "mode_rationale": "题目以system_design方式考查真实业务决策。"
     },
     {
       "question_id": "q005",
@@ -95,10 +95,10 @@
       "cross_validation_source_ids": [
         "src_cn_official_tencent_hunyuan"
       ],
-      "capability_summary": "覆盖业务建模、Agent编排、检索评测与安全边界。",
-      "business_constraint_summary": "租户隔离、成本预算和高风险操作人工确认。",
-      "dimension_summary": "role_dim_01",
-      "mode_rationale": "按冻结题型矩阵配置，保留兼容路由供检索降级。"
+      "capability_summary": "针对第5题的岗位能力：围绕摘要不得丢截止日期、需可证明完成设计、验证与风险控制。",
+      "business_constraint_summary": "摘要不得丢截止日期、需可证明",
+      "dimension_summary": "题目特异维度 role_dim_01",
+      "mode_rationale": "题目以follow_up方式考查真实业务决策。"
     },
     {
       "question_id": "q006",
@@ -115,10 +115,10 @@
       "cross_validation_source_ids": [
         "src_cn_official_tencent_hunyuan"
       ],
-      "capability_summary": "覆盖业务建模、Agent编排、检索评测与安全边界。",
-      "business_constraint_summary": "租户隔离、成本预算和高风险操作人工确认。",
-      "dimension_summary": "role_dim_01",
-      "mode_rationale": "按冻结题型矩阵配置，保留兼容路由供检索降级。"
+      "capability_summary": "针对第6题的岗位能力：围绕库存物流客服事实冲突完成设计、验证与风险控制。",
+      "business_constraint_summary": "库存物流客服事实冲突",
+      "dimension_summary": "题目特异维度 role_dim_01",
+      "mode_rationale": "题目以scenario方式考查真实业务决策。"
     },
     {
       "question_id": "q007",
@@ -135,10 +135,10 @@
       "cross_validation_source_ids": [
         "src_cn_official_tencent_rag"
       ],
-      "capability_summary": "覆盖业务建模、Agent编排、检索评测与安全边界。",
-      "business_constraint_summary": "租户隔离、成本预算和高风险操作人工确认。",
-      "dimension_summary": "role_dim_02",
-      "mode_rationale": "按冻结题型矩阵配置，保留兼容路由供检索降级。"
+      "capability_summary": "针对第7题的岗位能力：围绕十万合同、单租户SLA 2秒完成设计、验证与风险控制。",
+      "business_constraint_summary": "十万合同、单租户SLA 2秒",
+      "dimension_summary": "题目特异维度 role_dim_02",
+      "mode_rationale": "题目以foundation方式考查真实业务决策。"
     },
     {
       "question_id": "q008",
@@ -155,10 +155,10 @@
       "cross_validation_source_ids": [
         "src_cn_official_tencent_rag"
       ],
-      "capability_summary": "覆盖业务建模、Agent编排、检索评测与安全边界。",
-      "business_constraint_summary": "租户隔离、成本预算和高风险操作人工确认。",
-      "dimension_summary": "role_dim_02",
-      "mode_rationale": "按冻结题型矩阵配置，保留兼容路由供检索降级。"
+      "capability_summary": "针对第8题的岗位能力：围绕合同生效与索引更新时间冲突完成设计、验证与风险控制。",
+      "business_constraint_summary": "合同生效与索引更新时间冲突",
+      "dimension_summary": "题目特异维度 role_dim_02",
+      "mode_rationale": "题目以scenario方式考查真实业务决策。"
     },
     {
       "question_id": "q009",
@@ -175,10 +175,10 @@
       "cross_validation_source_ids": [
         "src_cn_official_tencent_rag"
       ],
-      "capability_summary": "覆盖业务建模、Agent编排、检索评测与安全边界。",
-      "business_constraint_summary": "租户隔离、成本预算和高风险操作人工确认。",
-      "dimension_summary": "role_dim_02",
-      "mode_rationale": "按冻结题型矩阵配置，保留兼容路由供检索降级。"
+      "capability_summary": "针对第9题的岗位能力：围绕记忆删除与重复询问实验完成设计、验证与风险控制。",
+      "business_constraint_summary": "记忆删除与重复询问实验",
+      "dimension_summary": "题目特异维度 role_dim_02",
+      "mode_rationale": "题目以project_deep_dive方式考查真实业务决策。"
     },
     {
       "question_id": "q010",
@@ -195,10 +195,10 @@
       "cross_validation_source_ids": [
         "src_cn_official_tencent_agent_node"
       ],
-      "capability_summary": "覆盖业务建模、Agent编排、检索评测与安全边界。",
-      "business_constraint_summary": "租户隔离、成本预算和高风险操作人工确认。",
-      "dimension_summary": "role_dim_02",
-      "mode_rationale": "按冻结题型矩阵配置，保留兼容路由供检索降级。"
+      "capability_summary": "针对第10题的岗位能力：围绕拒绝意图误判造成工单副作用完成设计、验证与风险控制。",
+      "business_constraint_summary": "拒绝意图误判造成工单副作用",
+      "dimension_summary": "题目特异维度 role_dim_02",
+      "mode_rationale": "题目以scenario方式考查真实业务决策。"
     },
     {
       "question_id": "q011",
@@ -215,10 +215,10 @@
       "cross_validation_source_ids": [
         "src_cn_official_tencent_agent_node"
       ],
-      "capability_summary": "覆盖业务建模、Agent编排、检索评测与安全边界。",
-      "business_constraint_summary": "租户隔离、成本预算和高风险操作人工确认。",
-      "dimension_summary": "role_dim_02",
-      "mode_rationale": "按冻结题型矩阵配置，保留兼容路由供检索降级。"
+      "capability_summary": "针对第11题的岗位能力：围绕每会话成本0.03元完成设计、验证与风险控制。",
+      "business_constraint_summary": "每会话成本0.03元",
+      "dimension_summary": "题目特异维度 role_dim_02",
+      "mode_rationale": "题目以follow_up方式考查真实业务决策。"
     },
     {
       "question_id": "q012",
@@ -235,10 +235,10 @@
       "cross_validation_source_ids": [
         "src_cn_official_tencent_agent_node"
       ],
-      "capability_summary": "覆盖业务建模、Agent编排、检索评测与安全边界。",
-      "business_constraint_summary": "租户隔离、成本预算和高风险操作人工确认。",
-      "dimension_summary": "role_dim_03",
-      "mode_rationale": "按冻结题型矩阵配置，保留兼容路由供检索降级。"
+      "capability_summary": "针对第12题的岗位能力：围绕五百亿行查询与权限完成设计、验证与风险控制。",
+      "business_constraint_summary": "五百亿行查询与权限",
+      "dimension_summary": "题目特异维度 role_dim_03",
+      "mode_rationale": "题目以foundation方式考查真实业务决策。"
     },
     {
       "question_id": "q013",
@@ -255,10 +255,10 @@
       "cross_validation_source_ids": [
         "src_cn_official_tencent_rag_pg"
       ],
-      "capability_summary": "覆盖业务建模、Agent编排、检索评测与安全边界。",
-      "business_constraint_summary": "租户隔离、成本预算和高风险操作人工确认。",
-      "dimension_summary": "role_dim_03",
-      "mode_rationale": "按冻结题型矩阵配置，保留兼容路由供检索降级。"
+      "capability_summary": "针对第13题的岗位能力：围绕20到200工具的选择退化完成设计、验证与风险控制。",
+      "business_constraint_summary": "20到200工具的选择退化",
+      "dimension_summary": "题目特异维度 role_dim_03",
+      "mode_rationale": "题目以scenario方式考查真实业务决策。"
     },
     {
       "question_id": "q014",
@@ -275,10 +275,10 @@
       "cross_validation_source_ids": [
         "src_cn_official_tencent_rag_pg"
       ],
-      "capability_summary": "覆盖业务建模、Agent编排、检索评测与安全边界。",
-      "business_constraint_summary": "租户隔离、成本预算和高风险操作人工确认。",
-      "dimension_summary": "role_dim_03",
-      "mode_rationale": "按冻结题型矩阵配置，保留兼容路由供检索降级。"
+      "capability_summary": "针对第14题的岗位能力：围绕十万文档与提示词注入风险完成设计、验证与风险控制。",
+      "business_constraint_summary": "十万文档与提示词注入风险",
+      "dimension_summary": "题目特异维度 role_dim_03",
+      "mode_rationale": "题目以system_design方式考查真实业务决策。"
     },
     {
       "question_id": "q015",
@@ -295,10 +295,10 @@
       "cross_validation_source_ids": [
         "src_cn_official_tencent_rag_pg"
       ],
-      "capability_summary": "覆盖业务建模、Agent编排、检索评测与安全边界。",
-      "business_constraint_summary": "租户隔离、成本预算和高风险操作人工确认。",
-      "dimension_summary": "role_dim_03",
-      "mode_rationale": "按冻结题型矩阵配置，保留兼容路由供检索降级。"
+      "capability_summary": "针对第15题的岗位能力：围绕幂等重试与失败fixture完成设计、验证与风险控制。",
+      "business_constraint_summary": "幂等重试与失败fixture",
+      "dimension_summary": "题目特异维度 role_dim_03",
+      "mode_rationale": "题目以coding方式考查真实业务决策。"
     },
     {
       "question_id": "q016",
@@ -315,10 +315,10 @@
       "cross_validation_source_ids": [
         "src_cn_jd_baidu_agentic_2026"
       ],
-      "capability_summary": "覆盖业务建模、Agent编排、检索评测与安全边界。",
-      "business_constraint_summary": "租户隔离、成本预算和高风险操作人工确认。",
-      "dimension_summary": "role_dim_03",
-      "mode_rationale": "按冻结题型矩阵配置，保留兼容路由供检索降级。"
+      "capability_summary": "针对第16题的岗位能力：围绕已执行但超时且最多停止完成设计、验证与风险控制。",
+      "business_constraint_summary": "已执行但超时且最多停止",
+      "dimension_summary": "题目特异维度 role_dim_03",
+      "mode_rationale": "题目以follow_up方式考查真实业务决策。"
     },
     {
       "question_id": "q017",
@@ -335,10 +335,10 @@
       "cross_validation_source_ids": [
         "src_cn_jd_baidu_agentic_2026"
       ],
-      "capability_summary": "覆盖业务建模、Agent编排、检索评测与安全边界。",
-      "business_constraint_summary": "租户隔离、成本预算和高风险操作人工确认。",
-      "dimension_summary": "role_dim_03",
-      "mode_rationale": "按冻结题型矩阵配置，保留兼容路由供检索降级。"
+      "capability_summary": "针对第17题的岗位能力：围绕中英混合文档和表格完成设计、验证与风险控制。",
+      "business_constraint_summary": "中英混合文档和表格",
+      "dimension_summary": "题目特异维度 role_dim_03",
+      "mode_rationale": "题目以project_deep_dive方式考查真实业务决策。"
     },
     {
       "question_id": "q018",
@@ -355,10 +355,10 @@
       "cross_validation_source_ids": [
         "src_cn_jd_baidu_agentic_2026"
       ],
-      "capability_summary": "覆盖业务建模、Agent编排、检索评测与安全边界。",
-      "business_constraint_summary": "租户隔离、成本预算和高风险操作人工确认。",
-      "dimension_summary": "role_dim_04",
-      "mode_rationale": "按冻结题型矩阵配置，保留兼容路由供检索降级。"
+      "capability_summary": "针对第18题的岗位能力：围绕多模型网关成本与故障完成设计、验证与风险控制。",
+      "business_constraint_summary": "多模型网关成本与故障",
+      "dimension_summary": "题目特异维度 role_dim_04",
+      "mode_rationale": "题目以project_deep_dive方式考查真实业务决策。"
     },
     {
       "question_id": "q019",
@@ -375,10 +375,10 @@
       "cross_validation_source_ids": [
         "src_cn_jd_baidu_agent_2026"
       ],
-      "capability_summary": "覆盖业务建模、Agent编排、检索评测与安全边界。",
-      "business_constraint_summary": "租户隔离、成本预算和高风险操作人工确认。",
-      "dimension_summary": "role_dim_04",
-      "mode_rationale": "按冻结题型矩阵配置，保留兼容路由供检索降级。"
+      "capability_summary": "针对第19题的岗位能力：围绕工具循环从4步升19步完成设计、验证与风险控制。",
+      "business_constraint_summary": "工具循环从4步升19步",
+      "dimension_summary": "题目特异维度 role_dim_04",
+      "mode_rationale": "题目以scenario方式考查真实业务决策。"
     },
     {
       "question_id": "q020",
@@ -395,10 +395,10 @@
       "cross_validation_source_ids": [
         "src_cn_jd_baidu_agent_2026"
       ],
-      "capability_summary": "覆盖业务建模、Agent编排、检索评测与安全边界。",
-      "business_constraint_summary": "租户隔离、成本预算和高风险操作人工确认。",
-      "dimension_summary": "role_dim_04",
-      "mode_rationale": "按冻结题型矩阵配置，保留兼容路由供检索降级。"
+      "capability_summary": "针对第20题的岗位能力：围绕gold证据fixture与Recall@k完成设计、验证与风险控制。",
+      "business_constraint_summary": "gold证据fixture与Recall@k",
+      "dimension_summary": "题目特异维度 role_dim_04",
+      "mode_rationale": "题目以coding方式考查真实业务决策。"
     },
     {
       "question_id": "q021",
@@ -415,10 +415,10 @@
       "cross_validation_source_ids": [
         "src_cn_jd_baidu_agent_2026"
       ],
-      "capability_summary": "覆盖业务建模、Agent编排、检索评测与安全边界。",
-      "business_constraint_summary": "租户隔离、成本预算和高风险操作人工确认。",
-      "dimension_summary": "role_dim_04",
-      "mode_rationale": "按冻结题型矩阵配置，保留兼容路由供检索降级。"
+      "capability_summary": "针对第21题的岗位能力：围绕参数错误最多一次重试完成设计、验证与风险控制。",
+      "business_constraint_summary": "参数错误最多一次重试",
+      "dimension_summary": "题目特异维度 role_dim_04",
+      "mode_rationale": "题目以follow_up方式考查真实业务决策。"
     },
     {
       "question_id": "q022",
@@ -435,10 +435,10 @@
       "cross_validation_source_ids": [
         "src_cn_jd_baidu_base_2026"
       ],
-      "capability_summary": "覆盖业务建模、Agent编排、检索评测与安全边界。",
-      "business_constraint_summary": "租户隔离、成本预算和高风险操作人工确认。",
-      "dimension_summary": "role_dim_05",
-      "mode_rationale": "按冻结题型矩阵配置，保留兼容路由供检索降级。"
+      "capability_summary": "针对第22题的岗位能力：围绕画像字段脱敏、手机号地址禁曝完成设计、验证与风险控制。",
+      "business_constraint_summary": "画像字段脱敏、手机号地址禁曝",
+      "dimension_summary": "题目特异维度 role_dim_05",
+      "mode_rationale": "题目以foundation方式考查真实业务决策。"
     },
     {
       "question_id": "q023",
@@ -455,10 +455,10 @@
       "cross_validation_source_ids": [
         "src_cn_jd_baidu_base_2026"
       ],
-      "capability_summary": "覆盖业务建模、Agent编排、检索评测与安全边界。",
-      "business_constraint_summary": "租户隔离、成本预算和高风险操作人工确认。",
-      "dimension_summary": "role_dim_05",
-      "mode_rationale": "按冻结题型矩阵配置，保留兼容路由供检索降级。"
+      "capability_summary": "针对第23题的岗位能力：围绕3000RPS、RTO 5分钟、跨区旧读完成设计、验证与风险控制。",
+      "business_constraint_summary": "3000RPS、RTO 5分钟、跨区旧读",
+      "dimension_summary": "题目特异维度 role_dim_05",
+      "mode_rationale": "题目以scenario方式考查真实业务决策。"
     },
     {
       "question_id": "q024",
@@ -475,10 +475,10 @@
       "cross_validation_source_ids": [
         "src_cn_jd_baidu_base_2026"
       ],
-      "capability_summary": "覆盖业务建模、Agent编排、检索评测与安全边界。",
-      "business_constraint_summary": "租户隔离、成本预算和高风险操作人工确认。",
-      "dimension_summary": "role_dim_05",
-      "mode_rationale": "按冻结题型矩阵配置，保留兼容路由供检索降级。"
+      "capability_summary": "针对第24题的岗位能力：围绕转化下降与反馈漂移完成设计、验证与风险控制。",
+      "business_constraint_summary": "转化下降与反馈漂移",
+      "dimension_summary": "题目特异维度 role_dim_05",
+      "mode_rationale": "题目以system_design方式考查真实业务决策。"
     },
     {
       "question_id": "q025",
@@ -495,10 +495,10 @@
       "cross_validation_source_ids": [
         "src_cn_jd_baidu_agent_2026b"
       ],
-      "capability_summary": "覆盖业务建模、Agent编排、检索评测与安全边界。",
-      "business_constraint_summary": "租户隔离、成本预算和高风险操作人工确认。",
-      "dimension_summary": "role_dim_05",
-      "mode_rationale": "按冻结题型矩阵配置，保留兼容路由供检索降级。"
+      "capability_summary": "针对第25题的岗位能力：围绕无证据回答的承诺边界完成设计、验证与风险控制。",
+      "business_constraint_summary": "无证据回答的承诺边界",
+      "dimension_summary": "题目特异维度 role_dim_05",
+      "mode_rationale": "题目以scenario方式考查真实业务决策。"
     },
     {
       "question_id": "q026",
@@ -515,10 +515,10 @@
       "cross_validation_source_ids": [
         "src_cn_jd_baidu_agent_2026b"
       ],
-      "capability_summary": "覆盖业务建模、Agent编排、检索评测与安全边界。",
-      "business_constraint_summary": "租户隔离、成本预算和高风险操作人工确认。",
-      "dimension_summary": "role_dim_05",
-      "mode_rationale": "按冻结题型矩阵配置，保留兼容路由供检索降级。"
+      "capability_summary": "针对第26题的岗位能力：围绕转写错误导致退款完成设计、验证与风险控制。",
+      "business_constraint_summary": "转写错误导致退款",
+      "dimension_summary": "题目特异维度 role_dim_05",
+      "mode_rationale": "题目以follow_up方式考查真实业务决策。"
     },
     {
       "question_id": "q027",
@@ -535,10 +535,10 @@
       "cross_validation_source_ids": [
         "src_cn_jd_baidu_agent_2026b"
       ],
-      "capability_summary": "覆盖业务建模、Agent编排、检索评测与安全边界。",
-      "business_constraint_summary": "租户隔离、成本预算和高风险操作人工确认。",
-      "dimension_summary": "role_dim_05",
-      "mode_rationale": "按冻结题型矩阵配置，保留兼容路由供检索降级。"
+      "capability_summary": "针对第27题的岗位能力：围绕SDK超时恢复与fixture完成设计、验证与风险控制。",
+      "business_constraint_summary": "SDK超时恢复与fixture",
+      "dimension_summary": "题目特异维度 role_dim_05",
+      "mode_rationale": "题目以project_deep_dive方式考查真实业务决策。"
     },
     {
       "question_id": "q028",
@@ -555,10 +555,10 @@
       "cross_validation_source_ids": [
         "src_cn_jd_baidu_app_platform_2026"
       ],
-      "capability_summary": "覆盖业务建模、Agent编排、检索评测与安全边界。",
-      "business_constraint_summary": "租户隔离、成本预算和高风险操作人工确认。",
-      "dimension_summary": "role_dim_06",
-      "mode_rationale": "按冻结题型矩阵配置，保留兼容路由供检索降级。"
+      "capability_summary": "针对第28题的岗位能力：围绕三套异步系统的成本证据完成设计、验证与风险控制。",
+      "business_constraint_summary": "三套异步系统的成本证据",
+      "dimension_summary": "题目特异维度 role_dim_06",
+      "mode_rationale": "题目以coding方式考查真实业务决策。"
     },
     {
       "question_id": "q029",
@@ -575,10 +575,10 @@
       "cross_validation_source_ids": [
         "src_cn_jd_baidu_app_platform_2026"
       ],
-      "capability_summary": "覆盖业务建模、Agent编排、检索评测与安全边界。",
-      "business_constraint_summary": "租户隔离、成本预算和高风险操作人工确认。",
-      "dimension_summary": "role_dim_06",
-      "mode_rationale": "按冻结题型矩阵配置，保留兼容路由供检索降级。"
+      "capability_summary": "针对第29题的岗位能力：围绕子Agent矛盾与人工仲裁完成设计、验证与风险控制。",
+      "business_constraint_summary": "子Agent矛盾与人工仲裁",
+      "dimension_summary": "题目特异维度 role_dim_06",
+      "mode_rationale": "题目以system_design方式考查真实业务决策。"
     },
     {
       "question_id": "q030",
@@ -595,10 +595,10 @@
       "cross_validation_source_ids": [
         "src_cn_jd_baidu_app_platform_2026"
       ],
-      "capability_summary": "覆盖业务建模、Agent编排、检索评测与安全边界。",
-      "business_constraint_summary": "租户隔离、成本预算和高风险操作人工确认。",
-      "dimension_summary": "role_dim_06",
-      "mode_rationale": "按冻结题型矩阵配置，保留兼容路由供检索降级。"
+      "capability_summary": "针对第30题的岗位能力：围绕版本差异、评测报告、回滚包与发布门完成设计、验证与风险控制。",
+      "business_constraint_summary": "版本差异、评测报告、回滚包与发布门",
+      "dimension_summary": "题目特异维度 role_dim_06",
+      "mode_rationale": "题目以follow_up方式考查真实业务决策。"
     }
   ]
 }
