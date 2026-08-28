@@ -1269,6 +1269,11 @@ def _runtime_normalize_registry(
             "next_review_at",
             "rights_status",
             "notes",
+            "date_evidence",
+            "date_evidence_kind",
+            "date_evidence_locator",
+            "date_evidence_raw",
+            "provenance_kind",
         }
         if set(entry).difference(accepted_keys):
             raise ValueError("question source registry contains unknown fields")
@@ -1317,6 +1322,11 @@ def _runtime_normalize_registry(
                 "next_review_at": entry.get("next_review_at"),
                 "rights_status": entry.get("rights_status", "pending"),
                 "notes": entry.get("notes", ""),
+                "date_evidence": entry.get("date_evidence", ""),
+                "date_evidence_kind": entry.get("date_evidence_kind"),
+                "date_evidence_locator": entry.get("date_evidence_locator", ""),
+                "date_evidence_raw": entry.get("date_evidence_raw", ""),
+                "provenance_kind": entry.get("provenance_kind", "unknown"),
             }
         )
     registry = QuestionSourceRegistry.model_validate({"entries": entries})

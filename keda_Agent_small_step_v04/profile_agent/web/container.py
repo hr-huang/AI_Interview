@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 import sqlite3
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
@@ -123,8 +124,14 @@ def _configured_question_bank_path() -> Path | None:
     )
     try:
         if packaged_path.is_file():
-            return packaged_path
+            # A draft/review-only bank must not silently become a runtime
+            # authoritative catalog before its human release gate passes.
+            payload = json.loads(packaged_path.read_text(encoding="utf-8"))
+            if all(item.get("status") == "active" for item in payload.get("questions", [])):
+                return packaged_path
     except OSError:
+        pass
+    except (TypeError, ValueError, json.JSONDecodeError):
         pass
     return None
 
