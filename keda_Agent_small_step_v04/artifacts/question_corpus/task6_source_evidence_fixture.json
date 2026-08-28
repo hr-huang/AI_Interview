@@ -1,5 +1,5 @@
 {
-  "schema_version": "task6-source-evidence-v2",
+  "schema_version": "task6-source-evidence-v3",
   "entries": [
     {
       "source_id": "src_cn_nowcoder_shadow_agent_01",
@@ -22,7 +22,7 @@
       "isValid": true,
       "provenance_kind": "firsthand",
       "query_required": true,
-      "locator": "牛客页面可见发布时间：2026-08-10；标题与大模型应用开发一面正文",
+      "locator": "牛客页面可见发布时间：2026-08-10；标题与大模型应用开发一面正文；复现参数：sourceSSR=dynamic",
       "currentness": "published_visible"
     },
     {
@@ -34,7 +34,7 @@
       "isValid": true,
       "provenance_kind": "firsthand",
       "query_required": true,
-      "locator": "牛客页面可见发布时间：2026-08-03；标题与AI全栈开发一面正文",
+      "locator": "牛客页面可见发布时间：2026-08-03；标题与AI全栈开发一面正文；复现参数：sourceSSR=home",
       "currentness": "published_visible"
     },
     {
@@ -46,7 +46,7 @@
       "isValid": true,
       "provenance_kind": "secondary_summary",
       "query_required": true,
-      "locator": "牛客页面可见发布时间：2026-04-24；标题与Agent岗位面试正文",
+      "locator": "牛客页面可见发布时间：2026-04-24；标题与Agent岗位面试正文；复现参数：sourceSSR=dynamic",
       "currentness": "published_visible"
     },
     {
@@ -58,7 +58,7 @@
       "isValid": true,
       "provenance_kind": "secondary_summary",
       "query_required": true,
-      "locator": "牛客页面可见发布时间：2026-08-19；标题与三场AI-Agent后端面试总结正文",
+      "locator": "牛客页面可见发布时间：2026-08-19；标题与三场AI-Agent后端面试总结正文；复现参数：sourceSSR=dynamic",
       "currentness": "published_visible"
     },
     {
@@ -70,7 +70,7 @@
       "isValid": true,
       "provenance_kind": "firsthand",
       "query_required": true,
-      "locator": "牛客页面发布信息：2026-08-19 19:34；正文记录美团、字节、京东、蚂蚁四场面试；需保留sourceSSR=subject",
+      "locator": "牛客页面发布信息：2026-08-19 19:34；正文记录美团、字节、京东、蚂蚁四场面试；需保留sourceSSR=post",
       "currentness": "published_visible"
     },
     {
@@ -82,7 +82,7 @@
       "isValid": true,
       "provenance_kind": "firsthand",
       "query_required": true,
-      "locator": "牛客页面可见发布时间：2026-06-22；标题与字节后端实习二面正文",
+      "locator": "牛客页面可见发布时间：2026-06-22；标题与字节后端实习二面正文；复现参数：sourceSSR=home",
       "currentness": "published_visible"
     },
     {
@@ -94,7 +94,7 @@
       "isValid": true,
       "provenance_kind": "firsthand",
       "query_required": true,
-      "locator": "牛客页面可见发布时间：2026-05-24；标题与字节国际化广告一面正文",
+      "locator": "牛客页面可见发布时间：2026-05-24；标题与字节国际化广告一面正文；复现参数：sourceSSR=home",
       "currentness": "published_visible"
     },
     {
@@ -184,61 +184,61 @@
     {
       "source_id": "src_cn_jd_baidu_agentic_2026",
       "observed_title": "2027AIDU-智能体算法工程师（J99969）",
-      "observed_publishDate": "2026-08-03",
-      "observed_updateDate": "",
+      "observed_publishDate": "2026-05-12",
+      "observed_updateDate": "2026-08-03",
       "observed_accessed": "2026-08-27",
       "isValid": true,
       "provenance_kind": "unknown",
       "query_required": false,
-      "locator": "百度招聘页面H1“2027AIDU-智能体算法工程师（J99969）”；职位日期：2026-08-03；访问核验：2026-08-27",
+      "locator": "百度招聘页面H1“2027AIDU-智能体算法工程师（J99969）”；页面发布：2026-05-12；页面更新：2026-08-03；访问核验：2026-08-27",
       "currentness": "page_posted_at"
     },
     {
       "source_id": "src_cn_jd_baidu_agent_2026",
       "observed_title": "AI Agent算法工程师（J99071）",
-      "observed_publishDate": "2026-07-21",
-      "observed_updateDate": "",
+      "observed_publishDate": "2026-04-03",
+      "observed_updateDate": "2026-07-21",
       "observed_accessed": "2026-08-27",
       "isValid": true,
       "provenance_kind": "unknown",
       "query_required": false,
-      "locator": "百度招聘页面H1“AI Agent算法工程师（J99071）”；职位日期：2026-07-21；访问核验：2026-08-27",
+      "locator": "百度招聘页面H1“AI Agent算法工程师（J99071）”；页面发布：2026-04-03；页面更新：2026-07-21；访问核验：2026-08-27",
       "currentness": "page_posted_at"
     },
     {
       "source_id": "src_cn_jd_baidu_base_2026",
       "observed_title": "北京-大模型算法工程师（基座研发方向）（J101234）",
-      "observed_publishDate": "2026-07-21",
-      "observed_updateDate": "",
+      "observed_publishDate": "2026-07-08",
+      "observed_updateDate": "2026-07-21",
       "observed_accessed": "2026-08-27",
       "isValid": true,
       "provenance_kind": "unknown",
       "query_required": false,
-      "locator": "百度招聘页面H1“北京-大模型算法工程师（基座研发方向）（J101234）”；职位日期：2026-07-21；访问核验：2026-08-27",
+      "locator": "百度招聘页面H1“北京-大模型算法工程师（基座研发方向）（J101234）”；页面发布：2026-07-08；页面更新：2026-07-21；访问核验：2026-08-27",
       "currentness": "page_posted_at"
     },
     {
       "source_id": "src_cn_jd_baidu_agent_2026b",
       "observed_title": "北京-智能体算法工程师（J101017）",
-      "observed_publishDate": "2026-07-21",
-      "observed_updateDate": "",
+      "observed_publishDate": "2026-07-08",
+      "observed_updateDate": "2026-07-21",
       "observed_accessed": "2026-08-27",
       "isValid": true,
       "provenance_kind": "unknown",
       "query_required": false,
-      "locator": "百度招聘页面H1“北京-智能体算法工程师（J101017）”；职位日期：2026-07-21；访问核验：2026-08-27",
+      "locator": "百度招聘页面H1“北京-智能体算法工程师（J101017）”；页面发布：2026-07-08；页面更新：2026-07-21；访问核验：2026-08-27",
       "currentness": "page_posted_at"
     },
     {
       "source_id": "src_cn_jd_baidu_app_platform_2026",
       "observed_title": "大模型应用研发工程师（J103341）",
-      "observed_publishDate": "2026-08-10",
-      "observed_updateDate": "",
+      "observed_publishDate": "2026-07-21",
+      "observed_updateDate": "2026-08-10",
       "observed_accessed": "2026-08-27",
       "isValid": true,
       "provenance_kind": "unknown",
       "query_required": false,
-      "locator": "百度招聘页面H1“大模型应用研发工程师（J103341）”；职位日期：2026-08-10；访问核验：2026-08-27",
+      "locator": "百度招聘页面H1“大模型应用研发工程师（J103341）”；页面发布：2026-07-21；页面更新：2026-08-10；访问核验：2026-08-27",
       "currentness": "page_posted_at"
     }
   ]

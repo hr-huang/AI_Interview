@@ -511,12 +511,19 @@ class QuestionCorpusGovernanceTests(unittest.TestCase):
             self.assertEqual(actual.title, expected["observed_title"])
             self.assertEqual(str(actual.published_at or ""), expected["observed_publishDate"])
             expected_update = expected["observed_updateDate"]
-            self.assertEqual(expected_update, str(actual.published_at or "") if actual.source_type == "official_technical_doc" else "")
+            actual_update = str(actual.published_at or "") if actual.source_type == "official_technical_doc" else (
+                actual.date_evidence_locator.split("页面更新：", 1)[1].split("；", 1)[0]
+                if "页面更新：" in actual.date_evidence_locator else ""
+            )
+            self.assertEqual(expected_update, actual_update)
             self.assertEqual(str(actual.accessed_at), expected["observed_accessed"])
             self.assertTrue(expected["isValid"])
             self.assertEqual(actual.provenance_kind, expected["provenance_kind"])
             self.assertEqual("?" in actual.canonical_url, expected["query_required"])
             self.assertEqual(actual.date_evidence_locator, expected["locator"])
+            if expected["query_required"]:
+                self.assertIn("sourceSSR=", actual.canonical_url)
+                self.assertIn(actual.canonical_url.split("sourceSSR=", 1)[1], actual.date_evidence_locator)
 
     def test_task6_fixture_rejects_date_provenance_and_locator_tampering(self) -> None:
         root = Path(__file__).parents[1]
