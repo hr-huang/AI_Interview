@@ -153,6 +153,37 @@ class InterviewPlannerGuardTest(unittest.TestCase):
                 interview_planner_service.DEFAULT_INTERVIEW_POLICY,
             )
 
+    def test_one_transfer_probe_can_cover_multiple_project_claim_targets(self) -> None:
+        draft = make_timed_draft(10)
+        draft.targets[0].related_claim_ids = ["claim_01"]
+        draft.targets[0].preferred_modes = ["project_deep_dive", "scenario"]
+        project_target = AssessmentTargetDraft(
+            objective="深挖另一个项目 Claim",
+            target_type="implementation",
+            competency_ids=[],
+            evidence_requirements=[
+                EvidenceRequirementDraft(
+                    description="解释另一个项目的实现细节",
+                    planned_role_dimension_id="role_dim_gate",
+                )
+            ],
+            related_claim_ids=["claim_02"],
+            priority="high",
+            must_cover=True,
+            time_budget_minutes=5,
+            preferred_modes=["project_deep_dive"],
+        )
+        draft.targets.append(project_target)
+
+        # The plan already contains an independent transfer requirement in
+        # the first high/must-cover target. A second project target may remain
+        # project-focused; requiring transfer on every claim target would
+        # over-constrain valid plans and duplicate the same probe.
+        interview_planner_service.validate_transfer_coverage(
+            draft,
+            interview_planner_service.DEFAULT_INTERVIEW_POLICY,
+        )
+
     def test_transfer_target_requires_scenario_mode(self) -> None:
         draft = make_timed_draft(10)
         draft.targets[0].preferred_modes = ["foundation"]

@@ -272,14 +272,13 @@ def validate_transfer_coverage(
         and target.related_claim_ids
         and "project_deep_dive" in target.preferred_modes
     ]
-    for target in project_claim_targets:
-        if not any(
-            requirement.requires_transfer_validation
-            for requirement in target.evidence_requirements
-        ):
-            raise ValueError(
-                "high、must_cover 项目 Claim Target 必须包含新场景迁移验证"
-            )
+    if project_claim_targets and not any(
+        target in project_claim_targets
+        for target in prioritized_transfer_targets
+    ):
+        raise ValueError(
+            "high、must_cover 项目 Claim Target 必须至少包含一条新场景迁移验证"
+        )
 
 # ============================================================
 # 检查 LLM 给出的 Target 时间预算是否超出总时间
