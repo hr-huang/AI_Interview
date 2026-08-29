@@ -437,6 +437,36 @@ class IntentBuilderTests(unittest.TestCase):
         self.assertNotIn("jd=", rerank_query)
         self.assertNotIn("resume=", rerank_query)
 
+    def test_memory_intent_preserves_memory_specific_controlled_terms(self) -> None:
+        intent = QuestionRetrievalIntent(
+            query_text=(
+                "objective=Agent,Memory,记忆,短期记忆,长期记忆,会话状态"
+                " | requirement=持久化,召回,更新,记忆写入,删除,生命周期"
+            ),
+            role="ai_agent_engineer",
+            dimension_id="role_dim_01",
+            question_mode="system_design",
+            difficulty="intermediate",
+        )
+
+        rerank_query = build_rerank_query_text(intent)
+
+        for term in (
+            "Memory",
+            "短期记忆",
+            "长期记忆",
+            "会话状态",
+            "持久化",
+            "召回",
+            "更新",
+            "记忆写入",
+            "删除",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, rerank_query)
+        self.assertNotIn("并发", rerank_query)
+        self.assertNotIn("工具调用", rerank_query)
+
     def test_hybrid_recall_requests_twenty_candidates_and_preserves_audit_fields(self) -> None:
         hits = [
             RetrievedQuestion(

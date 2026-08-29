@@ -1,0 +1,608 @@
+{
+  "run_date": "2026-08-29",
+  "purpose": "Minimal real RAG verification for the single Supervisor target: Agent Memory types and implementation.",
+  "routing_interpretation": {
+    "supervisor_semantic_classification": "foundation",
+    "production_behavior_for_foundation": "bypass_rag",
+    "diagnostic_route_used": "system_design",
+    "diagnostic_route_is_production_supervisor_decision": false,
+    "reason": "Memory types and implementation is a foundational concept question; system_design was used only to inspect whether the question bank contains useful Memory-grounded material."
+  },
+  "input": {
+    "candidate_context": "AI Agent 工程岗位",
+    "question_mode": "system_design",
+    "intent_query_text": "objective=Agent,Memory,记忆,短期记忆,长期记忆,会话状态,生命周期 | requirement=持久化,召回,更新,记忆写入,删除,过期知识,上下文,状态",
+    "natural_rerank_query": "请为 Agent工程岗位设计一道系统设计题，用于判断候选人是否能把方案落地。考察目标包括Agent、状态、Memory、记忆、短期记忆、长期记忆、会话状态、生命周期。证据要求包括状态、上下文、记忆、持久化、召回、更新、记忆写入、删除、过期知识。题目应要求候选人说明输入、边界、验证方式、失败恢复和可观察证据。",
+    "source_question_wording_used": false,
+    "scope_excludes": [
+      "并发",
+      "工具调用",
+      "安全治理",
+      "成本性能"
+    ]
+  },
+  "provider_calls": {
+    "embedding_provider": "siliconflow",
+    "embedding_model": "BAAI/bge-m3",
+    "embedding_calls": 1,
+    "rerank_provider": "siliconflow",
+    "rerank_model": "BAAI/bge-reranker-v2-m3",
+    "rerank_calls": 1,
+    "llm_calls": 0,
+    "secrets_in_artifact": false
+  },
+  "result": {
+    "status": "hit",
+    "selected_question_id": "q023",
+    "selected_question_text": "华东Agent写入延迟突增且华南读取出现旧数据。作为初级岗的stretch题，请只设计事故路由、陈旧数据标记和RTO 5分钟内的最小降级路径，不要求完整跨区架构。",
+    "selected_score": 0.810765505,
+    "threshold": 0.2,
+    "error_class": null
+  },
+  "candidate_count": 20,
+  "top20_audit": [
+    {
+      "question_id": "q023",
+      "source_id": "src_cn_nowcoder_anruan_ai_app_01",
+      "rank_after_rerank": 1,
+      "selected": true,
+      "dense_rank": 20,
+      "dense_score": 0.6471798081882039,
+      "bm25_rank": 10,
+      "bm25_score": 3.4183119742863397,
+      "rrf_score": 0.026785714286,
+      "rerank_score": 0.810765505,
+      "truncation_reason": null,
+      "rejection_reason": null,
+      "components": {
+        "dense_rank": 20,
+        "dense_score": 0.6471798081882039,
+        "bm25_rank": 10,
+        "bm25_score": 3.4183119742863397,
+        "rrf_score": 0.026785714286,
+        "rerank_relevance": 0.810765505
+      },
+      "total_score": 0.810765505
+    },
+    {
+      "question_id": "q009",
+      "source_id": "src_cn_nowcoder_byte_fullstack_01",
+      "rank_after_rerank": 2,
+      "selected": false,
+      "dense_rank": 1,
+      "dense_score": 0.7686155168202383,
+      "bm25_rank": 1,
+      "bm25_score": 50.92911541455902,
+      "rrf_score": 0.032786885246,
+      "rerank_score": 0.533037543,
+      "truncation_reason": null,
+      "rejection_reason": "not_top_rank",
+      "components": {
+        "dense_rank": 1,
+        "dense_score": 0.7686155168202383,
+        "bm25_rank": 1,
+        "bm25_score": 50.92911541455902,
+        "rrf_score": 0.032786885246,
+        "rerank_relevance": 0.533037543
+      },
+      "total_score": 0.533037543
+    },
+    {
+      "question_id": "q029",
+      "source_id": "src_cn_nowcoder_byte_ads_01",
+      "rank_after_rerank": 3,
+      "selected": false,
+      "dense_rank": 11,
+      "dense_score": 0.6764142418446208,
+      "bm25_rank": 9,
+      "bm25_score": 6.3663085274170275,
+      "rrf_score": 0.029577260665,
+      "rerank_score": 0.323477477,
+      "truncation_reason": null,
+      "rejection_reason": "not_top_rank",
+      "components": {
+        "dense_rank": 11,
+        "dense_score": 0.6764142418446208,
+        "bm25_rank": 9,
+        "bm25_score": 6.3663085274170275,
+        "rrf_score": 0.029577260665,
+        "rerank_relevance": 0.323477477
+      },
+      "total_score": 0.323477477
+    },
+    {
+      "question_id": "q002",
+      "source_id": "src_cn_nowcoder_shadow_agent_01",
+      "rank_after_rerank": 4,
+      "selected": false,
+      "dense_rank": 7,
+      "dense_score": 0.6981748976491933,
+      "bm25_rank": 18,
+      "bm25_score": 1.048166082411584,
+      "rrf_score": 0.029745885955,
+      "rerank_score": 0.298168361,
+      "truncation_reason": null,
+      "rejection_reason": "not_top_rank",
+      "components": {
+        "dense_rank": 7,
+        "dense_score": 0.6981748976491933,
+        "bm25_rank": 18,
+        "bm25_score": 1.048166082411584,
+        "rrf_score": 0.029745885955,
+        "rerank_relevance": 0.298168361
+      },
+      "total_score": 0.298168361
+    },
+    {
+      "question_id": "q012",
+      "source_id": "src_cn_nowcoder_alibaba_agent_01",
+      "rank_after_rerank": 5,
+      "selected": false,
+      "dense_rank": 9,
+      "dense_score": 0.6837138981908433,
+      "bm25_rank": 16,
+      "bm25_score": 1.0988474653362128,
+      "rrf_score": 0.02765064836,
+      "rerank_score": 0.29468593,
+      "truncation_reason": null,
+      "rejection_reason": "not_top_rank",
+      "components": {
+        "dense_rank": 9,
+        "dense_score": 0.6837138981908433,
+        "bm25_rank": 16,
+        "bm25_score": 1.0988474653362128,
+        "rrf_score": 0.02765064836,
+        "rerank_relevance": 0.29468593
+      },
+      "total_score": 0.29468593
+    },
+    {
+      "question_id": "q017",
+      "source_id": "src_cn_nowcoder_bigtech_agent_04",
+      "rank_after_rerank": 6,
+      "selected": false,
+      "dense_rank": 4,
+      "dense_score": 0.704694484330598,
+      "bm25_rank": 12,
+      "bm25_score": 2.6518030725505177,
+      "rrf_score": 0.029513888889,
+      "rerank_score": 0.278796047,
+      "truncation_reason": null,
+      "rejection_reason": "not_top_rank",
+      "components": {
+        "dense_rank": 4,
+        "dense_score": 0.704694484330598,
+        "bm25_rank": 12,
+        "bm25_score": 2.6518030725505177,
+        "rrf_score": 0.029513888889,
+        "rerank_relevance": 0.278796047
+      },
+      "total_score": 0.278796047
+    },
+    {
+      "question_id": "q005",
+      "source_id": "src_cn_nowcoder_byte_agent_01",
+      "rank_after_rerank": 7,
+      "selected": false,
+      "dense_rank": 8,
+      "dense_score": 0.6937680499600969,
+      "bm25_rank": 13,
+      "bm25_score": 2.2893149649411257,
+      "rrf_score": 0.03040451249,
+      "rerank_score": 0.259169549,
+      "truncation_reason": null,
+      "rejection_reason": "not_top_rank",
+      "components": {
+        "dense_rank": 8,
+        "dense_score": 0.6937680499600969,
+        "bm25_rank": 13,
+        "bm25_score": 2.2893149649411257,
+        "rrf_score": 0.03040451249,
+        "rerank_relevance": 0.259169549
+      },
+      "total_score": 0.259169549
+    },
+    {
+      "question_id": "q006",
+      "source_id": "src_cn_nowcoder_byte_agent_01",
+      "rank_after_rerank": 8,
+      "selected": false,
+      "dense_rank": 10,
+      "dense_score": 0.6791395514716161,
+      "bm25_rank": 8,
+      "bm25_score": 6.580716469178828,
+      "rrf_score": 0.030991596639,
+      "rerank_score": 0.249939457,
+      "truncation_reason": null,
+      "rejection_reason": "not_top_rank",
+      "components": {
+        "dense_rank": 10,
+        "dense_score": 0.6791395514716161,
+        "bm25_rank": 8,
+        "bm25_score": 6.580716469178828,
+        "rrf_score": 0.030991596639,
+        "rerank_relevance": 0.249939457
+      },
+      "total_score": 0.249939457
+    },
+    {
+      "question_id": "q026",
+      "source_id": "src_cn_nowcoder_aicoding_01",
+      "rank_after_rerank": 9,
+      "selected": false,
+      "dense_rank": 6,
+      "dense_score": 0.7004234122147771,
+      "bm25_rank": null,
+      "bm25_score": null,
+      "rrf_score": 0.015151515152,
+      "rerank_score": 0.218531892,
+      "truncation_reason": null,
+      "rejection_reason": "not_top_rank",
+      "components": {
+        "dense_rank": 6,
+        "dense_score": 0.7004234122147771,
+        "bm25_rank": null,
+        "bm25_score": null,
+        "rrf_score": 0.015151515152,
+        "rerank_relevance": 0.218531892
+      },
+      "total_score": 0.218531892
+    },
+    {
+      "question_id": "q025",
+      "source_id": "src_cn_nowcoder_anruan_ai_app_01",
+      "rank_after_rerank": 10,
+      "selected": false,
+      "dense_rank": 18,
+      "dense_score": 0.6552591925212777,
+      "bm25_rank": 5,
+      "bm25_score": 9.538899373715132,
+      "rrf_score": 0.028205128205,
+      "rerank_score": 0.201715291,
+      "truncation_reason": null,
+      "rejection_reason": "not_top_rank",
+      "components": {
+        "dense_rank": 18,
+        "dense_score": 0.6552591925212777,
+        "bm25_rank": 5,
+        "bm25_score": 9.538899373715132,
+        "rrf_score": 0.028205128205,
+        "rerank_relevance": 0.201715291
+      },
+      "total_score": 0.201715291
+    },
+    {
+      "question_id": "q004",
+      "source_id": "src_cn_nowcoder_byte_agent_01",
+      "rank_after_rerank": 11,
+      "selected": false,
+      "dense_rank": null,
+      "dense_score": null,
+      "bm25_rank": 17,
+      "bm25_score": 1.0787851992600466,
+      "rrf_score": 0.015987012987,
+      "rerank_score": 0.153869107,
+      "truncation_reason": null,
+      "rejection_reason": "not_top_rank",
+      "components": {
+        "dense_rank": null,
+        "dense_score": null,
+        "bm25_rank": 17,
+        "bm25_score": 1.0787851992600466,
+        "rrf_score": 0.015987012987,
+        "rerank_relevance": 0.153869107
+      },
+      "total_score": 0.153869107
+    },
+    {
+      "question_id": "q010",
+      "source_id": "src_cn_nowcoder_alibaba_agent_01",
+      "rank_after_rerank": 12,
+      "selected": false,
+      "dense_rank": 12,
+      "dense_score": 0.6762927677228918,
+      "bm25_rank": 2,
+      "bm25_score": 11.440902291537412,
+      "rrf_score": 0.030017921147,
+      "rerank_score": 0.150012627,
+      "truncation_reason": null,
+      "rejection_reason": "not_top_rank",
+      "components": {
+        "dense_rank": 12,
+        "dense_score": 0.6762927677228918,
+        "bm25_rank": 2,
+        "bm25_score": 11.440902291537412,
+        "rrf_score": 0.030017921147,
+        "rerank_relevance": 0.150012627
+      },
+      "total_score": 0.150012627
+    },
+    {
+      "question_id": "q007",
+      "source_id": "src_cn_nowcoder_byte_fullstack_01",
+      "rank_after_rerank": 13,
+      "selected": false,
+      "dense_rank": 17,
+      "dense_score": 0.6559978313620043,
+      "bm25_rank": 4,
+      "bm25_score": 9.950584897498377,
+      "rrf_score": 0.028612012987,
+      "rerank_score": 0.13662152,
+      "truncation_reason": null,
+      "rejection_reason": "not_top_rank",
+      "components": {
+        "dense_rank": 17,
+        "dense_score": 0.6559978313620043,
+        "bm25_rank": 4,
+        "bm25_score": 9.950584897498377,
+        "rrf_score": 0.028612012987,
+        "rerank_relevance": 0.13662152
+      },
+      "total_score": 0.13662152
+    },
+    {
+      "question_id": "q014",
+      "source_id": "src_cn_nowcoder_agent_3_01",
+      "rank_after_rerank": 14,
+      "selected": false,
+      "dense_rank": 14,
+      "dense_score": 0.6693542268567957,
+      "bm25_rank": 11,
+      "bm25_score": 2.670686573700128,
+      "rrf_score": 0.028598020556,
+      "rerank_score": 0.11496035,
+      "truncation_reason": null,
+      "rejection_reason": "not_top_rank",
+      "components": {
+        "dense_rank": 14,
+        "dense_score": 0.6693542268567957,
+        "bm25_rank": 11,
+        "bm25_score": 2.670686573700128,
+        "rrf_score": 0.028598020556,
+        "rerank_relevance": 0.11496035
+      },
+      "total_score": 0.11496035
+    },
+    {
+      "question_id": "q011",
+      "source_id": "src_cn_nowcoder_alibaba_agent_01",
+      "rank_after_rerank": 15,
+      "selected": false,
+      "dense_rank": 15,
+      "dense_score": 0.665028930262417,
+      "bm25_rank": 14,
+      "bm25_score": 2.2419268296621317,
+      "rrf_score": 0.026846846847,
+      "rerank_score": 0.107234389,
+      "truncation_reason": null,
+      "rejection_reason": "not_top_rank",
+      "components": {
+        "dense_rank": 15,
+        "dense_score": 0.665028930262417,
+        "bm25_rank": 14,
+        "bm25_score": 2.2419268296621317,
+        "rrf_score": 0.026846846847,
+        "rerank_relevance": 0.107234389
+      },
+      "total_score": 0.107234389
+    },
+    {
+      "question_id": "q001",
+      "source_id": "src_cn_nowcoder_shadow_agent_01",
+      "rank_after_rerank": 16,
+      "selected": false,
+      "dense_rank": 2,
+      "dense_score": 0.7484230092506095,
+      "bm25_rank": 3,
+      "bm25_score": 10.744465467128933,
+      "rrf_score": 0.034002048131,
+      "rerank_score": 0.106747285,
+      "truncation_reason": null,
+      "rejection_reason": "not_top_rank",
+      "components": {
+        "dense_rank": 2,
+        "dense_score": 0.7484230092506095,
+        "bm25_rank": 3,
+        "bm25_score": 10.744465467128933,
+        "rrf_score": 0.034002048131,
+        "rerank_relevance": 0.106747285
+      },
+      "total_score": 0.106747285
+    },
+    {
+      "question_id": "q016",
+      "source_id": "src_cn_nowcoder_bigtech_agent_04",
+      "rank_after_rerank": 17,
+      "selected": false,
+      "dense_rank": 5,
+      "dense_score": 0.7033183164670482,
+      "bm25_rank": null,
+      "bm25_score": null,
+      "rrf_score": 0.015384615385,
+      "rerank_score": 0.082103088,
+      "truncation_reason": null,
+      "rejection_reason": "not_top_rank",
+      "components": {
+        "dense_rank": 5,
+        "dense_score": 0.7033183164670482,
+        "bm25_rank": null,
+        "bm25_score": null,
+        "rrf_score": 0.015384615385,
+        "rerank_relevance": 0.082103088
+      },
+      "total_score": 0.082103088
+    },
+    {
+      "question_id": "q015",
+      "source_id": "src_cn_nowcoder_agent_3_01",
+      "rank_after_rerank": 18,
+      "selected": false,
+      "dense_rank": null,
+      "dense_score": null,
+      "bm25_rank": 7,
+      "bm25_score": 7.956783151873706,
+      "rrf_score": 0.014925373134,
+      "rerank_score": 0.075402975,
+      "truncation_reason": null,
+      "rejection_reason": "not_top_rank",
+      "components": {
+        "dense_rank": null,
+        "dense_score": null,
+        "bm25_rank": 7,
+        "bm25_score": 7.956783151873706,
+        "rrf_score": 0.014925373134,
+        "rerank_relevance": 0.075402975
+      },
+      "total_score": 0.075402975
+    },
+    {
+      "question_id": "q022",
+      "source_id": "src_cn_nowcoder_byte_backend_02",
+      "rank_after_rerank": 19,
+      "selected": false,
+      "dense_rank": 3,
+      "dense_score": 0.7053764617571474,
+      "bm25_rank": 19,
+      "bm25_score": 0.9596440798306868,
+      "rrf_score": 0.028531243721,
+      "rerank_score": 0.067775197,
+      "truncation_reason": null,
+      "rejection_reason": "not_top_rank",
+      "components": {
+        "dense_rank": 3,
+        "dense_score": 0.7053764617571474,
+        "bm25_rank": 19,
+        "bm25_score": 0.9596440798306868,
+        "rrf_score": 0.028531243721,
+        "rerank_relevance": 0.067775197
+      },
+      "total_score": 0.067775197
+    },
+    {
+      "question_id": "q008",
+      "source_id": "src_cn_nowcoder_byte_fullstack_01",
+      "rank_after_rerank": 20,
+      "selected": false,
+      "dense_rank": 19,
+      "dense_score": 0.6550383637406081,
+      "bm25_rank": 6,
+      "bm25_score": 9.462549981059729,
+      "rrf_score": 0.027809743,
+      "rerank_score": 0.064304985,
+      "truncation_reason": null,
+      "rejection_reason": "not_top_rank",
+      "components": {
+        "dense_rank": 19,
+        "dense_score": 0.6550383637406081,
+        "bm25_rank": 6,
+        "bm25_score": 9.462549981059729,
+        "rrf_score": 0.027809743,
+        "rerank_relevance": 0.064304985
+      },
+      "total_score": 0.064304985
+    }
+  ],
+  "memory_related_candidates": [
+    {
+      "question_id": "q009",
+      "rank_after_rerank": 2,
+      "rerank_score": 0.533037543,
+      "selected": false,
+      "rejection_reason": "not_top_rank",
+      "skills": [
+        "记忆写入策略",
+        "隐私删除验证"
+      ]
+    },
+    {
+      "question_id": "q005",
+      "rank_after_rerank": 7,
+      "rerank_score": 0.259169549,
+      "selected": false,
+      "rejection_reason": "not_top_rank",
+      "skills": [
+        "摘要完整性验证",
+        "长会话风险控制"
+      ]
+    },
+    {
+      "question_id": "q006",
+      "rank_after_rerank": 8,
+      "rerank_score": 0.249939457,
+      "selected": false,
+      "rejection_reason": "not_top_rank",
+      "skills": [
+        "事件事实排序",
+        "跨域冲突处理"
+      ]
+    },
+    {
+      "question_id": "q007",
+      "rank_after_rerank": 13,
+      "rerank_score": 0.13662152,
+      "selected": false,
+      "rejection_reason": "not_top_rank",
+      "skills": [
+        "合同切分评估",
+        "检索延迟优化"
+      ]
+    },
+    {
+      "question_id": "q014",
+      "rank_after_rerank": 14,
+      "rerank_score": 0.11496035,
+      "selected": false,
+      "rejection_reason": "not_top_rank",
+      "skills": [
+        "检索内容隔离",
+        "提示注入防护"
+      ]
+    },
+    {
+      "question_id": "q011",
+      "rank_after_rerank": 15,
+      "rerank_score": 0.107234389,
+      "selected": false,
+      "rejection_reason": "not_top_rank",
+      "skills": [
+        "追问成本控制",
+        "摘要缓存设计"
+      ]
+    },
+    {
+      "question_id": "q001",
+      "rank_after_rerank": 16,
+      "rerank_score": 0.106747285,
+      "selected": false,
+      "rejection_reason": "not_top_rank",
+      "skills": [
+        "上下文预算分配",
+        "合规保留策略"
+      ]
+    },
+    {
+      "question_id": "q008",
+      "rank_after_rerank": 20,
+      "rerank_score": 0.064304985,
+      "selected": false,
+      "rejection_reason": "not_top_rank",
+      "skills": [
+        "索引版本治理",
+        "合规回滚"
+      ]
+    }
+  ],
+  "quality_judgement": {
+    "memory_candidate_exists": true,
+    "best_memory_candidate": "q009",
+    "best_memory_rank": 2,
+    "best_memory_score": 0.533037543,
+    "selected_question_is_memory_specific": false,
+    "diagnostic_result": "题库存在 Memory 相关题，但当前 system_design 诊断首选 q023（跨区故障路由），专项意图的 rerank 首选仍需校准；不应把该结果直接作为生产面试题。"
+  },
+  "safety": {
+    "pii_or_secret_in_query": false,
+    "artifact_contains_api_key": false,
+    "artifact_contains_raw_resume_or_jd": false
+  }
+}
