@@ -404,6 +404,39 @@ class IntentBuilderTests(unittest.TestCase):
         self.assertNotIn("role_dim_01", rerank_query)
         self.assertNotIn("Python", rerank_query)
 
+    def test_docx_profile_outputs_flow_into_safe_rerank_query(self) -> None:
+        """Offline contract for the real pre-interview DOCX output path."""
+
+        intent = build_question_retrieval_intent(
+            action=make_action(mode="scenario"),
+            plan=make_plan(
+                objective="验证Agent的任务编排与安全治理能力",
+                requirement="能够说明评测、可观测性、成本与性能的验证证据",
+            ),
+            job_profile=JobProfile(
+                role="Agent 实习生",
+                responsibilities=["建设评测、可观测性和安全治理能力，优化成本与性能"],
+                requirements=[],
+            ),
+            resume_profile=ResumeProfile(
+                education=["某大学"],
+                summary="具备工具调用、上下文管理、RAG检索项目经验",
+                skills=["Python"],
+                projects=[],
+            ),
+        )
+
+        rerank_query = build_rerank_query_text(intent)
+
+        for safe_term in ("安全治理", "成本", "性能", "工具调用", "上下文", "RAG"):
+            with self.subTest(safe_term=safe_term):
+                self.assertIn(safe_term, rerank_query)
+        for private_value in ("某大学", "Python"):
+            with self.subTest(private_value=private_value):
+                self.assertNotIn(private_value, rerank_query)
+        self.assertNotIn("jd=", rerank_query)
+        self.assertNotIn("resume=", rerank_query)
+
     def test_hybrid_recall_requests_twenty_candidates_and_preserves_audit_fields(self) -> None:
         hits = [
             RetrievedQuestion(
