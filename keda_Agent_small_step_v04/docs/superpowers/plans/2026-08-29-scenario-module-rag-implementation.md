@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace direct retrieval of fixed interview questions with a versioned six-scenario knowledge base whose retrieval unit is one scenario-capability module, then let deterministic validation and constraint selection ground natural question generation.
+**Goal:** Replace direct retrieval of fixed interview questions with the frozen Scenario Bank v1: 10 reviewed enterprise scenarios and 35 single-dimension retrieval modules, then let deterministic validation and constraint selection ground natural question generation.
 
 **Architecture:** Versioned JSON is the canonical scenario store; Qdrant is a rebuildable index containing one vector per `ScenarioModule`. Supervisor decisions are converted to a narrow retrieval request, exact dimension/mode/type filters run before reranking, a validator reloads the canonical module, and a deterministic selector chooses at most one hidden constraint before the LLM phrases the question.
 
@@ -10,8 +10,8 @@
 
 ## Global Constraints
 
-- Only the `ai_agent_engineer` role and role version `2026-H2` are in scope.
-- The first release contains exactly six reviewed enterprise scenarios and covers all six `role_dim_01` through `role_dim_06` dimensions at least twice.
+- Only the `ai_application_engineering` role family and role profile version `2026-H2` are in scope. The legacy `ai_agent_engineer` value may only be accepted by a migration adapter.
+- The first release contains exactly 10 reviewed enterprise scenarios and 35 retrieval modules. Each `role_dim_01` through `role_dim_06` dimension has at least four distinct scenario entries; the exact frozen counts are `6/6/6/4/7/6`.
 - `scenario`, `system_design`, and `coding` may use scenario RAG; `foundation`, `project_deep_dive`, and `follow_up` must bypass it.
 - JSON remains the source of truth; do not add PostgreSQL or another dependency.
 - Qdrant stores one vector per scenario-capability module, never one vector for a whole multi-capability card.
@@ -32,7 +32,7 @@ New focused files:
 - `profile_agent/knowledge/qdrant_scenario_store.py`: Qdrant module index writer/reader and hybrid candidate retrieval.
 - `profile_agent/services/scenario_retrieval_service.py`: request building, safe query projection, reranking, canonical reload, validation, and fallback.
 - `profile_agent/services/constraint_selector_service.py`: deterministic one-constraint selection.
-- `profile_agent/knowledge/scenario_banks/ai_agent_engineer_2026_h2/`: manifest, scenarios, modules, constraints, and source registry.
+- `profile_agent/knowledge/scenario_banks/ai_application_engineering_2026_h2/`: manifest, scenarios, modules, constraints, and source registry.
 - `run_scenario_bank.py`: validate, rebuild-index, and audit CLI.
 
 Existing integration files:
@@ -173,10 +173,14 @@ def test_load_rejects_constraint_owned_by_another_module(self):
         ScenarioCatalog.load(root, as_of=date(2026, 8, 29))
 
 
-def test_every_dimension_has_two_active_modules(self):
+def test_every_dimension_has_four_distinct_active_scenarios(self):
     catalog = ScenarioCatalog.load(CANONICAL_ROOT, as_of=date(2026, 8, 29))
-    counts = Counter(m.primary_dimension_id for m in catalog.active_modules)
-    self.assertTrue(all(counts[f"role_dim_0{i}"] >= 2 for i in range(1, 7)))
+    coverage = {
+        dimension_id: {m.scenario_id for m in catalog.active_modules
+                       if m.primary_dimension_id == dimension_id}
+        for dimension_id in [f"role_dim_0{i}" for i in range(1, 7)]
+    }
+    self.assertTrue(all(len(scenario_ids) >= 4 for scenario_ids in coverage.values()))
 ```
 
 - [ ] **Step 2: Run tests and verify failure**
@@ -187,7 +191,7 @@ Expected: FAIL because `ScenarioCatalog` does not exist.
 
 - [ ] **Step 3: Implement fail-closed loading and lookup**
 
-The loader must reject duplicate IDs, dangling references, multiple defaults for one dimension, missing defaults, expired active defaults, invalid source IDs, manifest hash mismatches, and a coverage count below two active modules per dimension. It must expose dictionaries keyed by stable IDs and never read Qdrant. Implement `_load_unique_records` as a JSON-list loader that validates every item with the supplied Pydantic model and raises on a repeated ID; implement `_validate_catalog` as the single referential-integrity pass covering those rules.
+The loader must reject duplicate IDs, dangling references, multiple defaults for one dimension, missing defaults, expired active defaults, invalid source IDs, manifest hash mismatches, and fewer than four distinct active scenarios for any official dimension. It must expose dictionaries keyed by stable IDs and never read Qdrant. Implement `_load_unique_records` as a JSON-list loader that validates every item with the supplied Pydantic model and raises on a repeated ID; implement `_validate_catalog` as the single referential-integrity pass covering those rules.
 
 ```python
 @dataclass(frozen=True)
@@ -258,6 +262,8 @@ def test_request_uses_current_gap_without_raw_profile_text(self):
         runtime_state=make_runtime(gaps=["长期记忆", "隐私删除"]),
         safe_profile_tags=["Memory", "RAG"],
     )
+    self.assertEqual(request.role_family, "ai_application_engineering")
+    self.assertEqual(request.role_profile_version, "2026-H2")
     self.assertEqual(request.primary_dimension_id, "role_dim_03")
     self.assertIn("长期记忆", request.semantic_query)
     self.assertNotIn("某大学", request.semantic_query)
@@ -281,7 +287,7 @@ Expected: FAIL because request building and validation are not implemented.
 
 - [ ] **Step 3: Implement request building and validation**
 
-The semantic query must order content as `objective`, `evidence_gap`, then safe tags; it must not append broad JD/resume terms that are unrelated to the selected requirement. Validation must require exact dimension and compatible mode/type before any selection reaches generation.
+The request must carry `role_family`, `role_profile_version`, `primary_dimension_id`, `question_mode`, `requirement_type`, and `difficulty` as deterministic filters. The semantic query must order content as `objective`, `evidence_gap`, then safe tags; it must not append broad JD/resume terms that are unrelated to the selected requirement. Validation must require the exact role family/profile version/dimension and compatible mode/type before any selection reaches generation.
 
 ```python
 def validate_scenario_selection(
@@ -290,6 +296,10 @@ def validate_scenario_selection(
     catalog: ScenarioCatalog,
     as_of: date,
 ) -> ScenarioSelection:
+    if catalog.manifest.role_family != request.role_family:
+        raise ValueError("role_family mismatch")
+    if catalog.manifest.role_profile_version != request.role_profile_version:
+        raise ValueError("role_profile_version mismatch")
     scenario, module = catalog.resolve(selection.retrieval_unit_id)
     if module.primary_dimension_id != request.primary_dimension_id:
         raise ValueError("primary_dimension_id mismatch")
@@ -354,10 +364,12 @@ Expected: FAIL because the scenario index does not exist.
 
 - [ ] **Step 3: Implement hybrid retrieval**
 
-Reuse the existing SiliconFlow embedding and reranker clients, but keep a separate Qdrant collection such as `interview_scenario_modules`. Apply role, exact dimension, lifecycle, validity, supported mode, supported requirement type, difficulty, and exclusions before dense/BM25/RRF ranking. Send at most 20 eligible module summaries to the reranker and return only stable IDs and audit scores.
+Reuse the existing SiliconFlow embedding and reranker clients, but keep a separate Qdrant collection such as `interview_scenario_modules`. Apply role family, role profile version, exact dimension, lifecycle, validity, supported mode, supported requirement type, difficulty, and exclusions before dense/BM25/RRF ranking. Send at most 20 eligible module summaries to the reranker and return only stable IDs and audit scores.
 
 ```python
 payload = {
+    "role_family": catalog.manifest.role_family,
+    "role_profile_version": catalog.manifest.role_profile_version,
     "retrieval_unit_id": module.retrieval_unit_id,
     "scenario_id": module.scenario_id,
     "module_id": module.module_id,
@@ -542,7 +554,7 @@ git commit -m "feat: ground questions in selected scenario facts"
 
 **Interfaces:**
 - Adds transient `scenario_selection` and canonical `scenario_context` to `MainState`.
-- Adds graph nodes `retrieve_scenario`, `validate_scenario`, and `select_constraint` before `generate_question`.
+- Adds exactly one graph node, `prepare_question_context`, before `generate_question`. Request building, retrieval, canonical reload, validation, fallback, and constraint selection remain ordinary Python service calls inside that node.
 - Preserves legacy question retriever behind a migration flag until Task 9 acceptance passes.
 
 - [ ] **Step 1: Write failing route and continuity tests**
@@ -565,7 +577,7 @@ def test_continue_uses_current_module_without_retrieval(self):
 
 Run: `.\.venv\Scripts\python.exe -m unittest tests.test_supervisor_service tests.test_interview_graph tests.test_question_rag_graph_integration tests.test_web_container`
 
-Expected: FAIL because the scenario nodes and container wiring do not exist.
+Expected: FAIL because the `prepare_question_context` node and container wiring do not exist.
 
 - [ ] **Step 3: Implement the graph handoff**
 
@@ -574,12 +586,12 @@ Required routing:
 ```text
 supervisor
   -> bypass? generate_question
-  -> new/switch? retrieve_scenario -> validate_scenario -> select_constraint
-  -> continue? load_active_scenario -> select_constraint
-  -> generate_question -> wait_for_answer -> process_answer -> supervisor
+  -> new/switch? prepare_question_context -> generate_question
+  -> continue? prepare_question_context -> generate_question
+generate_question -> wait_for_answer -> process_answer -> supervisor
 ```
 
-The graph must clear transient scenario selection after it is copied into the private turn provenance. A retrieval failure must resolve through `ScenarioCatalog.default_module_for_dimension`; it must never pass an unvalidated candidate to generation.
+For `new` or `switch`, `prepare_question_context` builds the safe request, retrieves/reranks candidates, reloads the selected module from canonical JSON, validates it, applies reviewed fallback when necessary, and chooses at most one constraint. For `continue`, it reloads the active canonical module and chooses the next eligible constraint without performing retrieval. The graph must clear transient scenario selection after it is copied into the private turn provenance. It must never pass an unvalidated candidate to generation.
 
 - [ ] **Step 4: Run graph and container tests**
 
@@ -594,35 +606,64 @@ git add profile_agent/state/main_state.py profile_agent/services/supervisor_serv
 git commit -m "feat: route interview questions through scenarios"
 ```
 
-### Task 8: Migrate the reviewed content into six scenario cards
+### Task 8: Publish the frozen 10-scenario, 35-module Scenario Bank v1
 
 **Files:**
-- Create: `profile_agent/knowledge/scenario_banks/ai_agent_engineer_2026_h2/ScenarioBankManifest.json`
-- Create: `profile_agent/knowledge/scenario_banks/ai_agent_engineer_2026_h2/scenarios.json`
-- Create: `profile_agent/knowledge/scenario_banks/ai_agent_engineer_2026_h2/modules.json`
-- Create: `profile_agent/knowledge/scenario_banks/ai_agent_engineer_2026_h2/constraints.json`
-- Create: `profile_agent/knowledge/scenario_banks/ai_agent_engineer_2026_h2/ScenarioSourceRegistry.json`
+- Create: `profile_agent/knowledge/scenario_banks/ai_application_engineering_2026_h2/ScenarioBankManifest.json`
+- Create: `profile_agent/knowledge/scenario_banks/ai_application_engineering_2026_h2/scenarios.json`
+- Create: `profile_agent/knowledge/scenario_banks/ai_application_engineering_2026_h2/modules.json`
+- Create: `profile_agent/knowledge/scenario_banks/ai_application_engineering_2026_h2/constraints.json`
+- Create: `profile_agent/knowledge/scenario_banks/ai_application_engineering_2026_h2/ScenarioSourceRegistry.json`
+- Reference: `docs/superpowers/specs/2026-08-29-scenario-bank-v1-frozen-inventory.md`
 - Test: `tests/test_scenario_bank_release.py`
 
 **Interfaces:**
 - Consumes: ScenarioCatalog from Task 2.
-- Produces: exactly six active scenarios and exactly twenty-three single-dimension retrieval modules.
+- Produces: exactly 10 active scenarios and exactly 35 single-dimension retrieval modules from the frozen inventory.
 
 - [ ] **Step 1: Write failing release inventory tests**
 
 ```python
 EXPECTED_SCENARIOS = {
-    "ecommerce_service", "travel_recommendation", "enterprise_cost_monitor",
+    "ecommerce_service", "travel_planner", "enterprise_cost_monitor",
     "enterprise_knowledge_assistant", "marketing_operations", "recruitment_interview",
+    "coding_review_agent", "enterprise_data_analysis", "it_operations",
+    "sales_followup",
+}
+EXPECTED_MODULES = {
+    "ecommerce_agent_architecture", "ecommerce_context_tools",
+    "ecommerce_safety_evaluation", "ecommerce_performance_cost",
+    "travel_agent_architecture", "travel_business_modeling",
+    "travel_context_tools", "travel_cost_optimization",
+    "cost_monitor_business_modeling", "cost_monitor_observability",
+    "cost_monitor_performance", "knowledge_rag_memory",
+    "knowledge_production_delivery", "knowledge_security_evaluation",
+    "knowledge_cost_performance", "marketing_business_modeling",
+    "marketing_ai_delivery", "marketing_safety_evaluation",
+    "recruitment_agent_architecture", "recruitment_business_modeling",
+    "recruitment_context_memory", "recruitment_safety_evaluation",
+    "coding_agent_architecture", "coding_ai_delivery",
+    "coding_security_evaluation", "coding_cost_performance",
+    "data_analysis_business_modeling", "data_analysis_context_tools",
+    "data_analysis_ai_delivery", "itops_agent_architecture",
+    "itops_observability_safety", "itops_performance_cost",
+    "sales_agent_architecture", "sales_business_modeling",
+    "sales_context_memory_tools",
 }
 
-def test_release_has_exact_six_scenarios_and_full_coverage(self):
+def test_release_matches_frozen_inventory_and_coverage(self):
     catalog = ScenarioCatalog.load(RELEASE_ROOT, as_of=date(2026, 8, 29))
     self.assertEqual(set(catalog.scenarios), EXPECTED_SCENARIOS)
-    self.assertEqual(len(catalog.active_modules), 23)
+    self.assertEqual({m.module_id for m in catalog.active_modules}, EXPECTED_MODULES)
     counts = Counter(m.primary_dimension_id for m in catalog.active_modules)
-    self.assertTrue(all(counts[f"role_dim_0{i}"] >= 2 for i in range(1, 7)))
-    self.assertGreaterEqual(sum("coding" in m.supported_modes for m in catalog.active_modules), 3)
+    self.assertEqual(dict(counts), {
+        "role_dim_01": 6,
+        "role_dim_02": 6,
+        "role_dim_03": 6,
+        "role_dim_04": 4,
+        "role_dim_05": 7,
+        "role_dim_06": 6,
+    })
 ```
 
 - [ ] **Step 2: Run release test and verify failure**
@@ -631,31 +672,22 @@ Run: `.\.venv\Scripts\python.exe -m unittest tests.test_scenario_bank_release`
 
 Expected: FAIL because release JSON does not exist.
 
-- [ ] **Step 3: Author the six reviewed cards and module inventory**
+- [ ] **Step 3: Author the frozen cards and module inventory**
 
-Use this exact minimum module allocation:
+Use the scenario IDs, module IDs, primary dimensions, business goals, constraint materials, and exact coverage totals from `docs/superpowers/specs/2026-08-29-scenario-bank-v1-frozen-inventory.md`. Do not silently rename, add, remove, or merge entries during implementation. Fields intentionally left for implementation, such as `supported_modes`, must be completed and reviewed without changing the frozen 10/35 inventory.
 
-```text
-ecommerce_service: role_dim_01, role_dim_03, role_dim_05, role_dim_06
-travel_recommendation: role_dim_01, role_dim_02, role_dim_03, role_dim_06
-enterprise_cost_monitor: role_dim_02, role_dim_04, role_dim_05, role_dim_06
-enterprise_knowledge_assistant: role_dim_03, role_dim_04, role_dim_05
-marketing_operations: role_dim_02, role_dim_04, role_dim_05, role_dim_06
-recruitment_interview: role_dim_01, role_dim_02, role_dim_03, role_dim_05
-```
-
-Migrate q004 constraints into ecommerce performance, q009 into knowledge-assistant memory, q013 into knowledge-assistant tool engineering, and q023 into cost-monitor observability. Preserve source IDs, publication/verification dates, trust levels, and hashes. Do not copy published interview wording as the generated opening question.
+Migrate q004 constraints into ecommerce performance, q009 and q013 into knowledge-assistant RAG/Memory, and q023 into cost-monitor observability. Preserve source IDs, publication/verification dates, trust levels, and hashes. Do not copy published interview wording as the generated opening question.
 
 - [ ] **Step 4: Run release and governance tests**
 
 Run: `.\.venv\Scripts\python.exe -m unittest tests.test_scenario_bank_release tests.test_scenario_bank_service`
 
-Expected: PASS with six scenarios and all dimensions covered at least twice.
+Expected: PASS with exactly 10 scenarios, 35 modules, and dimension counts `6/6/6/4/7/6`.
 
 - [ ] **Step 5: Commit**
 
 ```powershell
-git add profile_agent/knowledge/scenario_banks/ai_agent_engineer_2026_h2 tests/test_scenario_bank_release.py
+git add profile_agent/knowledge/scenario_banks/ai_application_engineering_2026_h2 tests/test_scenario_bank_release.py
 git commit -m "data: add reviewed agent interview scenarios"
 ```
 
@@ -703,7 +735,7 @@ Expected: FAIL because CLI and acceptance harness do not exist.
 `validate` and `audit` must never construct provider clients. `rebuild-index` is the only command that embeds canonical module `semantic_text`. Document:
 
 ```text
-SCENARIO_RAG_BANK_PATH=profile_agent/knowledge/scenario_banks/ai_agent_engineer_2026_h2
+SCENARIO_RAG_BANK_PATH=profile_agent/knowledge/scenario_banks/ai_application_engineering_2026_h2
 SCENARIO_RAG_INDEX_PATH=data/scenario_rag/qdrant
 SCENARIO_RAG_COLLECTION=interview_scenario_modules
 SCENARIO_RAG_RERANK_THRESHOLD=
@@ -888,7 +920,7 @@ git commit -m "refactor: make scenario rag the interview default"
 
 Before claiming completion:
 
-1. Confirm the six-scenario coverage test passes for all six dimensions.
+1. Confirm the frozen release contains exactly 10 scenarios and 35 modules with dimension counts `6/6/6/4/7/6`.
 2. Confirm the Memory regression cannot select cross-region observability.
 3. Confirm opening questions do not contain hidden evidence signals.
 4. Confirm each follow-up reveals zero or one new constraint.

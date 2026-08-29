@@ -20,10 +20,10 @@
 
 ### 2.1 第一版范围
 
-- 只支持 `ai_agent_engineer` 岗位；
-- 建设 6 个代表性企业场景；
+- 只支持 `role_family=ai_application_engineering`、`role_profile_version=2026-H2`；
+- 建设 10 个代表性企业场景和 35 个单维度 Module；
 - 覆盖现有 6 个正式雷达维度；
-- 每个雷达维度至少有 2 个场景入口；
+- 每个雷达维度至少有 4 个不同场景入口；
 - `scenario`、`system_design` 和 `coding` 可以进入场景 RAG；
 - `foundation`、`project_deep_dive` 和 `follow_up` 继续绕过 RAG；
 - 使用版本化 JSON 作为事实来源，使用现有 Qdrant 作为派生检索索引。
@@ -36,29 +36,20 @@
 - 不将完整场景卡全部拼接成一个向量；
 - 不把评分信号和未释放约束直接暴露给候选人。
 
-## 3. 六个场景与能力覆盖
+## 3. Scenario Bank v1 冻结范围
 
-| 场景 | 主要覆盖能力 |
-|---|---|
-| 电商智能客服 | Agent 架构、Context/Memory/工具、安全评测、性能 |
-| 旅行推荐 Agent | 业务建模、Agent 架构、Context/工具、成本优化 |
-| 企业成本监控 Agent | 业务建模、生产交付、可观测性、成本性能 |
-| 企业知识助手 | Context/RAG/Memory、生产交付、安全评测 |
-| 营销内容运营 Agent | 业务建模、AI 协作交付、安全评测、成本优化 |
-| 招聘与面试 Agent | Agent 架构、Context/Memory、安全评测、业务建模 |
+Scenario Bank v1 固定为 10 个场景、35 个单维度 Module，完整场景、Module ID、能力归属、业务目标和约束素材以 [Scenario Bank v1 冻结清单](./2026-08-29-scenario-bank-v1-frozen-inventory.md) 为唯一数据基线。
 
-反向覆盖要求：
+| Primary dimension | 场景入口数 |
+|---|---:|
+| `role_dim_01` | 6 |
+| `role_dim_02` | 6 |
+| `role_dim_03` | 6 |
+| `role_dim_04` | 4 |
+| `role_dim_05` | 7 |
+| `role_dim_06` | 6 |
 
-| 正式雷达能力 | 至少两个场景入口 |
-|---|---|
-| `role_dim_01` Agent 架构与任务编排 | 电商客服、旅行推荐、招聘面试 |
-| `role_dim_02` 业务理解与任务建模 | 旅行推荐、成本监控、营销运营、招聘面试 |
-| `role_dim_03` Context、RAG、Memory 与工具工程 | 电商客服、旅行推荐、知识助手、招聘面试 |
-| `role_dim_04` AI 协作开发与生产交付 | 成本监控、知识助手、营销运营 |
-| `role_dim_05` 评测、可观测性与安全治理 | 电商客服、成本监控、知识助手、营销运营、招聘面试 |
-| `role_dim_06` 成本、性能与持续优化 | 电商客服、旅行推荐、成本监控、营销运营 |
-
-每个场景只建立真正适用的能力模块，预计总共形成约 20 个检索单元，而不是 6 个大向量。
+通用 Schema、Retriever 和运行时代码不得依赖 10 或 35；只有 `2026-H2` release test 可以冻结这两个数量。
 
 ## 4. 完整场景库模型
 
@@ -68,7 +59,8 @@
 {
   "scenario_id": "ecommerce_service",
   "title": "电商智能客服",
-  "role": "ai_agent_engineer",
+  "role_family": "ai_application_engineering",
+  "role_profile_version": "2026-H2",
   "business_goal": "支持商品咨询、订单查询、退款和人工转接",
   "actors": ["消费者", "客服人员", "订单系统"],
   "tools": ["商品搜索", "订单查询", "退款接口", "人工工单"],
@@ -127,7 +119,8 @@
   "retrieval_unit_id": "ecommerce_service::agent_architecture",
   "scenario_id": "ecommerce_service",
   "module_id": "ecommerce_agent_architecture",
-  "role": "ai_agent_engineer",
+  "role_family": "ai_application_engineering",
+  "role_profile_version": "2026-H2",
   "primary_dimension_id": "role_dim_01",
   "supported_requirement_types": ["system_design", "problem_solving"],
   "supported_modes": ["system_design", "scenario"],
@@ -168,7 +161,8 @@ Builder 从 Supervisor 决策、InterviewPlan 和 RuntimeState 构建检索请�
 
 ```json
 {
-  "role": "ai_agent_engineer",
+  "role_family": "ai_application_engineering",
+  "role_profile_version": "2026-H2",
   "primary_dimension_id": "role_dim_01",
   "requirement_type": "system_design",
   "question_mode": "system_design",
@@ -182,7 +176,7 @@ Builder 从 Supervisor 决策、InterviewPlan 和 RuntimeState 构建检索请�
 
 硬过滤字段：
 
-- `role`；
+- `role_family` 和 `role_profile_version`；
 - `primary_dimension_id`；
 - `requirement_type in supported_requirement_types`；
 - `question_mode in supported_modes`；
@@ -291,20 +285,10 @@ Supervisor
   选择 Requirement、Dimension、Mode、Evidence Gap
   并决定 new / continue / switch
     ↓
-RetrievalRequest Builder
-  构建硬过滤与受控语义查询
-    ↓
-Qdrant + Reranker
-  选择一个“场景 × 能力模块”检索单元
-    ↓
-Scenario Store
-  从 JSON 回读完整 Scenario 与 Module
-    ↓
-Retrieval Validator
-  确定性阻止跑题、过期和不兼容结果
-    ↓
-Constraint Selector
-  从当前模块选择一个匹配 Evidence Gap 的未使用约束
+PrepareQuestionContext
+  一个 LangGraph 节点内部完成：
+  请求构建 → 硬过滤 → Qdrant/Reranker
+  → JSON 回读 → 确定性校验 → 最多选一个 Constraint
     ↓
 Question Generator
   只把锁定信息表达成自然问题
@@ -312,7 +296,7 @@ Question Generator
 Candidate Answer → Evidence Processor → Supervisor
 ```
 
-`scenario_strategy=continue` 时不再搜索新场景，直接在当前 Module 内选择新 Constraint。`new` 或 `switch` 时才进行场景检索。
+Builder、Store、Validator 和 Constraint Selector 是 `PrepareQuestionContext` 内部的普通 Python 组件，不是独立 LangGraph 节点。`scenario_strategy=continue` 时不再搜索新场景，直接在当前 Module 内选择新 Constraint；`new` 或 `switch` 时才进行场景检索。
 
 ## 11. no-match、fallback 与错误处理
 
@@ -347,16 +331,15 @@ LLM 不得自由创造 fallback 场景。
 示例：
 
 - q004 的 800 RPS、队列和人工复核迁入“电商客服 × 成本性能”；
-- q009 的 Memory 写入、删除和验证迁入“企业知识助手 × Memory”；
-- q013 的工具扩展和选择准确率迁入“企业知识助手 × 工具工程”；
+- q009 和 q013 的 Memory、检索与工具边界素材合并迁入“企业知识助手 × Context/RAG/Memory”；
 - q023 的旧数据和降级迁入“成本监控 × 可观测性”。
 
 ## 13. 测试与验收
 
 ### 13.1 Schema 与治理
 
-- 6 个 ScenarioCard 都通过 schema 校验；
-- 6 个正式维度均至少有 2 个 active Module；
+- `2026-H2` release 恢复出恰好 10 个 ScenarioCard 和 35 个 ScenarioModule；
+- 6 个正式维度均至少有 4 个不同场景的 active Module；
 - 每个 Module 只有一个 `primary_dimension_id`；
 - 所有 Constraint 都可回溯到 active Scenario 和 Module；
 - 来源、时效、哈希和版本一致。
@@ -408,4 +391,6 @@ Supervisor 决策
 5. 第一问自然开放，后续每轮只释放一个约束；
 6. 每道问题都能追溯到 Requirement、Retrieval Unit、Scenario、Module 和 Constraint；
 7. RAG 失败时使用已审核默认模块，不让 LLM 自由创造备选场景；
-8. 不需要 PostgreSQL 也能在比赛 Demo 中完整运行和重建索引。
+8. 不需要 PostgreSQL 也能在比赛 Demo 中完整运行和重建索引；
+9. LangGraph 只增加一个 `PrepareQuestionContext` 节点，检索、校验和约束选择不拆成多个图节点；
+10. Scenario Bank v1 的 10 场景、35 Module 与冻结清单一致，但通用业务代码不写死数量。
