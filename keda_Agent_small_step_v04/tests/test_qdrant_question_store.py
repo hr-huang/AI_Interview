@@ -246,6 +246,12 @@ class QdrantQuestionStoreTests(unittest.TestCase):
 
         self.assertEqual(result.status, "hit")
         self.assertIn("q-concurrency", [hit.question_id for hit in result.hits])
+        audit = getattr(result, "hybrid_trace")
+        self.assertEqual(set(audit), {"q-rag", "q-concurrency"})
+        self.assertEqual(audit["q-rag"]["dense_rank"], 1)
+        self.assertIsNotNone(audit["q-concurrency"]["bm25_score"])
+        self.assertIsNotNone(audit["q-concurrency"]["rrf_score"])
+        self.assertFalse(audit["q-concurrency"]["dimension_soft_match"])
 
     def test_question_payload_has_exact_safe_allowlist_and_drops_forbidden_values(self) -> None:
         store = self.make_store(fingerprint=self.fingerprint)

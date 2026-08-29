@@ -49,8 +49,13 @@ from profile_agent.services.question_bank_service import (
 
 MAX_QUERY_CHARS = 512
 MAX_CANDIDATES = 3
-HYBRID_RECALL_CANDIDATES = 10
+HYBRID_RECALL_CANDIDATES = 20
 _ROLE = "ai_agent_engineer"
+_RERANK_MODE_LABELS = {
+    "scenario": "真实业务场景题",
+    "system_design": "系统设计题",
+    "coding": "AI 协作实现题",
+}
 
 
 class ModeMatchTier(str, Enum):
@@ -388,6 +393,51 @@ def build_query_embedding_text(
         compatible_modes=[],
     )
     return projection.to_text()
+
+
+def build_rerank_query_text(intent: QuestionRetrievalIntent) -> str:
+    """Render a safe, natural-language query for the cross-encoder reranker.
+
+    The dense embedding path intentionally keeps its six-section projection
+    contract.  Rerankers, however, compare language rather than field names;
+    feeding ``dimension=...`` and ``mode=...`` makes the query unnatural and
+    weakens Chinese business matching.  Only canonical allowlist terms from
+    the semantic intent sections are rendered here, so JD/resume/answer PII
+    and arbitrary prompt text cannot cross into the provider request.
+    """
+
+    if not isinstance(intent, QuestionRetrievalIntent):
+        raise TypeError("intent must be QuestionRetrievalIntent")
+    sections: dict[str, list[str]] = {label: [] for label in _QUERY_SEMANTIC_FIELDS}
+    for part in intent.query_text.split("|"):
+        label, separator, value = part.partition("=")
+        if separator and label.strip().casefold() in sections:
+            sections[label.strip().casefold()] = _extract_canonical_terms([value])
+
+    mode_label = _RERANK_MODE_LABELS.get(intent.question_mode, "结构化面试题")
+    sentences = [
+        f"请为 Agent工程岗位设计一道{mode_label}，用于判断候选人是否能把方案落地。",
+    ]
+    labels = (
+        ("objective", "考察目标"),
+        ("requirement", "证据要求"),
+        ("coverage_gap", "当前待补足的证据缺口"),
+        ("jd", "岗位要求"),
+        ("resume", "候选人经历线索"),
+        ("recent", "最近回答线索"),
+    )
+    for section, label in labels:
+        terms = sections[section]
+        if terms:
+            sentences.append(f"{label}包括" + "、".join(terms) + "。")
+    sentences.append("题目应要求候选人说明输入、边界、验证方式、失败恢复和可观察证据。")
+    query = "".join(sentences)
+    if len(query) > MAX_QUERY_CHARS:
+        # All dynamic words are canonical terms.  Keep the complete fixed
+        # framing and trim only the final evidence sentence if future labels
+        # expand the allowlist beyond the current budget.
+        query = query[:MAX_QUERY_CHARS].rstrip()
+    return query
 
 
 def _query_embedding_anchor_values(query_text: str) -> list[str]:
@@ -1219,15 +1269,18 @@ class QuestionRetriever:
                 reranked = self._rerank_candidates(candidates, intent)
             except Exception:
                 return self._result("unavailable", as_of=as_of)
+            hybrid_trace = getattr(raw_store_result, "hybrid_trace", {})
+            if not isinstance(hybrid_trace, Mapping):
+                hybrid_trace = {}
+            best_score = reranked[0][1] if reranked else None
             self.last_rank_trace.extend(
-                {
-                    "question_id": item.question_id,
-                    "source_id": item.source_id,
-                    "rank": rank,
-                    "selected": rank == 1,
-                    "components": {"rerank_relevance": score},
-                    "total_score": score,
-                }
+                self._hybrid_audit_entry(
+                    item=item,
+                    rank=rank,
+                    score=score,
+                    hybrid_trace=hybrid_trace,
+                    accepted=(best_score is not None and best_score >= self.rerank_threshold),
+                )
                 for rank, (item, score) in enumerate(reranked, start=1)
             )
             if not reranked or reranked[0][1] < self.rerank_threshold:
@@ -1293,7 +1346,7 @@ class QuestionRetriever:
             )
             for candidate in candidates
         ]
-        raw_scores = rerank(intent.query_text, documents)
+        raw_scores = rerank(build_rerank_query_text(intent), documents)
         if not isinstance(raw_scores, Sequence) or isinstance(raw_scores, (str, bytes)):
             raise ValueError("reranker result must be a sequence")
         scores = list(raw_scores)
@@ -1307,6 +1360,49 @@ class QuestionRetriever:
             ranked.append((candidate, round(max(0.0, min(1.0, score)), 9)))
         ranked.sort(key=lambda item: (-item[1], item[0].question_id))
         return ranked
+
+    @staticmethod
+    def _hybrid_audit_entry(
+        *,
+        item: RetrievedQuestion,
+        rank: int,
+        score: float,
+        hybrid_trace: Mapping[str, Any],
+        accepted: bool,
+    ) -> dict[str, Any]:
+        details = hybrid_trace.get(item.question_id, {})
+        if not isinstance(details, Mapping):
+            details = {}
+        entry = {
+            "question_id": item.question_id,
+            "source_id": item.source_id,
+            "rank_after_rerank": rank,
+            "selected": bool(accepted and rank == 1),
+            "dense_rank": details.get("dense_rank"),
+            "dense_score": details.get("dense_score"),
+            "bm25_rank": details.get("bm25_rank"),
+            "bm25_score": details.get("bm25_score"),
+            "rrf_score": details.get("rrf_score"),
+            "rerank_score": score,
+            "truncation_reason": None,
+            "rejection_reason": (
+                None
+                if accepted and rank == 1
+                else "below_threshold"
+                if not accepted
+                else "not_top_rank"
+            ),
+            "components": {
+                "dense_rank": details.get("dense_rank"),
+                "dense_score": details.get("dense_score"),
+                "bm25_rank": details.get("bm25_rank"),
+                "bm25_score": details.get("bm25_score"),
+                "rrf_score": details.get("rrf_score"),
+                "rerank_relevance": score,
+            },
+            "total_score": score,
+        }
+        return entry
 
     def _embed(self, query_text: str) -> list[float]:
         embed = getattr(self.embedding_client, "embed", None)
@@ -1447,5 +1543,6 @@ __all__ = [
     "VECTOR_WEIGHT",
     "build_query_embedding_text",
     "build_question_retrieval_intent",
+    "build_rerank_query_text",
     "route_mode_candidates",
 ]

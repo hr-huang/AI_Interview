@@ -29,6 +29,7 @@ from profile_agent.services.question_retrieval_service import (
     QuestionRetriever,
     build_query_embedding_text,
     build_question_retrieval_intent,
+    build_rerank_query_text,
     route_mode_candidates,
 )
 
@@ -369,6 +370,95 @@ class IntentBuilderTests(unittest.TestCase):
         for term in ("并发", "连接池", "资源竞争", "消息队列", "阻塞", "限流", "死锁"):
             with self.subTest(term=term):
                 self.assertIn(term, intent.query_text)
+
+    def test_rerank_query_is_natural_and_uses_only_controlled_sections(self) -> None:
+        intent = build_question_retrieval_intent(
+            action=make_action(mode="scenario"),
+            plan=make_plan(
+                dimension_id="role_dim_01",
+                mode="scenario",
+                objective="验证多Agent并发编排与连接池资源竞争处理",
+                requirement="说明限流、超时、死锁检测和失败恢复方案",
+            ),
+            job_profile=JobProfile(
+                role="Agent 实习生",
+                responsibilities=["开发 Prompt、RAG、工具调用和上下文管理"],
+                requirements=[],
+            ),
+            resume_profile=ResumeProfile(
+                summary="具备 Agent、RAG 和工具调用项目经验",
+                skills=["Python"],
+                projects=[],
+            ),
+            recent_turns=[],
+        )
+
+        rerank_query = build_rerank_query_text(intent)
+
+        self.assertIn("考察目标", rerank_query)
+        self.assertIn("证据要求", rerank_query)
+        self.assertIn("多Agent", rerank_query)
+        self.assertIn("连接池", rerank_query)
+        self.assertIn("Agent工程岗位", rerank_query)
+        self.assertNotIn("dimension=", rerank_query)
+        self.assertNotIn("role_dim_01", rerank_query)
+        self.assertNotIn("Python", rerank_query)
+
+    def test_hybrid_recall_requests_twenty_candidates_and_preserves_audit_fields(self) -> None:
+        hits = [
+            RetrievedQuestion(
+                record=make_record(f"q-hybrid-{index}"),
+                score=0.9,
+                index_version="v2",
+            )
+            for index in range(20)
+        ]
+        store_result = QuestionStoreSearchResult(
+            status="hit", hits=hits, index_version="v2"
+        )
+        object.__setattr__(
+            store_result,
+            "hybrid_trace",
+            {
+                hit.question_id: {
+                    "dense_rank": index + 1,
+                    "dense_score": 0.9 - index * 0.01,
+                    "bm25_rank": index + 1,
+                    "bm25_score": 1.0 - index * 0.01,
+                    "rrf_score": 0.03 - index * 0.0001,
+                }
+                for index, hit in enumerate(hits)
+            },
+        )
+        store = FakeHybridStore(store_result)
+        reranker = FakeReranker([0.9 - index * 0.01 for index in range(20)])
+        retriever = QuestionRetriever(
+            FakeEmbedding(),
+            store,
+            today=TODAY,
+            reranker_client=reranker,
+            rerank_threshold=0.2,
+        )
+
+        result = retriever.retrieve(
+            QuestionRetrievalIntent(
+                query_text="objective=Agent并发 | requirement=资源竞争",
+                role="ai_agent_engineer",
+                dimension_id="role_dim_03",
+                question_mode="scenario",
+                difficulty="intermediate",
+            )
+        )
+
+        self.assertEqual(result.status, "hit")
+        self.assertEqual(len(store.calls), 1)
+        self.assertEqual(store.calls[0]["limit"], 20)
+        self.assertEqual(len(reranker.calls[0][1]), 20)
+        self.assertEqual(len(retriever.last_rank_trace), 20)
+        self.assertEqual(retriever.last_rank_trace[0]["dense_rank"], 1)
+        self.assertIn("bm25_score", retriever.last_rank_trace[0])
+        self.assertIn("rrf_score", retriever.last_rank_trace[0])
+        self.assertIn("rejection_reason", retriever.last_rank_trace[1])
 
     def test_builder_is_deterministic_and_rejects_invalid_plan_references(self) -> None:
         kwargs = {
@@ -753,7 +843,7 @@ class RetrieverTests(unittest.TestCase):
     def test_hybrid_candidates_are_reranked_without_hard_mode_exclusion(self) -> None:
         rag = RetrievedQuestion(
             record=make_record(
-                "q-rag",
+                "q003",
                 question_text="RAG命中率下降时如何分析线上日志？",
                 skills=["RAG回归", "日志"],
             ),
@@ -761,7 +851,7 @@ class RetrieverTests(unittest.TestCase):
             index_version="v2",
         )
         concurrency_record = make_record(
-            "q-concurrency",
+            "q004",
             question_text="三个API连接限制下如何处理并发资源竞争、阻塞和失败恢复？",
             skills=["连接池", "限流", "资源竞争"],
         ).model_copy(
@@ -789,17 +879,23 @@ class RetrieverTests(unittest.TestCase):
             difficulty="intermediate",
         )
 
-        result = QuestionRetriever(
+        retriever = QuestionRetriever(
             FakeEmbedding(),
             store,
             today=TODAY,
             reranker_client=reranker,
             rerank_threshold=0.2,
-        ).retrieve(intent)
+        )
+        result = retriever.retrieve(intent)
 
         self.assertEqual(result.status, "hit")
-        self.assertEqual(result.selected_question.question_id, "q-concurrency")
+        self.assertEqual(result.selected_question.question_id, "q004")
+        self.assertFalse(
+            any(item["question_id"] == "q003" and item["selected"] for item in retriever.last_rank_trace)
+        )
         self.assertEqual(len(reranker.calls), 1)
+        self.assertIn("Agent工程岗位", reranker.calls[0][0])
+        self.assertNotIn("dimension=", reranker.calls[0][0])
 
     def test_hybrid_rerank_rejects_low_relevance(self) -> None:
         store = FakeHybridStore(

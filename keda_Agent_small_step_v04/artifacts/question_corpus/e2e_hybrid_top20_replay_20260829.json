@@ -1,0 +1,62 @@
+{
+  "run_date": "2026-08-29",
+  "purpose": "Audit the top-20 hybrid candidate contract for the Planner concurrency requirement.",
+  "provider_calls": {
+    "embedding_provider": "siliconflow",
+    "embedding_model": "BAAI/bge-m3",
+    "embedding_calls": 1,
+    "rerank_provider": "siliconflow",
+    "rerank_model": "BAAI/bge-reranker-v2-m3",
+    "rerank_calls": 1,
+    "llm_calls": 0,
+    "secrets_in_artifact": false
+  },
+  "real_replay": {
+    "status": "provider_call_completed_local_postprocess_failed",
+    "error_class": "TypeError",
+    "error_reason": "audit rejection-reason summary attempted to sort null with strings",
+    "rerank_scores_persisted": false,
+    "note": "The provider calls happened once as required, but no rerank score is asserted here because the local printer failed before serialization. No second provider call was made."
+  },
+  "input": {
+    "target_id": "target_01",
+    "requirement_id": "target_01_req_02",
+    "dimension_id": "role_dim_01",
+    "question_mode": "scenario",
+    "natural_rerank_query": "请为 Agent工程岗位设计一道真实业务场景题，用于判断候选人是否能把方案落地。考察目标包括Agent、多Agent、状态、路由。证据要求包括失败恢复、并发、资源受限、资源竞争、死锁、恢复、约束。当前待补足的证据缺口包括失败恢复、并发、资源竞争、恢复。题目应要求候选人说明输入、边界、验证方式、失败恢复和可观察证据。"
+  },
+  "offline_top20_candidate_audit": {
+    "basis": "zero-vector local store audit; dense scores are not a quality measurement",
+    "q004_in_top20": true,
+    "q003_in_top20": true,
+    "candidates": [
+      {"question_id":"q027","dense_rank":4,"dense_score":0.0,"bm25_rank":1,"bm25_score":25.716249487066744,"rrf_score":0.032018442623,"rerank_score":null,"truncation_reason":null,"rejection_reason":"not_observed_due_postprocess_failure"},
+      {"question_id":"q023","dense_rank":8,"dense_score":0.0,"bm25_rank":2,"bm25_score":12.812942310273051,"rrf_score":0.031834914611,"rerank_score":null,"truncation_reason":null,"rejection_reason":"not_observed_due_postprocess_failure"},
+      {"question_id":"q025","dense_rank":6,"dense_score":0.0,"bm25_rank":6,"bm25_score":4.076050679343441,"rrf_score":0.031303030303,"rerank_score":null,"truncation_reason":null,"rejection_reason":"not_observed_due_postprocess_failure"},
+      {"question_id":"q029","dense_rank":2,"dense_score":0.0,"bm25_rank":16,"bm25_score":1.7912810222920297,"rrf_score":0.029286926995,"rerank_score":null,"truncation_reason":null,"rejection_reason":"not_observed_due_postprocess_failure"},
+      {"question_id":"q024","dense_rank":7,"dense_score":0.0,"bm25_rank":11,"bm25_score":2.6978569081640464,"rrf_score":0.029009880177,"rerank_score":null,"truncation_reason":null,"rejection_reason":"not_observed_due_postprocess_failure"},
+      {"question_id":"q015","dense_rank":16,"dense_score":0.0,"bm25_rank":4,"bm25_score":10.17038551020061,"rrf_score":0.028782894737,"rerank_score":null,"truncation_reason":null,"rejection_reason":"not_observed_due_postprocess_failure"},
+      {"question_id":"q019","dense_rank":12,"dense_score":0.0,"bm25_rank":15,"bm25_score":1.8766182469224661,"rrf_score":0.028222222222,"rerank_score":null,"truncation_reason":null,"rejection_reason":"not_observed_due_postprocess_failure"},
+      {"question_id":"q022","dense_rank":9,"dense_score":0.0,"bm25_rank":14,"bm25_score":1.9192881596613736,"rrf_score":0.028006267137,"rerank_score":null,"truncation_reason":null,"rejection_reason":"not_observed_due_postprocess_failure"},
+      {"question_id":"q012","dense_rank":19,"dense_score":0.0,"bm25_rank":12,"bm25_score":2.1976949306724256,"rrf_score":0.026547116737,"rerank_score":null,"truncation_reason":null,"rejection_reason":"not_observed_due_postprocess_failure"},
+      {"question_id":"q006","dense_rank":null,"dense_score":null,"bm25_rank":7,"bm25_score":3.871175399421678,"rrf_score":0.017925373134,"rerank_score":null,"truncation_reason":null,"rejection_reason":"not_observed_due_postprocess_failure"},
+      {"question_id":"q005","dense_rank":null,"dense_score":null,"bm25_rank":3,"bm25_score":10.594526438048735,"rrf_score":0.017873015873,"rerank_score":null,"truncation_reason":null,"rejection_reason":"not_observed_due_postprocess_failure"},
+      {"question_id":"q004","dense_rank":null,"dense_score":null,"bm25_rank":8,"bm25_score":3.8570397612479224,"rrf_score":0.016705882353,"rerank_score":null,"truncation_reason":null,"rejection_reason":"not_observed_due_postprocess_failure"},
+      {"question_id":"q002","dense_rank":null,"dense_score":null,"bm25_rank":9,"bm25_score":3.7475655570969733,"rrf_score":0.016492753623,"rerank_score":null,"truncation_reason":null,"rejection_reason":"not_observed_due_postprocess_failure"},
+      {"question_id":"q030","dense_rank":1,"dense_score":0.0,"bm25_rank":null,"bm25_score":null,"rrf_score":0.016393442623,"rerank_score":null,"truncation_reason":null,"rejection_reason":"not_observed_due_postprocess_failure"},
+      {"question_id":"q010","dense_rank":null,"dense_score":null,"bm25_rank":5,"bm25_score":7.627268194194,"rrf_score":0.016384615385,"rerank_score":null,"truncation_reason":null,"rejection_reason":"not_observed_due_postprocess_failure"},
+      {"question_id":"q001","dense_rank":null,"dense_score":null,"bm25_rank":10,"bm25_score":3.708098008453738,"rrf_score":0.016285714286,"rerank_score":null,"truncation_reason":null,"rejection_reason":"not_observed_due_postprocess_failure"},
+      {"question_id":"q003","dense_rank":null,"dense_score":null,"bm25_rank":17,"bm25_score":1.6750041803580435,"rrf_score":0.015987012987,"rerank_score":null,"truncation_reason":null,"rejection_reason":"not_observed_due_postprocess_failure"},
+      {"question_id":"q028","dense_rank":3,"dense_score":0.0,"bm25_rank":null,"bm25_score":null,"rrf_score":0.015873015873,"rerank_score":null,"truncation_reason":null,"rejection_reason":"not_observed_due_postprocess_failure"},
+      {"question_id":"q026","dense_rank":5,"dense_score":0.0,"bm25_rank":null,"bm25_score":null,"rrf_score":0.015384615385,"rerank_score":null,"truncation_reason":null,"rejection_reason":"not_observed_due_postprocess_failure"},
+      {"question_id":"q021","dense_rank":10,"dense_score":0.0,"bm25_rank":null,"bm25_score":null,"rrf_score":0.014285714286,"rerank_score":null,"truncation_reason":null,"rejection_reason":"not_observed_due_postprocess_failure"}
+    ]
+  },
+  "interpretation": {
+    "top20_contract": "passed offline",
+    "q004_candidate_presence": "confirmed in the local top20 candidate set; real rerank score was not persisted",
+    "q003_selection": "not asserted because the real rerank output was not persisted",
+    "threshold": 0.2,
+    "next_step": "Fix the local serializer and use a separately authorized replay before making a quality or threshold claim."
+  }
+}

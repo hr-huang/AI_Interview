@@ -1058,7 +1058,7 @@ class QdrantQuestionStore:
         intent: QuestionRetrievalIntent,
         query_vector: Sequence[float],
         today: date,
-        limit: int = 10,
+        limit: int = 20,
         dense_limit: int = 20,
         lexical_limit: int = 20,
     ) -> QuestionStoreSearchResult:
@@ -1144,12 +1144,24 @@ class QdrantQuestionStore:
                 with_payload=True,
                 with_vectors=False,
             )
-            dense_ids = [
-                str(point.payload.get("question_id"))
-                for point in response.points
-                if isinstance(point.payload, Mapping)
-                and str(point.payload.get("question_id")) in eligible
-            ]
+            dense_rank: dict[str, int] = {}
+            dense_score: dict[str, float] = {}
+            for rank, point in enumerate(response.points, start=1):
+                if not isinstance(point.payload, Mapping):
+                    continue
+                question_id = str(point.payload.get("question_id"))
+                if question_id not in eligible:
+                    continue
+                raw_score = getattr(point, "score", None)
+                try:
+                    numeric_score = float(raw_score)
+                except (TypeError, ValueError):
+                    continue
+                if not math.isfinite(numeric_score):
+                    continue
+                dense_rank[question_id] = rank
+                dense_score[question_id] = numeric_score
+            dense_ids = list(dense_rank)
 
             documents = {
                 question_id: " ".join(
@@ -1168,6 +1180,10 @@ class QdrantQuestionStore:
                 lexical_scores,
                 key=lambda question_id: (-lexical_scores[question_id], question_id),
             )[:lexical_limit]
+            lexical_rank = {
+                question_id: rank
+                for rank, question_id in enumerate(lexical_ids, start=1)
+            }
 
             fused: dict[str, float] = {}
             for rank, question_id in enumerate(dense_ids, start=1):
@@ -1198,9 +1214,30 @@ class QdrantQuestionStore:
                 )
                 for question_id in ranked_ids
             ]
-            return QuestionStoreSearchResult(
+            hybrid_trace = {
+                question_id: {
+                    "dense_rank": dense_rank.get(question_id),
+                    "dense_score": dense_score.get(question_id),
+                    "bm25_rank": lexical_rank.get(question_id),
+                    "bm25_score": lexical_scores.get(question_id),
+                    "rrf_score": round(fused[question_id], 12),
+                    "dimension_soft_match": eligible[question_id].dimension_id
+                    == intent.dimension_id,
+                    "mode_soft_match": eligible[question_id].question_mode
+                    == intent.question_mode
+                    or eligible[question_id].primary_mode == intent.question_mode,
+                    "truncation_reason": None,
+                    "rejection_reason": None,
+                }
+                for question_id in ranked_ids
+            }
+            result = QuestionStoreSearchResult(
                 status="hit", hits=hits, index_version=manifest.index_version
             )
+            # This is private audit metadata; the public Pydantic contract
+            # remains unchanged and therefore cannot leak ranking internals.
+            object.__setattr__(result, "hybrid_trace", hybrid_trace)
+            return result
         except Exception:
             return QuestionStoreSearchResult(status="unavailable", hits=[])
 
