@@ -9,12 +9,14 @@ deterministic fake client).
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 import logging
 import math
 from pathlib import Path
+import re
 from typing import Any, Literal
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 from urllib.parse import urlparse
@@ -78,6 +80,50 @@ _QUESTION_RECORD_PAYLOAD_FIELDS = frozenset(
     _QUESTION_PAYLOAD_ALLOWLIST - {"record_type", "valid_until_epoch"}
 )
 _SAFE_RECONSTRUCTED_SOURCE_TYPE = "qdrant_index"
+_LEXICAL_TOKEN_RE = re.compile(r"[A-Za-z0-9_]+|[\u3400-\u4dbf\u4e00-\u9fff]+")
+_RRF_K = 60.0
+
+
+def _lexical_tokens(value: str) -> list[str]:
+    """Tokenise Chinese technical text without adding a runtime dependency."""
+
+    tokens: list[str] = []
+    for chunk in _LEXICAL_TOKEN_RE.findall(value.casefold()):
+        if not chunk:
+            continue
+        tokens.append(chunk)
+        if any("\u3400" <= char <= "\u9fff" for char in chunk):
+            tokens.extend(chunk[index : index + 2] for index in range(len(chunk) - 1))
+    return tokens
+
+
+def _bm25_scores(query: str, documents: Mapping[str, str]) -> dict[str, float]:
+    query_terms = _lexical_tokens(query)
+    if not query_terms or not documents:
+        return {}
+    tokenized = {key: _lexical_tokens(text) for key, text in documents.items()}
+    average_length = sum(len(tokens) for tokens in tokenized.values()) / max(1, len(tokenized))
+    document_frequency: Counter[str] = Counter()
+    for tokens in tokenized.values():
+        document_frequency.update(set(tokens))
+    scores: dict[str, float] = {}
+    total_documents = len(tokenized)
+    k1, b = 1.5, 0.75
+    for key, tokens in tokenized.items():
+        frequencies = Counter(tokens)
+        length = len(tokens)
+        score = 0.0
+        for term in query_terms:
+            frequency = frequencies.get(term, 0)
+            if not frequency:
+                continue
+            df = document_frequency.get(term, 0)
+            inverse_frequency = math.log(1.0 + (total_documents - df + 0.5) / (df + 0.5))
+            denominator = frequency + k1 * (1.0 - b + b * length / max(1.0, average_length))
+            score += inverse_frequency * frequency * (k1 + 1.0) / denominator
+        if score > 0:
+            scores[key] = score
+    return scores
 _SAFE_SOURCE_TYPES = frozenset(
     {"public_interview_experience", "test_only_synthetic"}
 )
@@ -1004,6 +1050,158 @@ class QdrantQuestionStore:
         except Exception:
             # Qdrant is an optimization.  Do not leak backend details or make
             # retrieval failures look like an empty authoritative bank.
+            return QuestionStoreSearchResult(status="unavailable", hits=[])
+
+    def hybrid_search(
+        self,
+        *,
+        intent: QuestionRetrievalIntent,
+        query_vector: Sequence[float],
+        today: date,
+        limit: int = 10,
+        dense_limit: int = 20,
+        lexical_limit: int = 20,
+    ) -> QuestionStoreSearchResult:
+        """Fuse broad dense and Chinese lexical recall before later reranking.
+
+        Role, publication state, trust, validity and already-asked IDs remain
+        hard filters.  Dimension and question mode are deliberately soft: a
+        relevant system-design question must be allowed to compete for a
+        scenario request instead of being discarded before reranking.
+        """
+
+        if not isinstance(intent, QuestionRetrievalIntent):
+            raise TypeError("intent must be QuestionRetrievalIntent")
+        if not isinstance(today, date):
+            raise TypeError("today must be a date")
+        for name, value in (
+            ("limit", limit),
+            ("dense_limit", dense_limit),
+            ("lexical_limit", lexical_limit),
+        ):
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                raise ValueError(f"{name} must be a positive integer")
+        try:
+            vector = self._validate_vector(query_vector, expected_dimension=None)
+            if not self._client.collection_exists(self.collection_name):
+                return QuestionStoreSearchResult(status="unavailable", hits=[])
+            manifest = self._read_manifest()
+            if manifest is None:
+                return QuestionStoreSearchResult(status="unavailable", hits=[])
+            if self._expected_fingerprint is not None and manifest != self._expected_fingerprint:
+                return QuestionStoreSearchResult(
+                    status="index_mismatch", hits=[], index_version=manifest.index_version
+                )
+            if len(vector) != manifest.dimension:
+                return QuestionStoreSearchResult(
+                    status="index_mismatch", hits=[], index_version=manifest.index_version
+                )
+
+            allowed_statuses = {"active", "needs_review"} if self.candidate_safe else {"active"}
+            excluded = set(intent.excluded_question_ids)
+            eligible = {
+                question_id: record
+                for question_id, record in self._question_catalog.items()
+                if record.role == intent.role
+                and record.status in allowed_statuses
+                and record.trust_level in {"medium", "high"}
+                and record.valid_until >= today
+                and question_id not in excluded
+            }
+            if not eligible:
+                return QuestionStoreSearchResult(
+                    status="no_match", hits=[], index_version=manifest.index_version
+                )
+
+            must = [
+                FieldCondition(
+                    key="record_type", match=MatchValue(value=_QUESTION_RECORD_TYPE)
+                ),
+                FieldCondition(key="role", match=MatchValue(value=intent.role)),
+                FieldCondition(
+                    key="status", match=MatchAny(any=sorted(allowed_statuses))
+                ),
+                FieldCondition(key="trust_level", match=MatchAny(any=["medium", "high"])),
+                FieldCondition(
+                    key="valid_until_epoch",
+                    range=Range(gte=float(today.toordinal())),
+                ),
+            ]
+            must_not = (
+                [
+                    FieldCondition(
+                        key="question_id", match=MatchAny(any=sorted(excluded))
+                    )
+                ]
+                if excluded
+                else None
+            )
+            response = self._client.query_points(
+                collection_name=self.collection_name,
+                query=vector,
+                query_filter=Filter(must=must, must_not=must_not),
+                limit=min(dense_limit, len(eligible)),
+                with_payload=True,
+                with_vectors=False,
+            )
+            dense_ids = [
+                str(point.payload.get("question_id"))
+                for point in response.points
+                if isinstance(point.payload, Mapping)
+                and str(point.payload.get("question_id")) in eligible
+            ]
+
+            documents = {
+                question_id: " ".join(
+                    [
+                        record.question_text,
+                        *record.skills,
+                        record.business_constraint,
+                        *record.dimension_terms,
+                        *record.expected_signals,
+                    ]
+                )
+                for question_id, record in eligible.items()
+            }
+            lexical_scores = _bm25_scores(intent.query_text, documents)
+            lexical_ids = sorted(
+                lexical_scores,
+                key=lambda question_id: (-lexical_scores[question_id], question_id),
+            )[:lexical_limit]
+
+            fused: dict[str, float] = {}
+            for rank, question_id in enumerate(dense_ids, start=1):
+                fused[question_id] = fused.get(question_id, 0.0) + 1.0 / (_RRF_K + rank)
+            for rank, question_id in enumerate(lexical_ids, start=1):
+                fused[question_id] = fused.get(question_id, 0.0) + 1.0 / (_RRF_K + rank)
+            for question_id in set(dense_ids) | set(lexical_ids):
+                record = eligible[question_id]
+                if record.dimension_id == intent.dimension_id:
+                    fused[question_id] = fused.get(question_id, 0.0) + 0.002
+                if (
+                    record.question_mode == intent.question_mode
+                    or record.primary_mode == intent.question_mode
+                ):
+                    fused[question_id] = fused.get(question_id, 0.0) + 0.001
+
+            ranked_ids = sorted(fused, key=lambda key: (-fused[key], key))[:limit]
+            if not ranked_ids:
+                return QuestionStoreSearchResult(
+                    status="no_match", hits=[], index_version=manifest.index_version
+                )
+            maximum = max(fused[question_id] for question_id in ranked_ids)
+            hits = [
+                RetrievedQuestion(
+                    record=eligible[question_id],
+                    score=round(fused[question_id] / maximum, 9),
+                    index_version=manifest.index_version,
+                )
+                for question_id in ranked_ids
+            ]
+            return QuestionStoreSearchResult(
+                status="hit", hits=hits, index_version=manifest.index_version
+            )
+        except Exception:
             return QuestionStoreSearchResult(status="unavailable", hits=[])
 
     def get_manifest(self) -> IndexFingerprint | None:

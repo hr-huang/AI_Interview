@@ -162,6 +162,9 @@ def _question_retriever_factory_from_env(
             SiliconFlowEmbeddingClient,
             resolve_embedding_config,
         )
+        from profile_agent.services.siliconflow_rerank_service import (
+            SiliconFlowRerankClient,
+        )
         from profile_agent.services.question_retrieval_service import (
             QuestionRetriever,
         )
@@ -194,7 +197,13 @@ def _question_retriever_factory_from_env(
             loaded_bank_manifest = None
         config = resolve_embedding_config()
         embedding = SiliconFlowEmbeddingClient.from_env()
+        reranker = None
         try:
+            # Reranking is an optional quality layer.  A missing reranker key
+            # must not make the local question index unavailable; retrieval can
+            # still use the hybrid dense/lexical candidates safely.
+            if os.getenv("SILICONFLOW_API_KEY", "").strip():
+                reranker = SiliconFlowRerankClient.from_env()
             store = QdrantQuestionStore(
                 path=index_path,
                 expected_fingerprint=IndexFingerprint(
@@ -213,6 +222,11 @@ def _question_retriever_factory_from_env(
                 store=store,
                 owns_embedding_client=True,
                 owns_store=True,
+                reranker_client=reranker,
+                owns_reranker_client=True,
+                rerank_threshold=float(
+                    os.getenv("QUESTION_RAG_RERANK_THRESHOLD", "0.2")
+                ),
                 question_mode_policy=runtime_policy,
                 question_bank_manifest=(
                     question_bank_manifest
@@ -227,6 +241,12 @@ def _question_retriever_factory_from_env(
             if callable(close):
                 try:
                     close()
+                except Exception:
+                    pass
+            close_reranker = getattr(reranker, "close", None)
+            if callable(close_reranker):
+                try:
+                    close_reranker()
                 except Exception:
                     pass
             raise

@@ -200,6 +200,24 @@ class FakeStore:
         return self.result
 
 
+class FakeHybridStore(FakeStore):
+    def hybrid_search(self, **kwargs: object) -> QuestionStoreSearchResult:
+        self.calls.append(kwargs)
+        if self.error is not None:
+            raise self.error
+        return self.result
+
+
+class FakeReranker:
+    def __init__(self, scores: list[float]):
+        self.scores = scores
+        self.calls: list[tuple[str, list[str]]] = []
+
+    def rerank(self, query: str, documents: list[str]) -> list[float]:
+        self.calls.append((query, documents))
+        return self.scores
+
+
 class IntentBuilderTests(unittest.TestCase):
     def test_query_embedding_projection_rejects_unknown_or_pii_dimension_ids(self) -> None:
         intent = QuestionRetrievalIntent(
@@ -333,6 +351,24 @@ class IntentBuilderTests(unittest.TestCase):
         self.assertNotIn("不应进入完整查询", intent.query_text)
         self.assertNotIn("secret-token", intent.query_text)
         self.assertNotIn("旧回答", intent.query_text)
+
+    def test_runtime_query_preserves_discriminating_agent_constraints(self) -> None:
+        intent = build_question_retrieval_intent(
+            action=make_action(mode="scenario"),
+            plan=make_plan(
+                dimension_id="role_dim_01",
+                mode="scenario",
+                objective="验证多Agent并发编排与连接池资源竞争处理",
+                requirement=(
+                    "在最多三个外部API连接且没有消息队列时，说明第四个Agent阻塞、"
+                    "限流、超时、死锁检测和失败恢复方案"
+                ),
+            ),
+        )
+
+        for term in ("并发", "连接池", "资源竞争", "消息队列", "阻塞", "限流", "死锁"):
+            with self.subTest(term=term):
+                self.assertIn(term, intent.query_text)
 
     def test_builder_is_deterministic_and_rejects_invalid_plan_references(self) -> None:
         kwargs = {
@@ -714,6 +750,133 @@ class IntentBuilderTests(unittest.TestCase):
 
 
 class RetrieverTests(unittest.TestCase):
+    def test_hybrid_candidates_are_reranked_without_hard_mode_exclusion(self) -> None:
+        rag = RetrievedQuestion(
+            record=make_record(
+                "q-rag",
+                question_text="RAG命中率下降时如何分析线上日志？",
+                skills=["RAG回归", "日志"],
+            ),
+            score=0.99,
+            index_version="v2",
+        )
+        concurrency_record = make_record(
+            "q-concurrency",
+            question_text="三个API连接限制下如何处理并发资源竞争、阻塞和失败恢复？",
+            skills=["连接池", "限流", "资源竞争"],
+        ).model_copy(
+            update={
+                "dimension_id": "role_dim_06",
+                "question_mode": "system_design",
+                "primary_mode": "system_design",
+                "compatible_modes": ["scenario"],
+            }
+        )
+        concurrency = RetrievedQuestion(
+            record=concurrency_record,
+            score=0.75,
+            index_version="v2",
+        )
+        store = FakeHybridStore(
+            QuestionStoreSearchResult(status="hit", hits=[rag, concurrency], index_version="v2")
+        )
+        reranker = FakeReranker([0.08, 0.94])
+        intent = QuestionRetrievalIntent(
+            query_text="多Agent并发 连接池 资源竞争 阻塞 限流 失败恢复",
+            role="ai_agent_engineer",
+            dimension_id="role_dim_03",
+            question_mode="scenario",
+            difficulty="intermediate",
+        )
+
+        result = QuestionRetriever(
+            FakeEmbedding(),
+            store,
+            today=TODAY,
+            reranker_client=reranker,
+            rerank_threshold=0.2,
+        ).retrieve(intent)
+
+        self.assertEqual(result.status, "hit")
+        self.assertEqual(result.selected_question.question_id, "q-concurrency")
+        self.assertEqual(len(reranker.calls), 1)
+
+    def test_hybrid_rerank_rejects_low_relevance(self) -> None:
+        store = FakeHybridStore(
+            QuestionStoreSearchResult(
+                status="hit",
+                hits=[
+                    RetrievedQuestion(
+                        record=make_record("q-low-relevance"),
+                        score=0.99,
+                        index_version="v2",
+                    )
+                ],
+                index_version="v2",
+            )
+        )
+        reranker = FakeReranker([0.19])
+
+        retriever = QuestionRetriever(
+            FakeEmbedding(),
+            store,
+            today=TODAY,
+            reranker_client=reranker,
+            rerank_threshold=0.2,
+        )
+        result = retriever.retrieve(
+            QuestionRetrievalIntent(
+                query_text="完全不相关的招聘薪资地点问题",
+                role="ai_agent_engineer",
+                dimension_id="role_dim_03",
+                question_mode="scenario",
+                difficulty="intermediate",
+            )
+        )
+
+        self.assertEqual(result.status, "no_match")
+        self.assertIsNone(result.selected_question)
+        self.assertEqual(len(reranker.calls), 1)
+        self.assertEqual(retriever.last_rank_trace[0]["question_id"], "q-low-relevance")
+
+    def test_hybrid_trace_keeps_all_reranked_candidates_for_audit(self) -> None:
+        hits = [
+            RetrievedQuestion(
+                record=make_record(f"q-hybrid-{index}"),
+                score=0.9,
+                index_version="v2",
+            )
+            for index in range(4)
+        ]
+        store = FakeHybridStore(
+            QuestionStoreSearchResult(status="hit", hits=hits, index_version="v2")
+        )
+        reranker = FakeReranker([0.1, 0.2, 0.3, 0.4])
+        retriever = QuestionRetriever(
+            FakeEmbedding(),
+            store,
+            today=TODAY,
+            reranker_client=reranker,
+            rerank_threshold=0.05,
+        )
+
+        result = retriever.retrieve(
+            QuestionRetrievalIntent(
+                query_text="Agent 失败恢复",
+                role="ai_agent_engineer",
+                dimension_id="role_dim_03",
+                question_mode="scenario",
+                difficulty="intermediate",
+            )
+        )
+
+        self.assertEqual(result.status, "hit")
+        self.assertEqual(result.selected_question.question_id, "q-hybrid-3")
+        self.assertEqual(
+            {item["question_id"] for item in retriever.last_rank_trace},
+            {f"q-hybrid-{index}" for index in range(4)},
+        )
+
     def test_route_prefers_exact_primary_over_compatible_candidates(self) -> None:
         exact = RetrievedQuestion(record=make_record("q-exact"), score=0.1, index_version="v2")
         compatible_record = make_record("q-compatible").model_copy(

@@ -1,0 +1,60 @@
+{
+  "run_date": "2026-08-29",
+  "purpose": "Replay the previous Planner concurrency requirement through production hybrid retrieval and SiliconFlow rerank.",
+  "input": {
+    "target_id": "target_01",
+    "requirement_id": "target_01_req_02",
+    "dimension_id": "role_dim_01",
+    "question_mode": "scenario",
+    "query_text": "dimension=role_dim_01 | mode=scenario | depth=intermediate | objective=Agent,多Agent,状态,路由 | requirement=失败恢复,并发,资源受限,资源竞争,死锁,恢复,约束 | coverage_gap=none | jd=none | resume=none | recent=none"
+  },
+  "provider_calls": {
+    "embedding_provider": "siliconflow",
+    "embedding_model": "BAAI/bge-m3",
+    "embedding_calls": 1,
+    "rerank_provider": "siliconflow",
+    "rerank_model": "BAAI/bge-reranker-v2-m3",
+    "rerank_calls": 1,
+    "llm_calls": 0,
+    "secrets_in_artifact": false
+  },
+  "candidate_comparison": {
+    "q003": {
+      "question_role": "RAG线上回归排查",
+      "retrieved": true,
+      "rank_after_rerank": 9,
+      "rerank_relevance": 0.000700378,
+      "selected": false
+    },
+    "q004": {
+      "question_role": "支付对账Agent峰值容量与队列取舍",
+      "retrieved": false,
+      "rank_after_rerank": null,
+      "rerank_relevance": null,
+      "selected": false,
+      "note": "未进入 hybrid top-10 候选，因此没有 rerank score"
+    },
+    "q006": {
+      "question_role": "跨域事件上下文冲突处理",
+      "retrieved": true,
+      "rank_after_rerank": 3,
+      "rerank_relevance": 0.002749499,
+      "selected": false
+    }
+  },
+  "final": {
+    "status": "no_match",
+    "selected_question_id": null,
+    "threshold": 0.2,
+    "reason": "最高 rerank relevance 0.002749499 低于阈值 0.2"
+  },
+  "interpretation": {
+    "low_relevance_gate": "passed",
+    "retrieval_quality_for_this_query": "not_ready_for_demo",
+    "main_findings": [
+      "混合召回允许跨 dimension/mode 候选进入 rerank，未在前置阶段硬过滤。",
+      "当前受控查询未召回 q004，说明题库中与并发容量约束最贴近的题没有进入 hybrid top-10。",
+      "q006 虽进入候选，但绝对 rerank 分数仍远低于当前阈值；需要后续用真实标注查询校准 query 投影、题库标签和阈值。"
+    ]
+  }
+}

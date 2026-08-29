@@ -348,8 +348,11 @@ class QuestionRagGraphIntegrationTests(unittest.TestCase):
 
         graph.invoke(self.initial_state(), config)
         graph.invoke(Command(resume="candidate answer"), config)
-        self.assertEqual(len(retriever.calls), 2)
+        # follow_up is deliberately grounded in the exact previous answer;
+        # it must not spend another retrieval call or drift to a new bank item.
+        self.assertEqual(len(retriever.calls), 1)
         self.assertEqual(len(generator.calls), 2)
+        self.assertEqual(generator.calls[1]["retrieval_result"].status, "no_match")
 
     def test_unavailable_retrieval_still_reaches_candidate_interrupt(self) -> None:
         retriever = FakeRetriever(QuestionRetrievalResult(status="unavailable"))
@@ -682,6 +685,75 @@ class QuestionRagGraphIntegrationTests(unittest.TestCase):
                     factory()
 
         self.assertEqual(embedding.close_calls, 1)
+
+    def test_env_factory_without_rerank_key_keeps_retriever_available(self) -> None:
+        embedding = CloseSpy()
+        store = CloseSpy()
+
+        with TemporaryDirectory() as root:
+            env = self._default_env(
+                root,
+                index_path=str(Path(root) / "questions"),
+            )
+            with (
+                patch.dict(os.environ, env, clear=True),
+                patch(
+                    "profile_agent.services.siliconflow_embedding_service.SiliconFlowEmbeddingClient.from_env",
+                    return_value=embedding,
+                ),
+                patch(
+                    "profile_agent.knowledge.qdrant_question_store.QdrantQuestionStore",
+                    return_value=store,
+                ),
+            ):
+                factory = _question_retriever_factory_from_env()
+                self.assertIsNotNone(factory)
+                retriever = factory()
+                try:
+                    self.assertIsNone(retriever.reranker_client)
+                finally:
+                    retriever.close()
+
+        self.assertEqual(embedding.close_calls, 1)
+        self.assertEqual(store.close_calls, 1)
+
+    def test_env_factory_wires_and_closes_configured_reranker(self) -> None:
+        embedding = CloseSpy()
+        store = CloseSpy()
+        reranker = CloseSpy()
+
+        with TemporaryDirectory() as root:
+            env = self._default_env(
+                root,
+                index_path=str(Path(root) / "questions"),
+            )
+            env["SILICONFLOW_API_KEY"] = "test-key"
+            with (
+                patch.dict(os.environ, env, clear=True),
+                patch(
+                    "profile_agent.services.siliconflow_embedding_service.SiliconFlowEmbeddingClient.from_env",
+                    return_value=embedding,
+                ),
+                patch(
+                    "profile_agent.knowledge.qdrant_question_store.QdrantQuestionStore",
+                    return_value=store,
+                ),
+                patch(
+                    "profile_agent.services.siliconflow_rerank_service.SiliconFlowRerankClient.from_env",
+                    return_value=reranker,
+                ),
+            ):
+                factory = _question_retriever_factory_from_env()
+                self.assertIsNotNone(factory)
+                retriever = factory()
+                try:
+                    self.assertIs(retriever.reranker_client, reranker)
+                finally:
+                    retriever.close()
+
+        self.assertEqual(embedding.close_calls, 1)
+        self.assertEqual(store.close_calls, 1)
+        self.assertEqual(reranker.close_calls, 1)
 
     def test_env_factory_loads_verified_catalog_and_full_fingerprint(self) -> None:
         fixture_path = (

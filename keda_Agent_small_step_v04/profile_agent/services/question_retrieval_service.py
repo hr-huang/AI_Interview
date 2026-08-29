@@ -49,6 +49,7 @@ from profile_agent.services.question_bank_service import (
 
 MAX_QUERY_CHARS = 512
 MAX_CANDIDATES = 3
+HYBRID_RECALL_CANDIDATES = 10
 _ROLE = "ai_agent_engineer"
 
 
@@ -150,6 +151,19 @@ _CANONICAL_QUERY_TERMS: tuple[str, ...] = (
     "失败恢复",
     "失败恢复边界",
     "重试",
+    "并发",
+    "并发编排",
+    "资源受限",
+    "资源竞争",
+    "连接",
+    "连接池",
+    "连接限制",
+    "消息队列",
+    "队列",
+    "阻塞",
+    "限流",
+    "熔断",
+    "死锁",
     "RAG",
     "Context",
     "上下文",
@@ -522,9 +536,13 @@ def _normalise_match_text(value: Any) -> str:
 def _contains_canonical_term(text: str, term: str) -> bool:
     """Match a safe phrase without treating an ASCII word as a substring."""
 
-    # ASCII-aware boundaries intentionally regard adjacent Chinese characters
-    # as boundaries.  The matched source span is discarded; only ``term`` from
-    # the centralized allowlist is ever returned to the query builder.
+    # Chinese terms are allowed to touch an ASCII technology name (for example
+    # ``Agent并发``).  Applying an ASCII look-behind to every term used to erase
+    # exactly the runtime constraint that distinguishes one scenario from
+    # another.  ASCII terms still require word-like boundaries so ``RAG`` does
+    # not match an arbitrary identifier.
+    if any("\u3400" <= char <= "\u9fff" for char in term):
+        return term.casefold() in text.casefold()
     return re.search(
         rf"(?<![A-Za-z0-9]){re.escape(term)}(?![A-Za-z0-9])",
         text,
@@ -937,6 +955,10 @@ class QuestionRetriever:
         max_candidates: int = MAX_CANDIDATES,
         owns_embedding_client: bool = False,
         owns_store: bool = False,
+        reranker_client: Any | None = None,
+        reranker: Any | None = None,
+        rerank_threshold: float = 0.2,
+        owns_reranker_client: bool = False,
         question_mode_policy: QuestionModePolicy | Mapping[str, Any] | None = None,
         question_bank_manifest: QuestionBankManifest | Mapping[str, Any] | None = None,
         policy: QuestionModePolicy | Mapping[str, Any] | None = None,
@@ -960,6 +982,14 @@ class QuestionRetriever:
             raise TypeError("owns_embedding_client must be a bool")
         if not isinstance(owns_store, bool):
             raise TypeError("owns_store must be a bool")
+        if reranker_client is not None and reranker is not None:
+            raise ValueError("pass only one of reranker_client and reranker")
+        if not isinstance(owns_reranker_client, bool):
+            raise TypeError("owns_reranker_client must be a bool")
+        if isinstance(rerank_threshold, bool) or not isinstance(rerank_threshold, (int, float)):
+            raise TypeError("rerank_threshold must be a number")
+        if not math.isfinite(float(rerank_threshold)) or not 0.0 <= float(rerank_threshold) <= 1.0:
+            raise ValueError("rerank_threshold must be between 0 and 1")
         configured_date = today if today is not None else as_of
         if configured_date is not None and (
             isinstance(configured_date, datetime)
@@ -974,6 +1004,9 @@ class QuestionRetriever:
         self.store = store if store is not None else question_store
         self._owns_embedding_client = owns_embedding_client
         self._owns_store = owns_store
+        self.reranker_client = reranker_client if reranker_client is not None else reranker
+        self._owns_reranker_client = owns_reranker_client
+        self.rerank_threshold = float(rerank_threshold)
         self._closed = False
         self.today = today if today is not None else as_of
         self.max_candidates = min(MAX_CANDIDATES, max_candidates)
@@ -1022,6 +1055,8 @@ class QuestionRetriever:
             resources.append(self.embedding_client)
         if self._owns_store and self.store is not None:
             resources.append(self.store)
+        if self._owns_reranker_client and self.reranker_client is not None:
+            resources.append(self.reranker_client)
 
         closed_ids: set[int] = set()
         for resource in resources:
@@ -1078,7 +1113,12 @@ class QuestionRetriever:
         requested_limit = min(MAX_CANDIDATES, requested_limit)
 
         excluded_ids = set(intent.excluded_question_ids)
-        def collect(raw_store_result: Any, requested_intent: QuestionRetrievalIntent) -> tuple[list[RetrievedQuestion], bool, str | None, str]:
+        def collect(
+            raw_store_result: Any,
+            requested_intent: QuestionRetrievalIntent,
+            *,
+            strict_scope: bool = True,
+        ) -> tuple[list[RetrievedQuestion], bool, str | None, str]:
             status, raw_hits, index_version = _store_status_and_hits(raw_store_result)
             if status != "hit":
                 return [], False, index_version, status
@@ -1093,7 +1133,7 @@ class QuestionRetriever:
                     malformed = True
                     continue
                 record = hit.record
-                if record.role != requested_intent.role or record.dimension_id != requested_intent.dimension_id:
+                if record.role != requested_intent.role:
                     continue
                 try:
                     self.question_mode_policy.validate_mode_assignment(
@@ -1102,7 +1142,9 @@ class QuestionRetriever:
                 except (TypeError, ValueError, AttributeError):
                     malformed = True
                     continue
-                if record.question_mode != requested_intent.question_mode:
+                if strict_scope and record.dimension_id != requested_intent.dimension_id:
+                    continue
+                if strict_scope and record.question_mode != requested_intent.question_mode:
                     continue
                 if record.status != "active" or record.valid_until < as_of:
                     continue
@@ -1113,18 +1155,36 @@ class QuestionRetriever:
                 found.append(hit)
             return found, malformed, index_version, status
 
+        hybrid_search = getattr(self.store, "hybrid_search", None)
+        using_hybrid = callable(hybrid_search)
         try:
-            raw_store_result = self.store.search(intent=intent, query_vector=query_vector, today=as_of, limit=requested_limit)
+            raw_store_result = (
+                hybrid_search(
+                    intent=intent,
+                    query_vector=query_vector,
+                    today=as_of,
+                    limit=HYBRID_RECALL_CANDIDATES,
+                )
+                if using_hybrid
+                else self.store.search(
+                    intent=intent,
+                    query_vector=query_vector,
+                    today=as_of,
+                    limit=requested_limit,
+                )
+            )
         except Exception:
             return self._result("unavailable", as_of=as_of)
-        candidates, malformed_hit, store_index_version, status = collect(raw_store_result, intent)
+        candidates, malformed_hit, store_index_version, status = collect(
+            raw_store_result, intent, strict_scope=not using_hybrid
+        )
         if status in {"unavailable", "index_mismatch"}:
             return self._result(status, as_of=as_of)
         if status not in {"hit", "no_match"}:
             return self._result("unavailable", as_of=as_of)
 
         # Compatible modes are queried only after the exact primary route is empty.
-        if not candidates and not malformed_hit:
+        if not using_hybrid and not candidates and not malformed_hit:
             for mode in self.question_mode_policy.compatible_order_for(intent.dimension_id):
                 if mode == intent.question_mode:
                     continue
@@ -1144,22 +1204,45 @@ class QuestionRetriever:
                 if candidates:
                     break
 
-        routed = route_mode_candidates(intent, candidates, self.question_mode_policy)
-        candidates = list(routed)
+        routed: RoutedCandidates | None = None
+        if not using_hybrid:
+            routed = route_mode_candidates(intent, candidates, self.question_mode_policy)
+            candidates = list(routed)
 
         if not candidates:
             if malformed_hit:
                 return self._result("unavailable", as_of=as_of)
             return self._result("no_match", as_of=as_of)
 
-        ranked = self._rank(
-            candidates,
-            intent=intent,
-            today=as_of,
-            limit=requested_limit,
-        )
-        selected, selected_breakdown = ranked[0]
-        selected_question = selected.model_copy(update={"score": selected_breakdown.total_score})
+        if using_hybrid and self.reranker_client is not None:
+            try:
+                reranked = self._rerank_candidates(candidates, intent)
+            except Exception:
+                return self._result("unavailable", as_of=as_of)
+            self.last_rank_trace.extend(
+                {
+                    "question_id": item.question_id,
+                    "source_id": item.source_id,
+                    "rank": rank,
+                    "selected": rank == 1,
+                    "components": {"rerank_relevance": score},
+                    "total_score": score,
+                }
+                for rank, (item, score) in enumerate(reranked, start=1)
+            )
+            if not reranked or reranked[0][1] < self.rerank_threshold:
+                return self._result("no_match", as_of=as_of)
+            selected, relevance = reranked[0]
+            selected_question = selected.model_copy(update={"score": relevance})
+        else:
+            ranked = self._rank(
+                candidates,
+                intent=intent,
+                today=as_of,
+                limit=requested_limit,
+            )
+            selected, selected_breakdown = ranked[0]
+            selected_question = selected.model_copy(update={"score": selected_breakdown.total_score})
         index_version = selected_question.index_version or store_index_version
         if index_version is not None:
             selected_question = selected_question.model_copy(
@@ -1178,10 +1261,52 @@ class QuestionRetriever:
                 index_version=selected_question.index_version,
             ),
         )
-        object.__setattr__(result.trace, "mode_match_tier", routed.match_tier.value)
-        object.__setattr__(result.trace, "matched_mode", routed.matched_mode)
+        selected_mode = selected_question.record.primary_mode or selected_question.record.question_mode
+        tier = (
+            routed.match_tier.value
+            if routed is not None
+            else ModeMatchTier.EXACT.value
+            if selected_mode == intent.question_mode
+            else ModeMatchTier.COMPATIBLE.value
+        )
+        object.__setattr__(result.trace, "mode_match_tier", tier)
+        object.__setattr__(result.trace, "matched_mode", selected_mode)
         self._attach_trace(result)
         return result
+
+    def _rerank_candidates(
+        self,
+        candidates: Sequence[RetrievedQuestion],
+        intent: QuestionRetrievalIntent,
+    ) -> list[tuple[RetrievedQuestion, float]]:
+        rerank = getattr(self.reranker_client, "rerank", None)
+        if not callable(rerank):
+            raise TypeError("reranker client must provide rerank")
+        documents = [
+            "\n".join(
+                [
+                    candidate.record.question_text,
+                    "skills=" + ",".join(candidate.record.skills),
+                    "business_constraint=" + candidate.record.business_constraint,
+                    "expected_signals=" + ",".join(candidate.record.expected_signals),
+                ]
+            )
+            for candidate in candidates
+        ]
+        raw_scores = rerank(intent.query_text, documents)
+        if not isinstance(raw_scores, Sequence) or isinstance(raw_scores, (str, bytes)):
+            raise ValueError("reranker result must be a sequence")
+        scores = list(raw_scores)
+        if len(scores) != len(candidates):
+            raise ValueError("reranker result length mismatch")
+        ranked: list[tuple[RetrievedQuestion, float]] = []
+        for candidate, raw_score in zip(candidates, scores):
+            score = _finite_score(raw_score)
+            if score is None:
+                raise ValueError("reranker score must be finite")
+            ranked.append((candidate, round(max(0.0, min(1.0, score)), 9)))
+        ranked.sort(key=lambda item: (-item[1], item[0].question_id))
+        return ranked
 
     def _embed(self, query_text: str) -> list[float]:
         embed = getattr(self.embedding_client, "embed", None)

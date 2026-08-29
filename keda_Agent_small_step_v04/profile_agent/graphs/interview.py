@@ -212,6 +212,18 @@ def build_interview_graph(
         if not isinstance(action, AskAction):
             raise ValueError("retrieve_question 节点需要 AskAction")
 
+        # External question material is useful for independent transfer,
+        # system-design and implementation scenarios.  Foundation/project
+        # deep-dives come from the plan and resume; follow-ups must stay on the
+        # candidate's exact previous answer instead of drifting to a new bank
+        # question.
+        if action.question_mode not in {"scenario", "system_design", "coding"}:
+            return {
+                "question_retrieval_result": QuestionRetrievalResult(
+                    status="no_match"
+                )
+            }
+
         # Missing provider/index configuration is an intentional lazy no-op.
         # No client construction happens while building or starting the graph.
         if question_retriever is None:

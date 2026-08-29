@@ -206,6 +206,47 @@ class QdrantQuestionStoreTests(unittest.TestCase):
         self.assertEqual(result.status, "hit")
         self.assertEqual(result.hits[0].record.question_id, "q-good")
 
+    def test_hybrid_search_keeps_lexically_relevant_compatible_mode_candidate(self) -> None:
+        store = self.make_store(fingerprint=self.fingerprint)
+        rag = self.record("q-rag").model_copy(
+            update={
+                "question_text": "RAG命中率下降时如何分析线上日志？",
+                "skills": ["RAG回归", "日志"],
+            }
+        )
+        concurrency = self.record(
+            "q-concurrency",
+            dimension_id="role_dim_06",
+            question_mode="system_design",
+        ).model_copy(
+            update={
+                "question_text": "三个API连接限制下如何用连接池、限流和消息队列处理并发阻塞？",
+                "skills": ["资源竞争", "失败恢复"],
+                "primary_mode": "system_design",
+                "compatible_modes": ["scenario"],
+            }
+        )
+        store.rebuild(
+            [rag, concurrency],
+            [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+            self.fingerprint,
+        )
+        intent = self.intent.model_copy(
+            update={
+                "query_text": "多Agent并发 连接池 资源竞争 消息队列 阻塞 限流 失败恢复",
+            }
+        )
+
+        result = store.hybrid_search(
+            intent=intent,
+            query_vector=[1.0, 0.0, 0.0],
+            today=date(2026, 8, 26),
+            limit=10,
+        )
+
+        self.assertEqual(result.status, "hit")
+        self.assertIn("q-concurrency", [hit.question_id for hit in result.hits])
+
     def test_question_payload_has_exact_safe_allowlist_and_drops_forbidden_values(self) -> None:
         store = self.make_store(fingerprint=self.fingerprint)
         record = self.record("q-payload").model_copy(
