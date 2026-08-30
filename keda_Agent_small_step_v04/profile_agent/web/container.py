@@ -21,6 +21,12 @@ from profile_agent.schemas.question_rag_schema import (
     QuestionRetrievalIntent,
     QuestionRetrievalResult,
 )
+from profile_agent.schemas.scenario_rag_schema import (
+    ScenarioRetrievalRequest,
+    ScenarioSelection,
+)
+from profile_agent.services.scenario_bank_service import ScenarioCatalog
+from profile_agent.services.scenario_retrieval_service import select_fallback_module
 from profile_agent.services.role_profile_service import load_role_profile
 from profile_agent.services.question_bank_service import (
     EMBEDDING_TEXT_VERSION,
@@ -33,6 +39,7 @@ from profile_agent.web.repository import SqliteAssessmentRepository
 
 
 QuestionRetrieverFactory = Callable[[], object | None]
+ScenarioRetrieverFactory = Callable[[], object | None]
 _UNINITIALIZED = object()
 
 _QUESTION_BANK_ENV_NAMES: tuple[str, ...] = (
@@ -86,6 +93,76 @@ class LazyQuestionRetriever:
             # The graph has an additional failure boundary; keeping this
             # adapter safe also protects direct container callers.
             return QuestionRetrievalResult(status="unavailable")
+
+    def close(self) -> None:
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+            retriever = self._retriever
+            self._retriever = None
+        if retriever is _UNINITIALIZED or retriever is None:
+            return
+        close = getattr(retriever, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                pass
+
+
+class LazyScenarioRetriever:
+    """Initialize scenario vector retrieval on demand and fail to reviewed JSON."""
+
+    def __init__(
+        self,
+        factory: ScenarioRetrieverFactory,
+        *,
+        catalog: ScenarioCatalog,
+    ) -> None:
+        if not callable(factory):
+            raise TypeError("scenario_retriever_factory must be callable")
+        if not isinstance(catalog, ScenarioCatalog):
+            raise TypeError("catalog must be ScenarioCatalog")
+        self._factory = factory
+        self._catalog = catalog
+        self._retriever: object = _UNINITIALIZED
+        self._closed = False
+        self._lock = RLock()
+
+    def _get_retriever(self) -> object | None:
+        with self._lock:
+            if self._closed:
+                return None
+            if self._retriever is _UNINITIALIZED:
+                try:
+                    self._retriever = self._factory()
+                except Exception:
+                    self._retriever = None
+            return self._retriever
+
+    def retrieve(
+        self,
+        request: ScenarioRetrievalRequest,
+        *,
+        as_of,
+    ) -> ScenarioSelection:
+        request = ScenarioRetrievalRequest.model_validate(request)
+        retriever = self._get_retriever()
+        if retriever is not None:
+            try:
+                retrieve = getattr(retriever, "retrieve", None)
+                if callable(retrieve):
+                    return ScenarioSelection.model_validate(
+                        retrieve(request, as_of=as_of)
+                    )
+            except Exception:
+                pass
+        return select_fallback_module(
+            request,
+            self._catalog,
+            "scenario retriever unavailable",
+        )
 
     def close(self) -> None:
         with self._lock:
@@ -254,6 +331,97 @@ def _question_retriever_factory_from_env(
     return factory
 
 
+class _OwnedScenarioRetriever:
+    """Bind optional ranking resources to the deterministic retriever."""
+
+    def __init__(self, retriever: object, *, reranker: object | None, resources: list[object]) -> None:
+        self._retriever = retriever
+        self._reranker = reranker
+        self._resources = resources
+        self._closed = False
+
+    def retrieve(self, request: ScenarioRetrievalRequest, *, as_of) -> ScenarioSelection:
+        return ScenarioSelection.model_validate(
+            self._retriever.retrieve(
+                request,
+                as_of=as_of,
+                reranker=self._reranker,
+            )
+        )
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        for resource in self._resources:
+            close = getattr(resource, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception:
+                    pass
+
+
+def _scenario_retriever_factory_from_env(
+    catalog: ScenarioCatalog,
+) -> ScenarioRetrieverFactory | None:
+    """Build a lazy scenario-index reader; JSON remains the safe fallback."""
+
+    index_path = os.getenv("SCENARIO_RAG_INDEX_PATH", "").strip()
+    qdrant_url = (
+        os.getenv("SCENARIO_RAG_QDRANT_URL", "").strip()
+        or os.getenv("QDRANT_URL", "").strip()
+    )
+    if not index_path and not qdrant_url:
+        return None
+
+    def factory() -> object:
+        from qdrant_client import QdrantClient
+
+        from profile_agent.knowledge.qdrant_scenario_store import QdrantScenarioStore
+        from profile_agent.services.scenario_retrieval_service import ScenarioRetriever
+        from profile_agent.services.siliconflow_embedding_service import SiliconFlowEmbeddingClient
+        from profile_agent.services.siliconflow_rerank_service import SiliconFlowRerankClient
+
+        embedding = SiliconFlowEmbeddingClient.from_env()
+        reranker = None
+        client = None
+        store = None
+        try:
+            if qdrant_url:
+                api_key = (
+                    os.getenv("SCENARIO_RAG_QDRANT_API_KEY", "").strip()
+                    or os.getenv("QDRANT_API_KEY", "").strip()
+                )
+                client = QdrantClient(url=qdrant_url, api_key=api_key or None)
+            else:
+                client = QdrantClient(path=index_path)
+            if os.getenv("SILICONFLOW_API_KEY", "").strip():
+                reranker = SiliconFlowRerankClient.from_env()
+            store = QdrantScenarioStore(
+                embedding_client=embedding,
+                client=client,
+            )
+            store.load_catalog(catalog)
+            retriever = ScenarioRetriever(store=store, catalog=catalog)
+            return _OwnedScenarioRetriever(
+                retriever,
+                reranker=reranker,
+                resources=[store, reranker, client, embedding],
+            )
+        except Exception:
+            for resource in (store, reranker, client, embedding):
+                close = getattr(resource, "close", None)
+                if callable(close):
+                    try:
+                        close()
+                    except Exception:
+                        pass
+            raise
+
+    return factory
+
+
 class ThreadPoolDispatcher:
     """Production dispatcher; tests inject a synchronous equivalent."""
 
@@ -293,6 +461,8 @@ class WebContainer:
         default=None,
         kw_only=True,
     )
+    scenario_catalog: ScenarioCatalog | None = field(default=None, kw_only=True)
+    scenario_retriever: object | None = field(default=None, kw_only=True)
 
     @classmethod
     def for_test(
@@ -307,6 +477,8 @@ class WebContainer:
         question_retriever: object | None = None,
         question_mode_policy: QuestionModePolicy | None = None,
         question_bank_manifest: QuestionBankManifest | None = None,
+        scenario_catalog: ScenarioCatalog | None = None,
+        scenario_retriever: object | None = None,
         checkpoint_connection: sqlite3.Connection | None = None,
         interview_lock: RLock | None = None,
     ) -> WebContainer:
@@ -321,6 +493,8 @@ class WebContainer:
             question_retriever=question_retriever,
             question_mode_policy=question_mode_policy,
             question_bank_manifest=question_bank_manifest,
+            scenario_catalog=scenario_catalog,
+            scenario_retriever=scenario_retriever,
             checkpoint_connection=checkpoint_connection,
             interview_lock=interview_lock or RLock(),
         )
@@ -330,9 +504,23 @@ class WebContainer:
         cls,
         *,
         question_retriever_factory: QuestionRetrieverFactory | None = None,
+        scenario_retriever_factory: ScenarioRetrieverFactory | None = None,
+        scenario_catalog: ScenarioCatalog | None = None,
         question_mode_policy: QuestionModePolicy | None = None,
         question_bank_manifest: QuestionBankManifest | None = None,
     ) -> WebContainer:
+        # An explicitly injected legacy factory is a compatibility/testing
+        # override.  Ordinary production startup always loads Scenario Bank.
+        legacy_override = (
+            question_retriever_factory is not None
+            and scenario_catalog is None
+            and scenario_retriever_factory is None
+        )
+        runtime_scenario_catalog = (
+            None
+            if legacy_override
+            else ScenarioCatalog.load() if scenario_catalog is None else scenario_catalog
+        )
         database_path = Path(
             os.getenv("WEB_DATABASE_PATH", "data/web.sqlite3")
         )
@@ -360,10 +548,29 @@ class WebContainer:
             if configured_factory is not None
             else None
         )
+        configured_scenario_factory = (
+            scenario_retriever_factory
+            if scenario_retriever_factory is not None
+            else (
+                _scenario_retriever_factory_from_env(runtime_scenario_catalog)
+                if runtime_scenario_catalog is not None
+                else None
+            )
+        )
+        scenario_retriever = (
+            LazyScenarioRetriever(
+                configured_scenario_factory,
+                catalog=runtime_scenario_catalog,
+            )
+            if configured_scenario_factory is not None
+            else None
+        )
         try:
             interview_graph = build_interview_graph(
                 checkpointer=SqliteSaver(checkpoint_connection),
                 question_retriever=question_retriever,
+                scenario_catalog=runtime_scenario_catalog,
+                scenario_retriever=scenario_retriever,
                 question_mode_policy=question_mode_policy,
                 question_bank_manifest=question_bank_manifest,
             )
@@ -383,5 +590,7 @@ class WebContainer:
             question_retriever=question_retriever,
             question_mode_policy=question_mode_policy,
             question_bank_manifest=question_bank_manifest,
+            scenario_catalog=runtime_scenario_catalog,
+            scenario_retriever=scenario_retriever,
             checkpoint_connection=checkpoint_connection,
         )

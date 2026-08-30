@@ -261,6 +261,9 @@ class InterviewPlannerGuardTest(unittest.TestCase):
         )
         self.assertIn("迁移 Requirement 必须放在 high、must_cover 的核心 Target", system_prompt)
         self.assertIn("planned_role_dimension_id", system_prompt)
+        self.assertIn("每条 Evidence Requirement 只能表达一个原子验证目标", system_prompt)
+        self.assertIn("任务编排、工具边界和失败恢复", system_prompt)
+        self.assertIn("拆成多条 Evidence Requirement", system_prompt)
 
     def test_build_plan_rejects_more_targets_than_policy_allows(self) -> None:
         with patch.object(

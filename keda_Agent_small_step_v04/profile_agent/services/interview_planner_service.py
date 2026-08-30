@@ -654,6 +654,10 @@ Debugging / Problem Solving
 候选人需要表现出什么,
 我们才能认为这一目标得到验证.
 
+每条 Evidence Requirement 只能表达一个原子验证目标，供 Supervisor
+在某一轮单独选择。不要把“任务编排、工具边界和失败恢复”合并在同一条
+Requirement 中；如果都必须验证，应拆成多条 Evidence Requirement。
+
 不要写:
 
 进一步了解 LangGraph

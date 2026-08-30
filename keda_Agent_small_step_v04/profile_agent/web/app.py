@@ -23,6 +23,7 @@ def create_app(container: WebContainer | None = None) -> FastAPI:
                 # Stop background work before closing the database it may use.
                 first_error: BaseException | None = None
                 for resource in (
+                    app.state.container.scenario_retriever,
                     app.state.container.question_retriever,
                     app.state.container.dispatcher,
                     app.state.container.repository,

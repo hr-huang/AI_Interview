@@ -12,6 +12,7 @@ from profile_agent.schemas.question_rag_schema import (
     validate_embedding_text_value,
 )
 from profile_agent.schemas.runtime_schema import InterviewTurn
+from profile_agent.schemas.scenario_rag_schema import LockedScenarioContext
 
 
 _SYSTEM_PROMPT = """
@@ -161,6 +162,84 @@ Question mode:
 """.strip()
 
 
+def _scenario_grounding_text(
+    scenario_context: LockedScenarioContext | None,
+) -> str:
+    """Project only the candidate-visible portion of a locked scenario."""
+
+    if scenario_context is None:
+        return ""
+
+    def safe(value: object) -> str | None:
+        try:
+            return validate_embedding_text_value(value, "scenario_grounding")
+        except (TypeError, ValueError):
+            return None
+
+    fields = [
+        ("Business goal", safe(scenario_context.business_goal)),
+        ("Opening goal", safe(scenario_context.opening_goal)),
+    ]
+    if scenario_context.selected_constraint is not None:
+        constraint = scenario_context.selected_constraint.fact or scenario_context.selected_constraint.description
+        fields.append(("Selected constraint", safe(constraint)))
+    return "\n\n".join(
+        f"{label}:\n{value}" for label, value in fields if value is not None
+    )
+
+
+def _candidate_focus(requirement_description: str) -> str:
+    focus = " ".join(
+        requirement_description.replace("？", "").replace("?", "").split()
+    ).strip()
+    for prefix in ("验证候选人能否", "验证候选人", "能够说明", "验证", "考察"):
+        if focus.startswith(prefix):
+            focus = focus[len(prefix) :].strip("：: ")
+            break
+    if not focus:
+        raise ValueError("场景问题缺少原子考点")
+    return focus
+
+
+def _scenario_opening_question(
+    scenario_context: LockedScenarioContext,
+    requirement_description: str,
+) -> GeneratedQuestion:
+    """Render a safe first scenario question without another model call.
+
+    The opening may expose only the reviewed business goal and the single
+    requirement selected by Supervisor.  Module signals, hidden constraints,
+    and model-invented failure cases must not enter the candidate-facing text.
+    """
+
+    def one_line(value: str) -> str:
+        return " ".join(
+            value.replace("？", "").replace("?", "").split()
+        ).strip()
+
+    business_goal = one_line(scenario_context.business_goal)
+    focus = _candidate_focus(requirement_description)
+    if not business_goal or not focus:
+        raise ValueError("场景开场问题缺少业务目标或原子考点")
+
+    return GeneratedQuestion(
+        text=(
+            f"现在需要设计一个以“{business_goal}”为目标的 Agent。"
+            f"你会如何围绕“{focus}”完成整体设计？"
+        )
+    )
+
+
+def _scenario_safe_follow_up(requirement_description: str) -> GeneratedQuestion:
+    focus = _candidate_focus(requirement_description)
+    return GeneratedQuestion(
+        text=(
+            f"基于刚才的回答，请进一步说明你会如何验证“{focus}”"
+            "在实际运行中有效？"
+        )
+    )
+
+
 def generate_question(
     action: AskAction,
     plan: InterviewPlan,
@@ -168,6 +247,7 @@ def generate_question(
     recent_turns: list[InterviewTurn] | None = None,
     llm_client=llm,
     retrieval_result: QuestionRetrievalResult | None = None,
+    scenario_context: LockedScenarioContext | None = None,
 ) -> GeneratedQuestion:
     target, requirement = _find_requirement(
         plan=plan,
@@ -175,9 +255,21 @@ def generate_question(
         requirement_id=action.primary_requirement_id,
     )
 
-    grounding_text = _retrieval_grounding_text(
-        retrieval_result,
-        business_constraint=requirement.description,
+    if scenario_context is not None and scenario_context.selected_constraint is None:
+        if action.question_mode == "follow_up":
+            return _scenario_safe_follow_up(requirement.description)
+        return _scenario_opening_question(
+            scenario_context,
+            requirement.description,
+        )
+
+    grounding_text = (
+        _scenario_grounding_text(scenario_context)
+        if scenario_context is not None
+        else _retrieval_grounding_text(
+            retrieval_result,
+            business_constraint=requirement.description,
+        )
     )
     grounding_block = f"\n\n{grounding_text}" if grounding_text else ""
 

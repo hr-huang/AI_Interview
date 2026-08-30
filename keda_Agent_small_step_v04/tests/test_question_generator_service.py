@@ -17,6 +17,12 @@ from profile_agent.schemas.question_rag_schema import (
     QuestionRetrievalTrace,
     RetrievedQuestion,
 )
+from profile_agent.schemas.scenario_rag_schema import (
+    LockedScenarioContext,
+    ScenarioCard,
+    ScenarioConstraint,
+    ScenarioModule,
+)
 from profile_agent.services.question_generator_service import generate_question, _retrieval_grounding_text
 
 
@@ -169,6 +175,184 @@ def make_turn(
 
 
 class QuestionGeneratorServiceTest(unittest.TestCase):
+    def _make_scenario_context(
+        self,
+        *,
+        selected_constraint: ScenarioConstraint | None = None,
+    ) -> LockedScenarioContext:
+        scenario = ScenarioCard(
+            scenario_id="private_scenario_id",
+            title="内部业务",
+            business_goal="支持订单查询和退款",
+            modules=["private_module_id"],
+            valid_from=date(2026, 8, 29),
+        )
+        module = ScenarioModule(
+            module_id="private_module_id",
+            scenario_id=scenario.scenario_id,
+            primary_dimension_id="role_dim_03",
+            supported_requirement_types=["implementation"],
+            supported_modes=["scenario", "follow_up"],
+            difficulties=["intermediate"],
+            opening_goal="验证状态更新与删除边界",
+            semantic_text="不应发送到 Prompt 的索引文本",
+            evidence_signals=["PRIVATE_SIGNAL"],
+            critical_errors=["PRIVATE_ERROR"],
+            constraint_ids=["selected_constraint", "unused_constraint"],
+            valid_from=date(2026, 8, 29),
+        )
+        revealed_ids = [selected_constraint.constraint_id] if selected_constraint else []
+        return LockedScenarioContext(
+            scenario_id=scenario.scenario_id,
+            module_id=module.module_id,
+            retrieval_unit_id=module.retrieval_unit_id,
+            business_goal=scenario.business_goal,
+            opening_goal=module.opening_goal,
+            selected_constraint=selected_constraint,
+            revealed_constraint_ids=revealed_ids,
+            retrieval_status="hit",
+            scenario=scenario,
+            module=module,
+        )
+
+    def test_scenario_opening_is_deterministic_and_does_not_leak_unselected_pressure_case(self) -> None:
+        bad_llm = FakeLLM(
+            GeneratedQuestion(
+                text=(
+                    "假设退款已经执行成功但接口超时、订单状态异常且用户负面情绪，"
+                    "请说明何时转人工、阈值如何设置以及如何避免错误执行退款？"
+                )
+            )
+        )
+
+        generated = generate_question(
+            action=make_action(),
+            plan=make_plan(),
+            scenario_context=self._make_scenario_context(),
+            llm_client=bad_llm,
+        )
+
+        self.assertEqual(bad_llm.calls, [])
+        self.assertIn("支持订单查询和退款", generated.text)
+        self.assertIn("并发状态更新中的一致性保证", generated.text)
+        self.assertNotIn("能够说明", generated.text)
+        self.assertEqual(
+            sum(generated.text.count(mark) for mark in ("？", "?")),
+            1,
+        )
+        for forbidden in (
+            "接口超时",
+            "状态异常",
+            "负面情绪",
+            "转人工",
+            "阈值",
+            "错误执行退款",
+            "退款实际上已成功",
+        ):
+            self.assertNotIn(forbidden, generated.text)
+
+    def test_scenario_follow_up_without_remaining_constraint_uses_safe_verification_question(self) -> None:
+        bad_llm = FakeLLM(
+            GeneratedQuestion(text="假设接口超时且订单状态异常，你会如何设置转人工阈值？")
+        )
+
+        generated = generate_question(
+            action=make_action(question_mode="follow_up"),
+            plan=make_plan(),
+            scenario_context=self._make_scenario_context(),
+            llm_client=bad_llm,
+        )
+
+        self.assertEqual(bad_llm.calls, [])
+        self.assertIn("刚才的回答", generated.text)
+        self.assertIn("如何验证", generated.text)
+        self.assertEqual(sum(generated.text.count(mark) for mark in ("？", "?")), 1)
+        for forbidden in ("接口超时", "状态异常", "转人工", "阈值"):
+            self.assertNotIn(forbidden, generated.text)
+
+    def test_scenario_follow_up_keeps_one_selected_constraint_for_the_llm(self) -> None:
+        fake_llm = FakeLLM(GeneratedQuestion(text="如果接口响应超时，你会如何处理？"))
+        selected = ScenarioConstraint(
+            constraint_id="selected_constraint",
+            scenario_id="private_scenario_id",
+            module_id="private_module_id",
+            fact="退款实际上已成功但响应超时",
+        )
+
+        generate_question(
+            action=make_action(question_mode="follow_up"),
+            plan=make_plan(),
+            scenario_context=self._make_scenario_context(
+                selected_constraint=selected,
+            ),
+            llm_client=fake_llm,
+        )
+
+        self.assertEqual(len(fake_llm.calls), 1)
+        prompt = "\n".join(content for _, content in fake_llm.calls[0][0])
+        self.assertIn("退款实际上已成功但响应超时", prompt)
+        self.assertNotIn("PRIVATE_SIGNAL", prompt)
+        self.assertNotIn("PRIVATE_ERROR", prompt)
+        self.assertNotIn("unused_constraint", prompt)
+
+    def test_scenario_context_prompt_contains_only_candidate_safe_fields(self) -> None:
+        fake_llm = FakeLLM(GeneratedQuestion(text="请设计一个方案。"))
+        scenario = ScenarioCard(
+            scenario_id="private_scenario_id",
+            title="内部业务",
+            business_goal="支持订单查询和退款",
+            modules=["private_module_id"],
+            valid_from=date(2026, 8, 29),
+        )
+        module = ScenarioModule(
+            module_id="private_module_id",
+            scenario_id=scenario.scenario_id,
+            primary_dimension_id="role_dim_03",
+            supported_requirement_types=["implementation"],
+            supported_modes=["scenario"],
+            difficulties=["intermediate"],
+            opening_goal="验证状态更新与删除边界",
+            semantic_text="不应发送到 Prompt 的索引文本",
+            evidence_signals=["PRIVATE_SIGNAL"],
+            critical_errors=["PRIVATE_ERROR"],
+            constraint_ids=["selected_constraint", "unused_constraint"],
+            valid_from=date(2026, 8, 29),
+        )
+        selected = ScenarioConstraint(
+            constraint_id="selected_constraint",
+            scenario_id=scenario.scenario_id,
+            module_id=module.module_id,
+            fact="退款实际上已成功但响应超时",
+        )
+        context = LockedScenarioContext(
+            scenario_id=scenario.scenario_id,
+            module_id=module.module_id,
+            retrieval_unit_id=module.retrieval_unit_id,
+            business_goal=scenario.business_goal,
+            opening_goal=module.opening_goal,
+            selected_constraint=selected,
+            revealed_constraint_ids=[selected.constraint_id],
+            retrieval_status="hit",
+            scenario=scenario,
+            module=module,
+        )
+
+        generate_question(
+            action=make_action(question_mode="follow_up"),
+            plan=make_plan(),
+            scenario_context=context,
+            llm_client=fake_llm,
+        )
+
+        prompt = "\n".join(content for _, content in fake_llm.calls[0][0])
+        for allowed in ("支持订单查询和退款", "验证状态更新与删除边界", "退款实际上已成功但响应超时"):
+            self.assertIn(allowed, prompt)
+        for forbidden in (
+            "PRIVATE_SIGNAL", "PRIVATE_ERROR", "unused_constraint", "不应发送到 Prompt 的索引文本",
+            "private_scenario_id", "private_module_id", "0.9", "score",
+        ):
+            self.assertNotIn(forbidden, prompt)
+
     def test_selected_retrieval_record_adds_only_safe_grounding_fields(self) -> None:
         fake_llm = FakeLLM(GeneratedQuestion(text="请说明你的方案。"))
         record = InterviewQuestionRecord(

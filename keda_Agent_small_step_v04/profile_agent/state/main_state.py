@@ -30,6 +30,7 @@ from profile_agent.schemas.runtime_schema import (
     InterviewTurn,
 )
 from profile_agent.schemas.question_rag_schema import QuestionRetrievalResult
+from profile_agent.schemas.scenario_rag_schema import LockedScenarioContext
 
 
 class MainState(TypedDict, total=False):
@@ -71,6 +72,7 @@ class MainState(TypedDict, total=False):
     # Transient hand-off between retrieve_question and generate_question.  The
     # selected result is copied into the private turn trace, then cleared.
     question_retrieval_result: QuestionRetrievalResult | None
+    scenario_context: LockedScenarioContext | None
 
     # 7) 面试结束后的最终评估报告
     assessment_report: AssessmentReport

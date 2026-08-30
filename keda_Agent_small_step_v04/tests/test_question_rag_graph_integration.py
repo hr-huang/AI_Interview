@@ -274,8 +274,8 @@ class QuestionRagGraphIntegrationTests(unittest.TestCase):
         state = graph.get_state(self.config()).values
 
         edges = {(edge.source, edge.target) for edge in graph.get_graph().edges}
-        self.assertIn(("supervisor", "retrieve_question"), edges)
-        self.assertIn(("retrieve_question", "generate_question"), edges)
+        self.assertIn(("supervisor", "prepare_question_context"), edges)
+        self.assertIn(("prepare_question_context", "generate_question"), edges)
         self.assertIn(("generate_question", "wait_for_answer"), edges)
         self.assertEqual(len(retriever.calls), 1)
         self.assertEqual(len(generator.calls), 1)
@@ -652,10 +652,9 @@ class QuestionRagGraphIntegrationTests(unittest.TestCase):
                         {"configurable": {"thread_id": "default-missing-key"}}
                     ).values
                     self.assertEqual(payload["question"], "生成问题 1")
-                    self.assertEqual(
-                        state["interview_turns"][0].retrieval_trace.status,
-                        "unavailable",
-                    )
+                    turn = state["interview_turns"][0]
+                    self.assertIsNone(turn.retrieval_trace)
+                    self.assertEqual(turn.question_provenance.retrieval_status, "fallback")
                 finally:
                     self._close_default_container(container)
 

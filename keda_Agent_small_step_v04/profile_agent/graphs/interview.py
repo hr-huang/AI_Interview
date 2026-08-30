@@ -33,6 +33,7 @@ from profile_agent.schemas.runtime_schema import (
     AnswerProcessingResult,
     InterviewTurn,
 )
+from profile_agent.schemas.scenario_rag_schema import LockedScenarioContext
 from profile_agent.services.answer_processor_service import process_answer
 from profile_agent.services.assessment_report_service import (
     generate_assessment_report,
@@ -45,6 +46,8 @@ from profile_agent.services.question_bank_service import (
 from profile_agent.services.question_retrieval_service import (
     build_question_retrieval_intent,
 )
+from profile_agent.services.question_context_service import prepare_question_context
+from profile_agent.services.scenario_bank_service import ScenarioCatalog
 from profile_agent.services.runtime_state_service import (
     initialize_runtime_state,
     record_question_asked,
@@ -123,6 +126,7 @@ def _call_question_generator(
     claim_registry: Any,
     recent_turns: list[InterviewTurn],
     retrieval_result: QuestionRetrievalResult,
+    scenario_context: LockedScenarioContext | None = None,
 ) -> GeneratedQuestion | Any:
     """Call injected generators without breaking legacy narrow test doubles."""
 
@@ -145,6 +149,12 @@ def _call_question_generator(
     elif "question_retrieval_result" in parameters:
         kwargs["question_retrieval_result"] = retrieval_result
 
+    if "scenario_context" in parameters or any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters.values()
+    ):
+        kwargs["scenario_context"] = scenario_context
+
     return question_generator(**kwargs)
 
 
@@ -163,6 +173,9 @@ def build_interview_graph(
     report_generator: ReportGenerator | None = None,
     *,
     question_retriever: QuestionRetrieverCallable | Any | None = None,
+    scenario_catalog: ScenarioCatalog | None = None,
+    scenario_retriever: Any | None = None,
+    question_context_preparer: Callable[..., LockedScenarioContext | None] | None = None,
     question_mode_policy: QuestionModePolicy | Any | None = None,
     question_bank_manifest: QuestionBankManifest | Any | None = None,
 ):
@@ -205,12 +218,30 @@ def build_interview_graph(
     else:
         checkpointer = install_interview_checkpoint_serializer(checkpointer)
 
-    def retrieve_question_node(state: MainState) -> dict[str, Any]:
+    def prepare_question_context_node(state: MainState) -> dict[str, Any]:
         """Resolve and execute exactly one retrieval attempt for an AskAction."""
 
         action = state.get("next_action")
         if not isinstance(action, AskAction):
-            raise ValueError("retrieve_question 节点需要 AskAction")
+            raise ValueError("prepare_question_context 节点需要 AskAction")
+
+        if scenario_catalog is not None:
+            preparer = prepare_question_context if question_context_preparer is None else question_context_preparer
+            context = preparer(
+                action=action,
+                plan=state["interview_plan"],
+                history=list(state.get("interview_turns") or []),
+                catalog=scenario_catalog,
+                retriever=scenario_retriever,
+                # The catalog owns the reviewed release date used for all
+                # eligibility checks in this graph instance.
+                as_of=scenario_catalog.as_of,
+                evidence_gap_tags=(),
+            )
+            return {
+                "scenario_context": context,
+                "question_retrieval_result": None,
+            }
 
         # External question material is useful for independent transfer,
         # system-design and implementation scenarios.  Foundation/project
@@ -338,6 +369,7 @@ def build_interview_graph(
             state.get("question_retrieval_result")
             or QuestionRetrievalResult(status="unavailable")
         )
+        scenario_context = state.get("scenario_context")
         question = _as_generated_question(
             _call_question_generator(
                 question_generator,
@@ -346,6 +378,7 @@ def build_interview_graph(
                 claim_registry=state.get("claim_registry"),
                 recent_turns=list(state.get("interview_turns") or []),
                 retrieval_result=retrieval_result,
+                scenario_context=scenario_context,
             )
         )
         question_text = question.text.strip()
@@ -362,7 +395,16 @@ def build_interview_graph(
             question=question_text,
             answer=None,
             asked_at=now,
-            retrieval_trace=retrieval_result.retrieval_trace,
+            retrieval_trace=(
+                None
+                if scenario_context is not None
+                else retrieval_result.retrieval_trace
+            ),
+            question_provenance=(
+                scenario_context.provenance
+                if isinstance(scenario_context, LockedScenarioContext)
+                else None
+            ),
         )
         # The runtime update is made in the same node as the persisted
         # unanswered turn, before control reaches the interrupt node.
@@ -385,6 +427,7 @@ def build_interview_graph(
             # generator invocation; the private trace on InterviewTurn is the
             # durable provenance boundary.
             "question_retrieval_result": None,
+            "scenario_context": None,
         }
 
     def wait_for_answer(state: MainState) -> dict[str, Any]:
@@ -463,7 +506,7 @@ def build_interview_graph(
     builder = StateGraph(MainState)
     builder.add_node("initialize_interview", initialize_interview)
     builder.add_node("supervisor", supervisor)
-    builder.add_node("retrieve_question", retrieve_question_node)
+    builder.add_node("prepare_question_context", prepare_question_context_node)
     builder.add_node("generate_question", generate_question_node)
     builder.add_node("wait_for_answer", wait_for_answer)
     builder.add_node("process_answer", process_answer_node)
@@ -475,11 +518,11 @@ def build_interview_graph(
         "supervisor",
         route_after_supervisor,
         {
-            "ask": "retrieve_question",
+            "ask": "prepare_question_context",
             "finish": "generate_report",
         },
     )
-    builder.add_edge("retrieve_question", "generate_question")
+    builder.add_edge("prepare_question_context", "generate_question")
     builder.add_edge("generate_question", "wait_for_answer")
     builder.add_edge("wait_for_answer", "process_answer")
     builder.add_edge("process_answer", "supervisor")

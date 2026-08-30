@@ -221,8 +221,8 @@ class InterviewGraphTest(unittest.TestCase):
         state = graph.get_state(config).values
         edges = {(edge.source, edge.target) for edge in graph.get_graph().edges}
 
-        self.assertIn(("supervisor", "retrieve_question"), edges)
-        self.assertIn(("retrieve_question", "generate_question"), edges)
+        self.assertIn(("supervisor", "prepare_question_context"), edges)
+        self.assertIn(("prepare_question_context", "generate_question"), edges)
         self.assertEqual(
             state["interview_turns"][0].retrieval_trace.status,
             "unavailable",

@@ -25,8 +25,11 @@ def _encode_checkpoint_value(value: Any) -> Any:
         data = value.model_dump(mode="python")
         # Field(exclude=True) is the public boundary.  Read this one private
         # field explicitly only for the checkpoint envelope.
-        data["retrieval_trace"] = _encode_checkpoint_value(
-            value.retrieval_trace
+        data["retrieval_trace"] = _encode_checkpoint_value(value.retrieval_trace)
+        # Scenario provenance is private too; restore it explicitly because
+        # it is excluded from the ordinary/public model dump.
+        data["question_provenance"] = _encode_checkpoint_value(
+            value.question_provenance
         )
         return {
             _INTERVIEW_TURN_MARKER: _INTERVIEW_TURN_VERSION,

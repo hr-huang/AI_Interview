@@ -294,6 +294,28 @@ index version=`questions-v1`；`QUESTION_RAG_EMBEDDING_*` 覆盖项会在 CLI �
 `test_only` synthetic fixture，生产 CLI 会拒绝它；当前仓库没有真实题库，下一份规格再补
 充经审阅的生产问题。
 
+### Scenario Module RAG（当前主链路）
+
+当前链路是 Supervisor 先决定“考什么”，`prepare_question_context` 再按维度、
+题型和难度检索业务场景。向量库只保存 35 个 `ScenarioModule` 的检索投影；
+完整场景、隐藏约束和评分信号仍以 JSON 为准。
+
+```powershell
+# 只读校验，不读 API Key，不调用模型
+.\.venv\Scripts\python.exe run_scenario_bank.py validate
+
+# 只预览将要重建的数量，不调用 embedding
+.\.venv\Scripts\python.exe run_scenario_bank.py rebuild-index
+
+# 显式执行时才会为 35 个检索单元调用 embedding
+.\.venv\Scripts\python.exe run_scenario_bank.py rebuild-index --apply
+```
+
+重建前配置 `SILICONFLOW_API_KEY`，并二选一配置 `SCENARIO_RAG_INDEX_PATH` 或
+`SCENARIO_RAG_QDRANT_URL`。远程服务需要密钥时再设置 `SCENARIO_RAG_QDRANT_API_KEY`。
+应用启动只读取 JSON；首次真正检索场景题时才初始化 embedding/Qdrant/reranker。
+任一可选服务不可用时，系统回退到该维度人工审核的默认场景，不让模型自由编造。
+
 ## 当前设计边界
 
 - `CompetencyModel`：能力验证地图。

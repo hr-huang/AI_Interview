@@ -1,0 +1,11 @@
+{
+  "sources": [
+    {
+      "source_id": "source_internal_review",
+      "title": "Scenario Bank v1 内部审核素材",
+      "source_type": "internal_review",
+      "status": "active",
+      "notes": "Reviewed scenario abstractions; no candidate or employer PII."
+    }
+  ]
+}

@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from profile_agent.schemas.interview_schema import QuestionMode
 from profile_agent.schemas.question_rag_schema import QuestionRetrievalTrace
+from profile_agent.schemas.scenario_rag_schema import QuestionProvenance
 
 
 RequirementStatus = Literal[
@@ -40,7 +41,13 @@ class InterviewTurn(BaseModel):
         default=None,
         exclude=True,
     )
-
+    # Scenario provenance is private runtime/audit data.  It is deliberately
+    # separate from the legacy fixed-question retrieval trace so old turns
+    # remain readable during migration.
+    question_provenance: QuestionProvenance | None = Field(
+        default=None,
+        exclude=True,
+    )
 
 class Evidence(BaseModel):
     id: str

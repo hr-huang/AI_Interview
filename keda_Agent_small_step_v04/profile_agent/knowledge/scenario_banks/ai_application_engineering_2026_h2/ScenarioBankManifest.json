@@ -1,0 +1,10 @@
+{
+  "role_family": "ai_application_engineering",
+  "role_profile_version": "2026-H2",
+  "scenario_count": 10,
+  "retrieval_module_count": 35,
+  "version": 1,
+  "scenario_ids": ["ecommerce_service", "travel_planner", "enterprise_cost_monitor", "enterprise_knowledge_assistant", "marketing_operations", "recruitment_interview", "coding_review_agent", "enterprise_data_analysis", "it_operations", "sales_followup"],
+  "module_ids": ["ecommerce_agent_architecture", "ecommerce_context_tools", "ecommerce_safety_evaluation", "ecommerce_performance_cost", "travel_agent_architecture", "travel_business_modeling", "travel_context_tools", "travel_cost_optimization", "cost_monitor_business_modeling", "cost_monitor_observability", "cost_monitor_performance", "knowledge_rag_memory", "knowledge_production_delivery", "knowledge_security_evaluation", "knowledge_cost_performance", "marketing_business_modeling", "marketing_ai_delivery", "marketing_safety_evaluation", "recruitment_agent_architecture", "recruitment_business_modeling", "recruitment_context_memory", "recruitment_safety_evaluation", "coding_agent_architecture", "coding_ai_delivery", "coding_security_evaluation", "coding_cost_performance", "data_analysis_business_modeling", "data_analysis_context_tools", "data_analysis_ai_delivery", "itops_agent_architecture", "itops_observability_safety", "itops_performance_cost", "sales_agent_architecture", "sales_business_modeling", "sales_context_memory_tools"],
+  "source_registry_ids": ["source_internal_review"]
+}
