@@ -54,6 +54,9 @@ class AssessmentRecord(BaseModel):
     jd_text: str
     resume_text: str
     interview_duration_minutes: int = Field(default=45, ge=1)
+    # This is only a non-secret handle. The API key itself remains in the
+    # process-local ModelRuntimeRegistry and is never serialized here.
+    model_session_id: str | None = None
     pre_interview_state: dict[str, Any] | None = None
     original_plan: dict[str, Any] | None = None
     plan_overrides: dict[str, Any] | None = None
@@ -78,6 +81,7 @@ class AssessmentRecord(BaseModel):
         jd_text: str,
         resume_text: str,
         interview_duration_minutes: int = 45,
+        model_session_id: str | None = None,
     ) -> AssessmentRecord:
         if interview_duration_minutes not in {30, 45, 60}:
             raise ValueError("面试时长只能是 30、45 或 60 分钟")
@@ -89,6 +93,7 @@ class AssessmentRecord(BaseModel):
             jd_text=jd_text.strip(),
             resume_text=resume_text.strip(),
             interview_duration_minutes=interview_duration_minutes,
+            model_session_id=(model_session_id or "").strip() or None,
             created_at=now,
             updated_at=now,
         )
