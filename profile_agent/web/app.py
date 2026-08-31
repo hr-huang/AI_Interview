@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from profile_agent.model_runtime import ModelRuntimeRegistry
+from profile_agent.model_runtime import ModelRuntimeRegistry, ModelScopedGraph
 from profile_agent.web.container import WebContainer
 from profile_agent.web.routers.assessments import router as assessments_router
 from profile_agent.web.routers.demo import router as demo_router
@@ -17,6 +17,14 @@ def create_app(container: WebContainer | None = None) -> FastAPI:
     resolved_container = WebContainer.default() if owns_container else container
     if not hasattr(resolved_container, "model_runtime_registry"):
         resolved_container.model_runtime_registry = ModelRuntimeRegistry()
+    if resolved_container.interview_graph is not None and not isinstance(
+        resolved_container.interview_graph,
+        ModelScopedGraph,
+    ):
+        resolved_container.interview_graph = ModelScopedGraph(
+            resolved_container.interview_graph,
+            resolved_container.model_runtime_registry,
+        )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
