@@ -1,6 +1,8 @@
 import { useId, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../../api/client'
+import type { ModelSessionResponse } from '../../api/types'
+import { ModelSettings } from './ModelSettings'
 import './assessment.css'
 
 export const SUPPORTED_ROLE = 'AI Agent应用工程师（校招/初级）'
@@ -33,11 +35,13 @@ function submissionFingerprint({
   resumeSource,
   resumeText,
   resumeFile,
+  modelSessionId,
 }: {
   jdText: string
   resumeSource: ResumeSource
   resumeText: string
   resumeFile: File | null
+  modelSessionId: string | null
 }): string {
   return JSON.stringify({
     targetRole: SUPPORTED_ROLE,
@@ -55,6 +59,7 @@ function submissionFingerprint({
             relativePath: resumeFile.webkitRelativePath,
           }
         : null,
+    modelSessionId,
   })
 }
 
@@ -79,6 +84,7 @@ export function NewAssessmentPage() {
   const [resumeSource, setResumeSource] = useState<ResumeSource>('text')
   const [resumeText, setResumeText] = useState('')
   const [resumeFile, setResumeFile] = useState<File | null>(null)
+  const [modelSession, setModelSession] = useState<ModelSessionResponse | null>(null)
   const [fileInputVersion, setFileInputVersion] = useState(0)
   const [validationErrors, setValidationErrors] = useState<string[]>([])
   const [submitError, setSubmitError] = useState('')
@@ -152,6 +158,7 @@ export function NewAssessmentPage() {
       resumeSource,
       resumeText: normalizedResumeText,
       resumeFile,
+      modelSessionId: modelSession?.model_session_id ?? null,
     })
     const cachedKey = idempotencyKeyRef.current
     const idempotencyKey =
@@ -170,6 +177,9 @@ export function NewAssessmentPage() {
     }
     form.set('idempotency_key', idempotencyKey)
     form.set('interview_duration_minutes', '45')
+    if (modelSession) {
+      form.set('model_session_id', modelSession.model_session_id)
+    }
 
     setIsSubmitting(true)
     try {
@@ -307,6 +317,8 @@ export function NewAssessmentPage() {
             <div><dt>结果状态</dt><dd>可审核</dd></div>
           </dl>
 
+          <ModelSettings value={modelSession} onChange={setModelSession} />
+
           {validationErrors.length > 0 ? (
             <div className="form-feedback error-feedback" role="alert" aria-live="assertive">
               {validationErrors.map((error) => <p key={error}>{error}</p>)}
@@ -330,6 +342,7 @@ export function NewAssessmentPage() {
             暂时没有材料？{' '}
             <Link to="/demo/assessment">查看演示示例 →</Link>
           </p>
+          <p className="privacy-note">自定义 API Key 仅保存在当前服务进程内存中，不写入评估数据库。</p>
           <p className="privacy-note">评估用于辅助决策，系统不会自动输出录用或淘汰结论。</p>
         </aside>
       </form>
