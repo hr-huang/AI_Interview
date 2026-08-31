@@ -172,7 +172,17 @@ class ModelScopedGraph:
         if assessment_id is None:
             return self._graph.invoke(input, config, *args, **kwargs)
         with self._registry.use_for_assessment(assessment_id):
-            return self._graph.invoke(input, config, *args, **kwargs)
+            result = self._graph.invoke(input, config, *args, **kwargs)
+        # The interview graph emits assessment_report only after all model
+        # work has completed. Drop the in-memory secret immediately after that
+        # terminal result; failed/interrupted runs retain it for retry/resume.
+        if (
+            isinstance(result, Mapping)
+            and result.get("assessment_report") is not None
+            and not result.get("__interrupt__")
+        ):
+            self._registry.release_assessment(assessment_id)
+        return result
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._graph, name)
