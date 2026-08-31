@@ -1,13 +1,14 @@
+from types import SimpleNamespace
 from unittest.mock import patch
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from httpx import Request
 from openai import APIConnectionError
 
 from profile_agent.llm import LLMProviderError
 from profile_agent.web.interview_service import InterviewService
-from profile_agent.web.routers.interviews import router
+from profile_agent.web.routers.interviews import router, start_interview
 
 
 _SAFE_DETAIL = "面试模型服务暂时不可用，请稍后重试；若持续失败，请联系评估发起方检查模型配置。"
@@ -18,6 +19,23 @@ def _client() -> TestClient:
     app.state.container = object()
     app.include_router(router, prefix="/api")
     return TestClient(app, raise_server_exceptions=False)
+
+
+def test_direct_handler_classifies_provider_connection_failure() -> None:
+    error = APIConnectionError(
+        request=Request("POST", "https://provider.example/v1/chat/completions")
+    )
+    request = SimpleNamespace(
+        app=SimpleNamespace(state=SimpleNamespace(container=object()))
+    )
+    with patch.object(InterviewService, "start", side_effect=error):
+        try:
+            start_interview("candidate-token", request)  # type: ignore[arg-type]
+        except HTTPException as exc:
+            assert exc.status_code == 503
+            assert exc.detail == _SAFE_DETAIL
+        else:
+            raise AssertionError("provider failure must map to HTTPException 503")
 
 
 def test_start_maps_provider_connection_failure_to_safe_503() -> None:
