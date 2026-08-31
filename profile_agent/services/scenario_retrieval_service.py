@@ -15,6 +15,10 @@ from profile_agent.knowledge.qdrant_scenario_store import QdrantScenarioStore
 from profile_agent.services.scenario_bank_service import ScenarioCatalog
 
 
+class NoCompatibleScenarioModuleError(ValueError):
+    """No reviewed ScenarioModule satisfies the request's hard filters."""
+
+
 def _target_and_requirement(action: AskAction, plan: InterviewPlan):
     target = next((item for item in plan.targets if item.id == action.target_id), None)
     if target is None:
@@ -147,7 +151,9 @@ def select_fallback_module(
         and request.difficulty in module.difficulties
     ]
     if not candidates:
-        raise ValueError("no reviewed fallback module satisfies hard filters")
+        raise NoCompatibleScenarioModuleError(
+            "no reviewed fallback module satisfies hard filters"
+        )
     module = sorted(candidates, key=lambda item: (not item.default_for_dimension, item.module_id))[0]
     scenario = catalog.get_scenario(module.scenario_id)
     return ScenarioSelection(
@@ -208,6 +214,7 @@ class ScenarioRetriever:
 
 __all__ = [
     "build_scenario_retrieval_request",
+    "NoCompatibleScenarioModuleError",
     "ScenarioRetriever",
     "select_fallback_module",
     "validate_scenario_selection",
