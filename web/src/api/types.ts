@@ -194,8 +194,18 @@ export interface InterviewAnswerRequest {
   idempotency_key: string
 }
 
-export type InterviewSession = {
-  state: 'ready' | 'waiting' | 'waiting_for_answer' | 'in_progress' | 'reporting' | 'complete'
+export interface InterviewTurnView {
+  id: string
+  sequence_number: number
+  question: string
+  answer: string | null
+}
+
+export interface InterviewSession {
+  state: 'ready' | 'waiting_for_answer' | 'reporting' | 'complete'
   target_role?: string
-  [key: string]: unknown
+  phase?: 'waiting' | 'question'
+  elapsed_seconds?: number
+  turns?: InterviewTurnView[]
+  turn?: InterviewTurnView
 }
