@@ -49,6 +49,11 @@ function endpoint(path: string): string {
   return `${API_BASE_URL}/${path.replace(/^\//, '')}`
 }
 
+function browserAbsoluteUrl(pathOrUrl: string): string {
+  if (typeof window === 'undefined') return pathOrUrl
+  return new URL(pathOrUrl, window.location.origin).toString()
+}
+
 export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers)
   if (init.body && !(init.body instanceof FormData) && !headers.has('Content-Type')) {
@@ -116,11 +121,15 @@ export const api = {
     )
   },
 
-  freezePlan(assessmentId: string) {
-    return request<FreezePlanResponse>(
+  async freezePlan(assessmentId: string) {
+    const result = await request<FreezePlanResponse>(
       `/assessments/${encodeURIComponent(assessmentId)}/freeze`,
       { method: 'POST' },
     )
+    return {
+      ...result,
+      candidate_url: browserAbsoluteUrl(result.candidate_url),
+    }
   },
 
   getReport(assessmentId: string) {
