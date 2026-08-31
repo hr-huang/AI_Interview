@@ -209,3 +209,23 @@ export interface InterviewSession {
   turns?: InterviewTurnView[]
   turn?: InterviewTurnView
 }
+
+export type ModelProvider = 'qwen' | 'deepseek' | 'glm' | 'openai_compatible'
+
+export interface ModelSessionRequest {
+  provider: ModelProvider
+  base_url: string
+  api_key: string
+  model: string
+  temperature?: number
+  max_tokens?: number
+  top_p?: number
+  timeout_seconds?: number
+}
+
+export interface ModelSessionResponse {
+  model_session_id: string
+  provider: ModelProvider
+  base_url: string
+  model: string
+}
