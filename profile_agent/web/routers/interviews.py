@@ -5,6 +5,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
+from profile_agent.model_runtime import ModelRuntimeUnavailableError
 from profile_agent.web.interview_service import (
     AnswerRequest,
     InterviewService,
@@ -23,12 +24,18 @@ def _not_found(error: KeyError) -> HTTPException:
     return HTTPException(status_code=404, detail="候选人面试链接不存在")
 
 
+def _model_unavailable(error: ModelRuntimeUnavailableError) -> HTTPException:
+    return HTTPException(status_code=409, detail=str(error))
+
+
 @router.get("/interviews/{token}")
 def get_interview(token: str, request: Request) -> dict[str, Any]:
     try:
         return _service(request).get_session(token)
     except KeyError as error:
         raise _not_found(error) from error
+    except ModelRuntimeUnavailableError as error:
+        raise _model_unavailable(error) from error
     except InterviewStateError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
 
@@ -39,6 +46,8 @@ def start_interview(token: str, request: Request) -> dict[str, Any]:
         return _service(request).start(token)
     except KeyError as error:
         raise _not_found(error) from error
+    except ModelRuntimeUnavailableError as error:
+        raise _model_unavailable(error) from error
     except InterviewStateError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
 
@@ -61,6 +70,8 @@ def submit_answer(
         if error.public_state is not None:
             content["session"] = error.public_state
         return JSONResponse(status_code=409, content=content)
+    except ModelRuntimeUnavailableError as error:
+        raise _model_unavailable(error) from error
     except InterviewStateError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
 
