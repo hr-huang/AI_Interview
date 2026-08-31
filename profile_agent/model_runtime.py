@@ -5,7 +5,7 @@ import secrets
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from threading import RLock
-from typing import Iterator, Literal
+from typing import Any, Iterator, Literal, Mapping
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
@@ -150,9 +150,38 @@ class ModelRuntimeRegistry:
                 self._sessions.pop(session_id, None)
 
 
+class ModelScopedGraph:
+    """Transparent graph proxy that applies the assessment's BYOK config on invoke."""
+
+    def __init__(self, graph: object, registry: ModelRuntimeRegistry) -> None:
+        self._graph = graph
+        self._registry = registry
+
+    @staticmethod
+    def _assessment_id(config: Any) -> str | None:
+        if not isinstance(config, Mapping):
+            return None
+        configurable = config.get("configurable")
+        if not isinstance(configurable, Mapping):
+            return None
+        thread_id = configurable.get("thread_id")
+        return str(thread_id) if thread_id else None
+
+    def invoke(self, input: Any, config: Any = None, *args: Any, **kwargs: Any):
+        assessment_id = self._assessment_id(config)
+        if assessment_id is None:
+            return self._graph.invoke(input, config, *args, **kwargs)
+        with self._registry.use_for_assessment(assessment_id):
+            return self._graph.invoke(input, config, *args, **kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._graph, name)
+
+
 __all__ = [
     "ModelRuntimeConfig",
     "ModelRuntimeRegistry",
+    "ModelScopedGraph",
     "ProviderName",
     "current_model_runtime_config",
     "use_model_runtime_config",
