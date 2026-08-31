@@ -1,0 +1,70 @@
+.model-settings {
+  margin: 20px 0;
+  padding: 16px;
+  border: 1px solid rgba(17, 24, 39, 0.12);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.model-settings-summary {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.model-settings-summary > div {
+  display: grid;
+  gap: 5px;
+}
+
+.model-settings-summary strong {
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.model-settings-summary small {
+  color: #667085;
+  line-height: 1.45;
+}
+
+.model-settings-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(17, 24, 39, 0.1);
+}
+
+.model-settings-form label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.model-settings-form input,
+.model-settings-form select {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.model-settings-form > button {
+  border: 0;
+  border-radius: 9px;
+  padding: 10px 14px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.model-settings-form > button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+@media (max-width: 640px) {
+  .model-settings-summary {
+    display: grid;
+  }
+}
