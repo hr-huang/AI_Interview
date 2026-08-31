@@ -5,6 +5,8 @@ import type {
   FreezePlanResponse,
   InterviewAnswerRequest,
   InterviewSession,
+  ModelSessionRequest,
+  ModelSessionResponse,
   PlanOverrideSet,
   ReportViewModel,
 } from './types'
@@ -71,6 +73,13 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
 }
 
 export const api = {
+  createModelSession(payload: ModelSessionRequest) {
+    return request<ModelSessionResponse>('/model-sessions', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
   createAssessment(form: FormData) {
     return request<CreateAssessmentResponse>('/assessments', {
       method: 'POST',
