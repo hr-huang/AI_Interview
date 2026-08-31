@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { api } from '../../api/client'
 import type { ModelProvider, ModelSessionResponse } from '../../api/types'
+import './model-settings.css'
 
 const PRESETS: Record<ModelProvider, { baseUrl: string; model: string; label: string }> = {
   qwen: {
