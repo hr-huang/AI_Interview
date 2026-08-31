@@ -21,9 +21,17 @@ def create_app(container: WebContainer | None = None) -> FastAPI:
         resolved_container.interview_graph,
         ModelScopedGraph,
     ):
+        def requires_custom_config(assessment_id: str) -> bool:
+            try:
+                record = resolved_container.repository.get(assessment_id)
+            except KeyError:
+                return False
+            return record.model_session_id is not None
+
         resolved_container.interview_graph = ModelScopedGraph(
             resolved_container.interview_graph,
             resolved_container.model_runtime_registry,
+            requires_custom_config=requires_custom_config,
         )
 
     @asynccontextmanager
