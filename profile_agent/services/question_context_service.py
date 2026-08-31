@@ -23,6 +23,7 @@ from profile_agent.schemas.scenario_rag_schema import (
 from profile_agent.services.constraint_selector_service import select_constraint
 from profile_agent.services.scenario_bank_service import ScenarioCatalog
 from profile_agent.services.scenario_retrieval_service import (
+    NoCompatibleScenarioModuleError,
     ScenarioRetriever,
     build_scenario_retrieval_request,
     select_fallback_module,
@@ -343,12 +344,19 @@ def prepare_question_context(
     request: ScenarioRetrievalRequest = build_scenario_retrieval_request(
         action, plan, evidence_gap_tags
     )
-    if retriever is None:
-        selection = select_fallback_module(
-            request, catalog, "scenario retriever unavailable"
-        )
-    else:
-        selection = retriever.retrieve(request, as_of=effective_as_of)
+    try:
+        if retriever is None:
+            selection = select_fallback_module(
+                request, catalog, "scenario retriever unavailable"
+            )
+        else:
+            selection = retriever.retrieve(request, as_of=effective_as_of)
+    except NoCompatibleScenarioModuleError:
+        # This is an expected coverage boundary, not catalog corruption.  The
+        # locked Requirement still defines what must be asked, so continue
+        # without Scenario grounding rather than forcing an incompatible
+        # reviewed module or failing the candidate session.
+        return None
     if selection.status in {"hit", "fallback"}:
         # Embedded objects cross the retrieval boundary untrusted.  Validate
         # only their stable identity, then rehydrate canonical catalog assets.
