@@ -1,0 +1,120 @@
+.candidate-interview {
+  width: min(920px, calc(100% - 32px));
+  margin: 48px auto 80px;
+}
+
+.candidate-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 28px;
+}
+
+.candidate-header h1,
+.candidate-interview > h1 {
+  margin: 6px 0 10px;
+}
+
+.candidate-lead {
+  max-width: 680px;
+  line-height: 1.7;
+}
+
+.candidate-meta {
+  white-space: nowrap;
+  font-size: 14px;
+  color: var(--muted, #667085);
+}
+
+.question-card {
+  border: 1px solid rgba(17, 24, 39, 0.12);
+  border-radius: 18px;
+  padding: 28px;
+  background: #fff;
+  box-shadow: 0 18px 50px rgba(17, 24, 39, 0.06);
+}
+
+.question-index {
+  margin: 0 0 10px;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  color: #667085;
+}
+
+.question-card h2 {
+  margin: 0 0 24px;
+  line-height: 1.55;
+  font-size: clamp(22px, 3vw, 30px);
+}
+
+.question-card form {
+  display: grid;
+  gap: 12px;
+}
+
+.question-card label {
+  font-weight: 700;
+}
+
+.question-card textarea {
+  width: 100%;
+  resize: vertical;
+  box-sizing: border-box;
+  border: 1px solid rgba(17, 24, 39, 0.18);
+  border-radius: 12px;
+  padding: 14px 16px;
+  font: inherit;
+  line-height: 1.65;
+}
+
+.question-card textarea:focus {
+  outline: 2px solid rgba(17, 24, 39, 0.18);
+  outline-offset: 2px;
+}
+
+.candidate-primary,
+.candidate-interview button {
+  width: fit-content;
+  border: 0;
+  border-radius: 10px;
+  padding: 11px 18px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.candidate-primary {
+  background: #111827;
+  color: #fff;
+}
+
+.candidate-interview button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.candidate-error {
+  color: #b42318;
+  line-height: 1.5;
+}
+
+@media (max-width: 640px) {
+  .candidate-interview {
+    width: min(100% - 20px, 920px);
+    margin-top: 24px;
+  }
+
+  .candidate-header {
+    display: block;
+  }
+
+  .candidate-meta {
+    display: inline-block;
+    margin-top: 8px;
+  }
+
+  .question-card {
+    padding: 20px;
+  }
+}
