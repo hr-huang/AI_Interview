@@ -20,13 +20,14 @@ def config(model: str, key: str = "test-key") -> ModelRuntimeConfig:
 
 
 class RecordingGraph:
-    def __init__(self) -> None:
+    def __init__(self, result=None) -> None:
         self.seen: list[str | None] = []
+        self.result = {"ok": True} if result is None else result
 
     def invoke(self, input, config=None, *args, **kwargs):
         runtime = current_model_runtime_config()
         self.seen.append(runtime.model if runtime is not None else None)
-        return {"ok": True}
+        return self.result
 
 
 class ModelRuntimeTests(unittest.TestCase):
@@ -85,6 +86,42 @@ class ModelRuntimeTests(unittest.TestCase):
 
         self.assertEqual(inner.seen, ["model-a", "model-b", None])
         self.assertIsNone(current_model_runtime_config())
+
+    def test_terminal_report_releases_assessment_secret(self) -> None:
+        registry = ModelRuntimeRegistry()
+        session = registry.create_session(config("model-a", "key-a"))
+        registry.bind_assessment("ast-a", session)
+        graph = ModelScopedGraph(
+            RecordingGraph({"assessment_report": {"status": "complete"}}),
+            registry,
+        )
+
+        graph.invoke({}, {"configurable": {"thread_id": "ast-a"}})
+
+        self.assertIsNone(registry.config_for_assessment("ast-a"))
+        with self.assertRaises(KeyError):
+            registry.public_session(session)
+
+    def test_interrupted_graph_keeps_secret_for_resume(self) -> None:
+        registry = ModelRuntimeRegistry()
+        session = registry.create_session(config("model-a", "key-a"))
+        registry.bind_assessment("ast-a", session)
+        graph = ModelScopedGraph(
+            RecordingGraph(
+                {
+                    "assessment_report": None,
+                    "__interrupt__": [object()],
+                }
+            ),
+            registry,
+        )
+
+        graph.invoke({}, {"configurable": {"thread_id": "ast-a"}})
+
+        active = registry.config_for_assessment("ast-a")
+        self.assertIsNotNone(active)
+        assert active is not None
+        self.assertEqual(active.api_key.get_secret_value(), "key-a")
 
 
 if __name__ == "__main__":
