@@ -15,7 +15,7 @@ from openai import APIConnectionError, APIStatusError
 from pydantic import BaseModel
 
 import profile_agent.llm as llm_module
-from profile_agent.llm import LLM
+from profile_agent.llm import LLM, LLMProviderError
 
 
 def insufficient_balance_error() -> APIStatusError:
@@ -112,7 +112,7 @@ class ConnectionFlakyStructuredModel:
 class LLMErrorHandlingTests(unittest.TestCase):
     def test_build_model_requires_qwen_api_key(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
-            with self.assertRaisesRegex(ValueError, "QWEN_API_KEY"):
+            with self.assertRaisesRegex(LLMProviderError, "QWEN_API_KEY"):
                 LLM()._build_model()
 
     def test_build_model_uses_official_qwen38_max_defaults(self) -> None:
