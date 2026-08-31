@@ -63,4 +63,26 @@ describe('typed API client', () => {
     expect(url).toBe('/api/assessments/ast%2F001')
     expect(init?.method).toBeUndefined()
   })
+
+  test('returns an absolute browser URL after freezing a plan', async () => {
+    const response = new Response(
+      JSON.stringify({
+        assessment_id: 'ast_001',
+        status: 'READY',
+        candidate_url: '/interviews/token-123',
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    )
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(response)
+
+    await expect(api.freezePlan('ast_001')).resolves.toEqual({
+      assessment_id: 'ast_001',
+      status: 'READY',
+      candidate_url: new URL('/interviews/token-123', window.location.origin).toString(),
+    })
+
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('/api/assessments/ast_001/freeze')
+    expect(init?.method).toBe('POST')
+  })
 })
