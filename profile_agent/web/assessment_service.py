@@ -149,13 +149,11 @@ class AssessmentService:
             if self.repository.save_if_version(completed, analyzing.version):
                 return completed
             return self.repository.get(assessment_id)
-        except (
-            LLMProviderError,
-            ValueError,
-            TypeError,
-            KeyError,
-            ValidationError,
-        ):
+        except Exception:
+            # This is the background-job failure boundary. Provider SDKs can
+            # raise transport/status exceptions that are not normalized to
+            # LLMProviderError. Never leave a persisted assessment stuck in
+            # ANALYZING just because an unexpected runtime exception escaped.
             failed = transition_assessment(
                 analyzing,
                 AssessmentStatus.FAILED,
