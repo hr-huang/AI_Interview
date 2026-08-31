@@ -5,7 +5,7 @@ import secrets
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from threading import RLock
-from typing import Any, Iterator, Literal, Mapping
+from typing import Any, Callable, Iterator, Literal, Mapping
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
@@ -14,19 +14,14 @@ from pydantic import BaseModel, Field, SecretStr, field_validator, model_validat
 ProviderName = Literal["qwen", "deepseek", "glm", "openai_compatible"]
 
 _PROVIDER_DEFAULTS: dict[str, tuple[str, str]] = {
-    "qwen": (
-        "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        "qwen3.8-max",
-    ),
-    "deepseek": (
-        "https://api.deepseek.com/v1",
-        "deepseek-chat",
-    ),
-    "glm": (
-        "https://open.bigmodel.cn/api/paas/v4",
-        "glm-4.5",
-    ),
+    "qwen": ("https://dashscope.aliyuncs.com/compatible-mode/v1", "qwen3.8-max"),
+    "deepseek": ("https://api.deepseek.com/v1", "deepseek-chat"),
+    "glm": ("https://open.bigmodel.cn/api/paas/v4", "glm-4.5"),
 }
+
+
+class ModelRuntimeUnavailableError(RuntimeError):
+    """A persisted assessment expects BYOK config that is no longer in memory."""
 
 
 class ModelRuntimeConfig(BaseModel):
@@ -56,7 +51,6 @@ class ModelRuntimeConfig(BaseModel):
             if default is None:
                 raise ValueError("必须填写模型名称")
             self.model = default[1]
-
         parsed = urlparse(self.base_url)
         if parsed.scheme != "https":
             raise ValueError("Base URL 仅允许 HTTPS")
@@ -80,16 +74,11 @@ class ModelRuntimeConfig(BaseModel):
         return self
 
     def public_view(self) -> dict[str, str]:
-        return {
-            "provider": self.provider,
-            "base_url": self.base_url,
-            "model": self.model,
-        }
+        return {"provider": self.provider, "base_url": self.base_url, "model": self.model}
 
 
 _CURRENT_MODEL_CONFIG: ContextVar[ModelRuntimeConfig | None] = ContextVar(
-    "current_model_runtime_config",
-    default=None,
+    "current_model_runtime_config", default=None
 )
 
 
@@ -98,9 +87,7 @@ def current_model_runtime_config() -> ModelRuntimeConfig | None:
 
 
 @contextmanager
-def use_model_runtime_config(
-    config: ModelRuntimeConfig | None,
-) -> Iterator[None]:
+def use_model_runtime_config(config: ModelRuntimeConfig | None) -> Iterator[None]:
     token: Token[ModelRuntimeConfig | None] = _CURRENT_MODEL_CONFIG.set(config)
     try:
         yield
@@ -153,9 +140,15 @@ class ModelRuntimeRegistry:
 class ModelScopedGraph:
     """Transparent graph proxy that applies the assessment's BYOK config on invoke."""
 
-    def __init__(self, graph: object, registry: ModelRuntimeRegistry) -> None:
+    def __init__(
+        self,
+        graph: object,
+        registry: ModelRuntimeRegistry,
+        requires_custom_config: Callable[[str], bool] | None = None,
+    ) -> None:
         self._graph = graph
         self._registry = registry
+        self._requires_custom_config = requires_custom_config
 
     @staticmethod
     def _assessment_id(config: Any) -> str | None:
@@ -171,11 +164,17 @@ class ModelScopedGraph:
         assessment_id = self._assessment_id(config)
         if assessment_id is None:
             return self._graph.invoke(input, config, *args, **kwargs)
-        with self._registry.use_for_assessment(assessment_id):
+        runtime_config = self._registry.config_for_assessment(assessment_id)
+        if (
+            runtime_config is None
+            and self._requires_custom_config is not None
+            and self._requires_custom_config(assessment_id)
+        ):
+            raise ModelRuntimeUnavailableError(
+                "该评估绑定的自定义模型会话已经失效（服务可能已重启），不会自动切换到服务器默认模型。"
+            )
+        with use_model_runtime_config(runtime_config):
             result = self._graph.invoke(input, config, *args, **kwargs)
-        # The interview graph emits assessment_report only after all model
-        # work has completed. Drop the in-memory secret immediately after that
-        # terminal result; failed/interrupted runs retain it for retry/resume.
         if (
             isinstance(result, Mapping)
             and result.get("assessment_report") is not None
@@ -191,6 +190,7 @@ class ModelScopedGraph:
 __all__ = [
     "ModelRuntimeConfig",
     "ModelRuntimeRegistry",
+    "ModelRuntimeUnavailableError",
     "ModelScopedGraph",
     "ProviderName",
     "current_model_runtime_config",
