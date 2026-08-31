@@ -39,7 +39,10 @@ class LLMProviderError(RuntimeError):
 def _env_config() -> ModelRuntimeConfig:
     api_key = os.getenv("QWEN_API_KEY", "").strip()
     if not api_key:
-        raise ValueError("没有配置 QWEN_API_KEY，请先在项目根目录 .env 中填写")
+        raise LLMProviderError(
+            "服务器默认模型未配置。请在项目根目录 .env 中配置 QWEN_API_KEY，"
+            "或为当前评估测试并绑定一个自定义模型会话。"
+        )
     base_url = os.getenv("QWEN_BASE_URL", "").strip() or _DEFAULT_QWEN_BASE_URL
     provider = "glm" if "open.bigmodel.cn" in base_url.casefold() else "qwen"
     return ModelRuntimeConfig(
