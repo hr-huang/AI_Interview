@@ -158,6 +158,65 @@ def _call_question_generator(
     return question_generator(**kwargs)
 
 
+def _active_constraint_gap_tags(
+    scenario_catalog: ScenarioCatalog | None,
+    retrieval_unit_id: str | None,
+) -> tuple[str, ...]:
+    """Return the reviewed gap-tag allowlist for a durable scenario turn."""
+
+    if scenario_catalog is None or not retrieval_unit_id:
+        return ()
+
+    try:
+        _, module = scenario_catalog.resolve(retrieval_unit_id)
+    except KeyError as exc:
+        raise ValueError(
+            f"unknown scenario retrieval_unit_id: {retrieval_unit_id}"
+        ) from exc
+
+    tags: list[str] = []
+    for constraint in scenario_catalog.constraints_for_module(module.module_id):
+        if constraint.status != "active":
+            continue
+        for tag in constraint.evidence_gap_tags:
+            if tag not in tags:
+                tags.append(tag)
+    return tuple(tags)
+
+
+def _call_answer_processor(
+    answer_processor: AnswerProcessor,
+    *,
+    plan: Any,
+    runtime_state: Any,
+    turn: InterviewTurn,
+    existing_evidences: list[Any],
+    claim_registry: Any,
+    allowed_gap_tags: tuple[str, ...],
+) -> AnswerProcessingResult | Any:
+    """Call processors with optional gap allowlist without breaking narrow fakes."""
+
+    kwargs: dict[str, Any] = {
+        "plan": plan,
+        "runtime_state": runtime_state,
+        "turn": turn,
+        "existing_evidences": existing_evidences,
+        "claim_registry": claim_registry,
+    }
+    try:
+        parameters = inspect.signature(answer_processor).parameters
+    except (TypeError, ValueError):
+        parameters = {}
+
+    if "allowed_gap_tags" in parameters or any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters.values()
+    ):
+        kwargs["allowed_gap_tags"] = allowed_gap_tags
+
+    return answer_processor(**kwargs)
+
+
 def _turn_by_id(turns: list[InterviewTurn], turn_id: str) -> tuple[int, InterviewTurn]:
     for index, turn in enumerate(turns):
         if turn.id == turn_id:
@@ -227,6 +286,9 @@ def build_interview_graph(
 
         if scenario_catalog is not None:
             preparer = prepare_question_context if question_context_preparer is None else question_context_preparer
+            progress = state["runtime_state"].requirement_progress[
+                action.primary_requirement_id
+            ]
             context = preparer(
                 action=action,
                 plan=state["interview_plan"],
@@ -236,7 +298,7 @@ def build_interview_graph(
                 # The catalog owns the reviewed release date used for all
                 # eligibility checks in this graph instance.
                 as_of=scenario_catalog.as_of,
-                evidence_gap_tags=(),
+                evidence_gap_tags=tuple(progress.latest_gap_tags),
             )
             return {
                 "scenario_context": context,
@@ -464,13 +526,20 @@ def build_interview_graph(
 
         turns = list(state.get("interview_turns") or [])
         _, turn = _turn_by_id(turns, turn_id)
+        provenance = getattr(turn, "question_provenance", None)
+        allowed_gap_tags = _active_constraint_gap_tags(
+            scenario_catalog,
+            getattr(provenance, "retrieval_unit_id", None),
+        )
         result = _as_answer_processing_result(
-            answer_processor(
+            _call_answer_processor(
+                answer_processor,
                 plan=state["interview_plan"],
                 runtime_state=state["runtime_state"],
                 turn=turn,
                 existing_evidences=list(state.get("evidences") or []),
                 claim_registry=state.get("claim_registry"),
+                allowed_gap_tags=allowed_gap_tags,
             )
         )
         evidences = list(state.get("evidences") or [])

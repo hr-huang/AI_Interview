@@ -81,7 +81,7 @@ class CandidateSafeProjectionTests(unittest.TestCase):
             self.assertNotIn(forbidden, text)
 
 
-def make_plan() -> InterviewPlan:
+def make_plan(candidate_focus: str | None = None) -> InterviewPlan:
     return InterviewPlan(
         duration_minutes=30,
         max_questions=10,
@@ -96,6 +96,7 @@ def make_plan() -> InterviewPlan:
                     EvidenceRequirement(
                         id="target_01_req_01",
                         description="能够说明并发状态更新中的一致性保证",
+                        candidate_focus=candidate_focus,
                     )
                 ],
                 related_claim_ids=["claim_01"],
@@ -179,11 +180,14 @@ class QuestionGeneratorServiceTest(unittest.TestCase):
         self,
         *,
         selected_constraint: ScenarioConstraint | None = None,
+        candidate_brief: str | None = None,
+        candidate_focus: str | None = None,
     ) -> LockedScenarioContext:
         scenario = ScenarioCard(
             scenario_id="private_scenario_id",
             title="内部业务",
             business_goal="支持订单查询和退款",
+            candidate_brief=candidate_brief,
             modules=["private_module_id"],
             valid_from=date(2026, 8, 29),
         )
@@ -206,13 +210,14 @@ class QuestionGeneratorServiceTest(unittest.TestCase):
             scenario_id=scenario.scenario_id,
             module_id=module.module_id,
             retrieval_unit_id=module.retrieval_unit_id,
+            primary_dimension_id=module.primary_dimension_id,
             business_goal=scenario.business_goal,
             opening_goal=module.opening_goal,
+            candidate_brief=scenario.candidate_brief,
+            candidate_focus=candidate_focus,
             selected_constraint=selected_constraint,
             revealed_constraint_ids=revealed_ids,
             retrieval_status="hit",
-            scenario=scenario,
-            module=module,
         )
 
     def test_scenario_opening_is_deterministic_and_does_not_leak_unselected_pressure_case(self) -> None:
@@ -234,7 +239,7 @@ class QuestionGeneratorServiceTest(unittest.TestCase):
 
         self.assertEqual(bad_llm.calls, [])
         self.assertIn("支持订单查询和退款", generated.text)
-        self.assertIn("并发状态更新中的一致性保证", generated.text)
+        self.assertIn("整体方案设计", generated.text)
         self.assertNotIn("能够说明", generated.text)
         self.assertEqual(
             sum(generated.text.count(mark) for mark in ("？", "?")),
@@ -250,6 +255,72 @@ class QuestionGeneratorServiceTest(unittest.TestCase):
             "退款实际上已成功",
         ):
             self.assertNotIn(forbidden, generated.text)
+
+    def test_scenario_opening_uses_brief_and_candidate_focus_without_llm(self) -> None:
+        bad_llm = FakeLLM(
+            GeneratedQuestion(text="不应调用模型：会泄露内部约束？")
+        )
+        context = self._make_scenario_context(
+            candidate_brief="你正在为一家电商平台设计客服 Agent，帮助用户完成订单服务。",
+            candidate_focus="状态一致性边界",
+        )
+
+        generated = generate_question(
+            action=make_action(),
+            plan=make_plan(candidate_focus="错误优化策略"),
+            scenario_context=context,
+            llm_client=bad_llm,
+        )
+
+        self.assertEqual(bad_llm.calls, [])
+        self.assertIn(context.candidate_brief, generated.text)
+        self.assertIn("状态一致性边界", generated.text)
+        self.assertNotIn("错误优化策略", generated.text)
+        self.assertEqual(sum(generated.text.count(mark) for mark in ("？", "?")), 1)
+        for forbidden in (
+            "PRIVATE_SIGNAL",
+            "PRIVATE_ERROR",
+            "退款实际上已成功",
+            "unused_constraint",
+        ):
+            self.assertNotIn(forbidden, generated.text)
+
+    def test_missing_context_focus_uses_generic_instead_of_plan_copy(self) -> None:
+        bad_llm = FakeLLM(GeneratedQuestion(text="不应调用模型？"))
+
+        for unsafe in (
+            "退款实际已经执行成功，只是接口响应超时",
+            "退款成功但响应超时",
+        ):
+            with self.subTest(unsafe=unsafe):
+                generated = generate_question(
+                    action=make_action(),
+                    plan=make_plan(candidate_focus=unsafe),
+                    scenario_context=self._make_scenario_context(),
+                    llm_client=bad_llm,
+                )
+                self.assertIn("整体方案设计", generated.text)
+                self.assertNotIn(unsafe, generated.text)
+                self.assertNotIn("响应超时", generated.text)
+                self.assertEqual(
+                    sum(generated.text.count(mark) for mark in ("？", "?")),
+                    1,
+                )
+        self.assertEqual(bad_llm.calls, [])
+
+    def test_follow_up_keeps_legacy_description_even_when_candidate_focus_exists(self) -> None:
+        bad_llm = FakeLLM(GeneratedQuestion(text="不应调用模型？"))
+
+        generated = generate_question(
+            action=make_action(question_mode="follow_up"),
+            plan=make_plan(candidate_focus="首题优化策略"),
+            scenario_context=self._make_scenario_context(),
+            llm_client=bad_llm,
+        )
+
+        self.assertEqual(bad_llm.calls, [])
+        self.assertIn("并发状态更新中的一致性保证", generated.text)
+        self.assertNotIn("首题优化策略", generated.text)
 
     def test_scenario_follow_up_without_remaining_constraint_uses_safe_verification_question(self) -> None:
         bad_llm = FakeLLM(
@@ -328,13 +399,12 @@ class QuestionGeneratorServiceTest(unittest.TestCase):
             scenario_id=scenario.scenario_id,
             module_id=module.module_id,
             retrieval_unit_id=module.retrieval_unit_id,
+            primary_dimension_id=module.primary_dimension_id,
             business_goal=scenario.business_goal,
             opening_goal=module.opening_goal,
             selected_constraint=selected,
             revealed_constraint_ids=[selected.constraint_id],
             retrieval_status="hit",
-            scenario=scenario,
-            module=module,
         )
 
         generate_question(
@@ -345,13 +415,18 @@ class QuestionGeneratorServiceTest(unittest.TestCase):
         )
 
         prompt = "\n".join(content for _, content in fake_llm.calls[0][0])
-        for allowed in ("支持订单查询和退款", "验证状态更新与删除边界", "退款实际上已成功但响应超时"):
+        for allowed in ("支持订单查询和退款", "退款实际上已成功但响应超时"):
             self.assertIn(allowed, prompt)
         for forbidden in (
             "PRIVATE_SIGNAL", "PRIVATE_ERROR", "unused_constraint", "不应发送到 Prompt 的索引文本",
-            "private_scenario_id", "private_module_id", "0.9", "score",
+            "private_scenario_id", "private_module_id", "0.9", "score", "验证状态更新与删除边界",
         ):
             self.assertNotIn(forbidden, prompt)
+
+        dumped = context.model_dump(mode="json")
+        for forbidden in ("scenario", "module", "opening_goal", "evidence_signals", "critical_errors", "base_constraints", "constraint_id"):
+            self.assertNotIn(forbidden, dumped)
+        self.assertEqual(set(dumped["selected_constraint"]), {"fact"})
 
     def test_selected_retrieval_record_adds_only_safe_grounding_fields(self) -> None:
         fake_llm = FakeLLM(GeneratedQuestion(text="请说明你的方案。"))

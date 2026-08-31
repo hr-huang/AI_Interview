@@ -159,6 +159,7 @@ def _finalize_custom_targets(
                 EvidenceRequirement(
                     id=f"{target_id}_req_{requirement_index:02d}",
                     description=requirement.description,
+                    candidate_focus=requirement.candidate_focus,
                     planned_role_dimension_id=dimension_id,
                     requires_transfer_validation=(
                         requirement.requires_transfer_validation

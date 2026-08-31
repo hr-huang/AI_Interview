@@ -145,6 +145,7 @@ class PlanReviewServiceTest(unittest.TestCase):
         custom = make_timed_draft(5).targets[0]
         custom.must_cover = False
         custom.priority = "medium"
+        custom.evidence_requirements[0].candidate_focus = "迁移适配策略"
 
         final_plan, blueprint = freeze_reviewed_plan(
             plan,
@@ -158,6 +159,7 @@ class PlanReviewServiceTest(unittest.TestCase):
         ])
         custom_requirement = final_plan.targets[-1].evidence_requirements[0]
         self.assertEqual(custom_requirement.id, "custom_01_req_01")
+        self.assertEqual(custom_requirement.candidate_focus, "迁移适配策略")
         self.assertIn(
             custom_requirement.id,
             {binding.requirement_id for binding in blueprint.bindings},

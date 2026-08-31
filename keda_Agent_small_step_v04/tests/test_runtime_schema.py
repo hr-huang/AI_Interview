@@ -5,11 +5,42 @@ from pydantic import ValidationError
 
 from profile_agent.schemas.runtime_schema import (
     InterviewRuntimeState,
+    RequirementAssessment,
     RequirementProgress,
 )
 
 
 class RuntimeSchemaTest(unittest.TestCase):
+    def test_requirement_assessment_exposes_missing_evidence_tags(self) -> None:
+        assessment = RequirementAssessment(
+            requirement_id="req_01",
+            recommended_status="in_progress",
+            rationale="版本更新和引用核验尚未证明",
+            missing_evidence_tags=["版本", "引用"],
+        )
+
+        self.assertEqual(
+            assessment.missing_evidence_tags,
+            ["版本", "引用"],
+        )
+        self.assertEqual(
+            RequirementProgress(requirement_id="req_01").latest_gap_tags,
+            [],
+        )
+
+    def test_old_checkpoint_without_latest_gap_tags_defaults_to_empty(self) -> None:
+        progress = RequirementProgress.model_validate(
+            {
+                "requirement_id": "req_01",
+                "status": "in_progress",
+                "attempt_count": 1,
+                "supporting_evidence_ids": [],
+                "contradicting_evidence_ids": [],
+            }
+        )
+
+        self.assertEqual(progress.latest_gap_tags, [])
+
     def test_invalid_requirement_status_is_rejected(self) -> None:
         with self.assertRaises(ValidationError):
             RequirementProgress(

@@ -48,7 +48,19 @@ class ScenarioCatalogTests(unittest.TestCase):
         (root / "modules.json").write_text(json.dumps(modules or [module], ensure_ascii=False), encoding="utf-8")
         (root / "constraints.json").write_text(json.dumps(constraints or [constraint], ensure_ascii=False), encoding="utf-8")
         (root / "ScenarioSourceRegistry.json").write_text(
-            json.dumps([{"source_id": "source_demo", "title": "内部审核"}], ensure_ascii=False),
+            json.dumps(
+                [
+                    {
+                        "source_id": "source_demo",
+                        "title": "内部审核",
+                        "publisher": "测试审核组",
+                        "published_at": "2026-08-29",
+                        "retrieved_at": "2026-08-29",
+                        "supports_dimension_ids": ["role_dim_01"],
+                    }
+                ],
+                ensure_ascii=False,
+            ),
             encoding="utf-8",
         )
         (root / "ScenarioBankManifest.json").write_text(

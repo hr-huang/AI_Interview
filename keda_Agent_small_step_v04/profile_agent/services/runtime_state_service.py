@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from datetime import datetime, timezone
 
 from profile_agent.schemas.interview_schema import InterviewPlan
@@ -146,6 +146,12 @@ def _append_unique(existing: list[str], values: Iterable[str]) -> None:
             seen.add(value)
 
 
+def _unique_in_order(values: Iterable[str]) -> list[str]:
+    unique: list[str] = []
+    _append_unique(unique, values)
+    return unique
+
+
 def record_requirement_evidence(
     runtime_state: InterviewRuntimeState,
     requirement_id: str,
@@ -153,6 +159,7 @@ def record_requirement_evidence(
     supporting_evidence_ids: list[str],
     contradicting_evidence_ids: list[str],
     known_evidence_ids: set[str],
+    latest_gap_tags: Sequence[str] = (),
 ) -> InterviewRuntimeState:
     _assert_requirement_progress_consistency(runtime_state)
 
@@ -201,6 +208,11 @@ def record_requirement_evidence(
     _append_unique(
         progress.contradicting_evidence_ids,
         contradicting_evidence_ids,
+    )
+    progress.latest_gap_tags = (
+        []
+        if status == "sufficient"
+        else _unique_in_order(latest_gap_tags)
     )
 
     return _validate_updated_runtime_state(updated)

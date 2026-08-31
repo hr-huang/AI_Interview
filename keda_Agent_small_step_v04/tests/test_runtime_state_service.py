@@ -250,6 +250,83 @@ class RuntimeUpdateTest(unittest.TestCase):
         self.assertEqual(progress.status, "sufficient")
         self.assertEqual(progress.supporting_evidence_ids, ["evidence_01"])
 
+    def test_in_progress_replaces_gap_tags_deduplicated_in_input_order(self) -> None:
+        latest_gap_tags = ["版本", "引用", "版本"]
+
+        updated = record_requirement_evidence(
+            self.runtime,
+            requirement_id="target_01_req_01",
+            status="in_progress",
+            supporting_evidence_ids=[],
+            contradicting_evidence_ids=[],
+            known_evidence_ids=set(),
+            latest_gap_tags=latest_gap_tags,
+        )
+
+        self.assertEqual(
+            updated.requirement_progress["target_01_req_01"].latest_gap_tags,
+            ["版本", "引用"],
+        )
+        self.assertEqual(latest_gap_tags, ["版本", "引用", "版本"])
+        self.assertEqual(
+            self.runtime.requirement_progress[
+                "target_01_req_01"
+            ].latest_gap_tags,
+            [],
+        )
+
+    def test_contradictory_preserves_gap_tags_for_follow_up(self) -> None:
+        seeded = record_requirement_evidence(
+            self.runtime,
+            requirement_id="target_01_req_01",
+            status="in_progress",
+            supporting_evidence_ids=[],
+            contradicting_evidence_ids=[],
+            known_evidence_ids=set(),
+            latest_gap_tags=["版本", "引用"],
+        )
+
+        updated = record_requirement_evidence(
+            seeded,
+            requirement_id="target_01_req_01",
+            status="contradictory",
+            supporting_evidence_ids=[],
+            contradicting_evidence_ids=["evidence_02"],
+            known_evidence_ids={"evidence_02"},
+            latest_gap_tags=["版本", "引用"],
+        )
+
+        self.assertEqual(
+            updated.requirement_progress["target_01_req_01"].latest_gap_tags,
+            ["版本", "引用"],
+        )
+
+    def test_sufficient_clears_gap_tags_even_when_input_contains_tags(self) -> None:
+        seeded = record_requirement_evidence(
+            self.runtime,
+            requirement_id="target_01_req_01",
+            status="in_progress",
+            supporting_evidence_ids=[],
+            contradicting_evidence_ids=[],
+            known_evidence_ids=set(),
+            latest_gap_tags=["版本", "引用"],
+        )
+
+        updated = record_requirement_evidence(
+            seeded,
+            requirement_id="target_01_req_01",
+            status="sufficient",
+            supporting_evidence_ids=[],
+            contradicting_evidence_ids=[],
+            known_evidence_ids=set(),
+            latest_gap_tags=["版本"],
+        )
+
+        self.assertEqual(
+            updated.requirement_progress["target_01_req_01"].latest_gap_tags,
+            [],
+        )
+
     def test_evidence_id_cannot_be_both_supporting_and_contradicting(self) -> None:
         with self.assertRaisesRegex(ValueError, "supporting.*contradicting"):
             record_requirement_evidence(

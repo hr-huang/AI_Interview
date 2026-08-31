@@ -178,11 +178,9 @@ def _scenario_grounding_text(
 
     fields = [
         ("Business goal", safe(scenario_context.business_goal)),
-        ("Opening goal", safe(scenario_context.opening_goal)),
     ]
     if scenario_context.selected_constraint is not None:
-        constraint = scenario_context.selected_constraint.fact or scenario_context.selected_constraint.description
-        fields.append(("Selected constraint", safe(constraint)))
+        fields.append(("Selected constraint", safe(scenario_context.selected_constraint.fact)))
     return "\n\n".join(
         f"{label}:\n{value}" for label, value in fields if value is not None
     )
@@ -201,9 +199,25 @@ def _candidate_focus(requirement_description: str) -> str:
     return focus
 
 
+def _safe_opening_brief(scenario_context: LockedScenarioContext) -> str:
+    """Prefer the independent brief and fail closed to the legacy goal."""
+
+    for value in (scenario_context.candidate_brief, scenario_context.business_goal):
+        if not isinstance(value, str):
+            continue
+        if "\r" in value or "\n" in value:
+            continue
+        brief = " ".join(value.split()).strip()
+        if not brief:
+            continue
+        brief = brief.replace("?", "").replace("？", "")
+        if brief:
+            return brief
+    return "当前业务场景"
+
+
 def _scenario_opening_question(
     scenario_context: LockedScenarioContext,
-    requirement_description: str,
 ) -> GeneratedQuestion:
     """Render a safe first scenario question without another model call.
 
@@ -212,20 +226,14 @@ def _scenario_opening_question(
     and model-invented failure cases must not enter the candidate-facing text.
     """
 
-    def one_line(value: str) -> str:
-        return " ".join(
-            value.replace("？", "").replace("?", "").split()
-        ).strip()
-
-    business_goal = one_line(scenario_context.business_goal)
-    focus = _candidate_focus(requirement_description)
+    business_goal = _safe_opening_brief(scenario_context)
+    focus = scenario_context.candidate_focus or "整体方案设计"
     if not business_goal or not focus:
         raise ValueError("场景开场问题缺少业务目标或原子考点")
 
     return GeneratedQuestion(
         text=(
-            f"现在需要设计一个以“{business_goal}”为目标的 Agent。"
-            f"你会如何围绕“{focus}”完成整体设计？"
+            f"{business_goal}如果需要重点处理“{focus}”，你会怎么设计？"
         )
     )
 
@@ -258,10 +266,7 @@ def generate_question(
     if scenario_context is not None and scenario_context.selected_constraint is None:
         if action.question_mode == "follow_up":
             return _scenario_safe_follow_up(requirement.description)
-        return _scenario_opening_question(
-            scenario_context,
-            requirement.description,
-        )
+        return _scenario_opening_question(scenario_context)
 
     grounding_text = (
         _scenario_grounding_text(scenario_context)

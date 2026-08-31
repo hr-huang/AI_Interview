@@ -77,6 +77,7 @@ class RequirementAssessment(BaseModel):
         "contradictory",
     ]
     rationale: str
+    missing_evidence_tags: list[str] = Field(default_factory=list)
 
 
 class TurnAssessment(BaseModel):
@@ -93,6 +94,7 @@ class RequirementProgress(BaseModel):
     attempt_count: int = Field(default=0, ge=0)
     supporting_evidence_ids: list[str] = Field(default_factory=list)
     contradicting_evidence_ids: list[str] = Field(default_factory=list)
+    latest_gap_tags: list[str] = Field(default_factory=list)
 
 
 class InterviewRuntimeState(BaseModel):

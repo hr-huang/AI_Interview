@@ -1,6 +1,35 @@
-from typing import Annotated, Literal
+import re
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+
+_CANDIDATE_FOCUS_START = re.compile(
+    r"^(请说明|请描述|请|如何|为什么|为何|能否|是否|你会|"
+    r"验证|考察|分析|说明|描述|必须|直接|采用|使用|通过|保证|"
+    r"确保|应该|应当|先|再)"
+)
+_CANDIDATE_FOCUS_STATEMENT = re.compile(r"(实际|已经|只是|但|却|正在)")
+_CANDIDATE_FOCUS_SHAPE = re.compile(r"^[\u3400-\u9fffA-Za-z0-9][\u3400-\u9fffA-Za-z0-9 -]*$")
+
+
+def normalize_candidate_focus(value: Any) -> str | None:
+    """Return a bounded neutral noun phrase, or fail closed to ``None``."""
+
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise TypeError("candidate_focus must be a string or null")
+    if any(character.isspace() and character != " " for character in value):
+        return None
+    normalized = " ".join(part for part in value.strip().split(" ") if part)
+    if not normalized or len(normalized) > 40:
+        return None
+    if not _CANDIDATE_FOCUS_SHAPE.fullmatch(normalized):
+        return None
+    if _CANDIDATE_FOCUS_START.match(normalized) or _CANDIDATE_FOCUS_STATEMENT.search(normalized):
+        return None
+    return normalized
 
 
 # ============================================================
@@ -120,6 +149,13 @@ class EvidenceRequirementDraft(BaseModel):
 
     description: str
 
+    candidate_focus: str | None = None
+
+    @field_validator("candidate_focus", mode="before")
+    @classmethod
+    def normalize_candidate_focus(cls, value: Any) -> str | None:
+        return normalize_candidate_focus(value)
+
     planned_role_dimension_id: str | None = None
     # Planner 声明这条证据主要覆盖哪个 Role Pack 维度。
     # 正式 Planner 输出会由 Python 校验；None 仅保留旧数据兼容。
@@ -202,6 +238,13 @@ class EvidenceRequirement(BaseModel):
     # target_01_req_01
 
     description: str
+
+    candidate_focus: str | None = None
+
+    @field_validator("candidate_focus", mode="before")
+    @classmethod
+    def normalize_candidate_focus(cls, value: Any) -> str | None:
+        return normalize_candidate_focus(value)
 
     planned_role_dimension_id: str | None = None
 

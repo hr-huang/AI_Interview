@@ -289,7 +289,7 @@ index version=`questions-v1`；`QUESTION_RAG_EMBEDDING_*` 覆盖项会在 CLI �
 优先级解析。模型优先读取 `QUESTION_RAG_EMBEDDING_MODEL`，未设置时兼容旧变量
 `SILICONFLOW_EMBEDDING_MODEL`，两者都未设置才使用 `BAAI/bge-m3`。
 
-命令退出码固定为：`0` 成功，`1` embedding/Qdrant 等操作失败，`2` 参数、配置或题库校验
+命令退出码固定为：`0` 成功，`1` embedding/Qdrant 等操作失败或校准门槛未通过，`2` 参数、配置或题库校验
 失败。`tests/fixtures/question_rag/minimal_question_bank.json` 是明确标记的
 `test_only` synthetic fixture，生产 CLI 会拒绝它；当前仓库没有真实题库，下一份规格再补
 充经审阅的生产问题。
@@ -299,6 +299,18 @@ index version=`questions-v1`；`QUESTION_RAG_EMBEDDING_*` 覆盖项会在 CLI �
 当前链路是 Supervisor 先决定“考什么”，`prepare_question_context` 再按维度、
 题型和难度检索业务场景。向量库只保存 35 个 `ScenarioModule` 的检索投影；
 完整场景、隐藏约束和评分信号仍以 JSON 为准。
+
+检索结果会保留排名诊断组件：`dense_score` 是向量相似度，`lexical_score` 是当前候选集内
+按最大值归一化的 BM25 分数，`raw_reranker_score` 是 reranker 原始分数，
+`normalized_reranker_score` 是当前候选集内的 min-max 归一化分数；`score` 是按
+`0.6 * hybrid + 0.4 * normalized_reranker_score` 得到的最终排序分，其中
+`hybrid = 0.7 * dense_score + 0.3 * lexical_score`。reranker 未运行、异常、返回数量不符或
+返回非有限值时，两个 reranker 字段均为 `None`，最终排序分退回 `hybrid`；reranker 返回同分时
+归一化分数为 `0.0`，但仍保留原始分数。`top1_margin` 是已返回结果中前两名最终排序分之差，
+不足两项或分数缺失时为 `None`。
+
+这些分数和 `top1_margin` 只是**单次查询内部的排名诊断**，不是经过校准的置信度，不能在
+彼此无关的查询之间比较，也不会直接展示给候选人。
 
 ```powershell
 # 只读校验，不读 API Key，不调用模型
@@ -315,6 +327,25 @@ index version=`questions-v1`；`QUESTION_RAG_EMBEDDING_*` 覆盖项会在 CLI �
 `SCENARIO_RAG_QDRANT_URL`。远程服务需要密钥时再设置 `SCENARIO_RAG_QDRANT_API_KEY`。
 应用启动只读取 JSON；首次真正检索场景题时才初始化 embedding/Qdrant/reranker。
 任一可选服务不可用时，系统回退到该维度人工审核的默认场景，不让模型自由编造。
+
+场景检索校准使用冻结的 24 个正/负例，不会删除负例或把相邻业务世界当作同一答案。
+运行时只消费 Top-1 选中的 Module；`top1_forbidden` 和报告中的
+`forbidden_top1_hit_count` 记录 Top-1 是否命中了该案例的 forbidden Module。
+`forbidden_hits` 与 `forbidden_hit_count` 保留原语义，检查完整 Top-3，作为发现业务世界
+混淆的诊断指标，不是置信度，也不参与验收门槛。纯函数
+`ScenarioCalibrationAcceptance` 的固定门槛是 Top-1 acceptable rate `>= 0.75`、Top-3
+recall `>= 0.90`、`forbidden_top1_hit_count == 0` 和 `fallback_count == 0`；因此 forbidden
+Module 仅出现在 Top-2/Top-3 时仍可通过验收，但应跟进其业务语义混淆。
+`evaluate --apply` 会先写入完整报告并打印所有诊断，再以 gate 结果返回 `0`/`1`；Top-3
+diagnostic 非零本身不会使命令失败。
+
+```powershell
+# 只预览 24 个校准案例和预计调用次数，不调用 provider
+.\.venv\Scripts\python.exe run_scenario_bank.py evaluate
+
+# 显式执行真实检索并写入 artifacts/scenario_rag/（需再次确认 provider 成本）
+.\.venv\Scripts\python.exe run_scenario_bank.py evaluate --apply
+```
 
 ## 当前设计边界
 

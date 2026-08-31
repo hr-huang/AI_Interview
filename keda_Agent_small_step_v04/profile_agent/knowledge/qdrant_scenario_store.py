@@ -126,6 +126,19 @@ class _Point:
     vector: list[float]
 
 
+@dataclass(frozen=True)
+class _RankRow:
+    """Immutable ranking row retaining every score component."""
+
+    retrieval_unit_id: str
+    dense_score: float
+    lexical_score: float
+    hybrid_score: float
+    raw_reranker_score: float | None
+    normalized_reranker_score: float | None
+    final_score: float
+
+
 class QdrantScenarioStore:
     """Small scenario-module index with an optional injected Qdrant client."""
 
@@ -296,10 +309,22 @@ class QdrantScenarioStore:
     ) -> ScenarioCandidateSet:
         lexical = _bm25(request.semantic_query, {point.retrieval_unit_id: point.semantic_text for point in candidates})
         max_lexical = max(lexical.values(), default=0.0)
-        ranked: list[tuple[str, float]] = []
+        ranked: list[_RankRow] = []
         for point in candidates:
             lexical_score = lexical.get(point.retrieval_unit_id, 0.0) / max_lexical if max_lexical else 0.0
-            ranked.append((point.retrieval_unit_id, 0.7 * dense[point.retrieval_unit_id] + 0.3 * lexical_score))
+            dense_score = dense[point.retrieval_unit_id]
+            hybrid_score = 0.7 * dense_score + 0.3 * lexical_score
+            ranked.append(
+                _RankRow(
+                    retrieval_unit_id=point.retrieval_unit_id,
+                    dense_score=dense_score,
+                    lexical_score=lexical_score,
+                    hybrid_score=hybrid_score,
+                    raw_reranker_score=None,
+                    normalized_reranker_score=None,
+                    final_score=hybrid_score,
+                )
+            )
         if reranker is not None and callable(getattr(reranker, "rerank", None)):
             documents = [point.semantic_text for point in candidates]
             try:
@@ -312,25 +337,59 @@ class QdrantScenarioStore:
                 maximum = max(rerank_values, default=0.0)
                 minimum = min(rerank_values, default=0.0)
                 span = maximum - minimum
-                rerank_by_id = {
-                    point.retrieval_unit_id: ((rerank_values[index] - minimum) / span if span else 0.0)
-                    for index, point in enumerate(candidates)
-                }
-                ranked = [(unit_id, 0.6 * score + 0.4 * rerank_by_id[unit_id]) for unit_id, score in ranked]
+                if not math.isfinite(span):
+                    raise ValueError
+                normalized_values = [
+                    (raw_score - minimum) / span if span else 0.0
+                    for raw_score in rerank_values
+                ]
+                if any(not math.isfinite(value) for value in normalized_values):
+                    raise ValueError
+                final_values = [
+                    0.6 * row.hybrid_score + 0.4 * normalized_score
+                    for row, normalized_score in zip(ranked, normalized_values)
+                ]
+                if any(not math.isfinite(value) for value in final_values):
+                    raise ValueError
+                ranked = [
+                    _RankRow(
+                        retrieval_unit_id=row.retrieval_unit_id,
+                        dense_score=row.dense_score,
+                        lexical_score=row.lexical_score,
+                        hybrid_score=row.hybrid_score,
+                        raw_reranker_score=raw_score,
+                        normalized_reranker_score=normalized_score,
+                        final_score=final_score,
+                    )
+                    for row, raw_score, normalized_score, final_score in zip(
+                        ranked,
+                        rerank_values,
+                        normalized_values,
+                        final_values,
+                    )
+                ]
             except Exception:
                 pass
-        ranked.sort(key=lambda item: (-item[1], item[0]))
+        ranked.sort(key=lambda item: (-item.final_score, item.retrieval_unit_id))
         hits = [
             ScenarioCandidate(
-                retrieval_unit_id=unit_id,
-                score=score,
+                retrieval_unit_id=row.retrieval_unit_id,
+                score=row.final_score,
+                dense_score=row.dense_score,
+                lexical_score=row.lexical_score,
+                raw_reranker_score=row.raw_reranker_score,
+                normalized_reranker_score=row.normalized_reranker_score,
             )
-            for unit_id, score in ranked[:limit]
+            for row in ranked[:limit]
         ]
+        top1_margin = None
+        if len(hits) >= 2 and hits[0].score is not None and hits[1].score is not None:
+            top1_margin = hits[0].score - hits[1].score
         return ScenarioCandidateSet(
             status="hit",
             candidates=hits,
             index_version="scenario-modules-v1",
+            top1_margin=top1_margin,
             hard_filter=self._hard_filter(request, as_of),
         )
 

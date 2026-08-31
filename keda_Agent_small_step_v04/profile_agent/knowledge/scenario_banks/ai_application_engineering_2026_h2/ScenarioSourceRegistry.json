@@ -5,7 +5,88 @@
       "title": "Scenario Bank v1 内部审核素材",
       "source_type": "internal_review",
       "status": "active",
-      "notes": "Reviewed scenario abstractions; no candidate or employer PII."
+      "publisher": "Scenario Bank 内部审核组",
+      "published_at": "2026-08-29",
+      "retrieved_at": "2026-08-29",
+      "supports_dimension_ids": [
+        "role_dim_01",
+        "role_dim_02",
+        "role_dim_03",
+        "role_dim_04",
+        "role_dim_05",
+        "role_dim_06"
+      ],
+      "notes": "已审核的 Scenario Bank 内部场景抽象，不包含候选人或雇主个人信息。"
+    },
+    {
+      "source_id": "jd-agent-2026-219868",
+      "title": "国际产研 AI Agent算法/工程专家",
+      "source_type": "external_role_pack",
+      "status": "active",
+      "publisher": "京东招聘",
+      "source_url": "https://zhaopin.jd.com/web/job-info-detail?requementId=219868",
+      "published_at": "2026-06-29",
+      "retrieved_at": "2026-08-25",
+      "supports_dimension_ids": [
+        "role_dim_01",
+        "role_dim_03",
+        "role_dim_04",
+        "role_dim_05",
+        "role_dim_06"
+      ],
+      "notes": "Role Pack 已审核的岗位来源，沿用其原始日期与维度映射。"
+    },
+    {
+      "source_id": "shlab-agent-intern-2026-04-28",
+      "title": "【27届留用实习生】-Agent研发-工程平台中心",
+      "source_type": "external_role_pack",
+      "status": "active",
+      "publisher": "上海人工智能实验室",
+      "source_url": "https://www.shlab.org.cn/joinus/detail/7631158899357649171?mode=campus&subject=7619221867426433326",
+      "published_at": "2026-04-28",
+      "retrieved_at": "2026-08-25",
+      "supports_dimension_ids": [
+        "role_dim_01",
+        "role_dim_02",
+        "role_dim_03",
+        "role_dim_04",
+        "role_dim_05",
+        "role_dim_06"
+      ],
+      "notes": "Role Pack 已审核的岗位来源，沿用其原始日期与维度映射。"
+    },
+    {
+      "source_id": "anthropic-writing-tools-for-agents-2025-09-11",
+      "title": "Writing effective tools for AI agents — with agents",
+      "source_type": "external_engineering_practice",
+      "status": "active",
+      "publisher": "Anthropic",
+      "source_url": "https://www.anthropic.com/engineering/writing-tools-for-agents",
+      "published_at": "2025-09-11",
+      "retrieved_at": "2026-08-25",
+      "supports_dimension_ids": [
+        "role_dim_01",
+        "role_dim_03",
+        "role_dim_04",
+        "role_dim_06"
+      ],
+      "notes": "Role Pack 已审核的 Anthropic 工程实践来源，沿用其原始日期与维度映射。"
+    },
+    {
+      "source_id": "anthropic-demystifying-evals-2026-01-09",
+      "title": "Demystifying evals for AI agents",
+      "source_type": "external_engineering_practice",
+      "status": "active",
+      "publisher": "Anthropic",
+      "source_url": "https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents",
+      "published_at": "2026-01-09",
+      "retrieved_at": "2026-08-25",
+      "supports_dimension_ids": [
+        "role_dim_04",
+        "role_dim_05",
+        "role_dim_06"
+      ],
+      "notes": "Role Pack 已审核的 Anthropic 工程实践来源，沿用其原始日期与维度映射。"
     }
   ]
 }

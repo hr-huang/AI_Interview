@@ -223,6 +223,46 @@ class LLMErrorHandlingTests(unittest.TestCase):
         self.assertEqual(len(model.calls), 2)
         self.assertEqual(model.calls[0], model.calls[1])
 
+    def test_trace_is_disabled_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            trace_path = Path(directory) / "trace.jsonl"
+            wrapper = LLM()
+
+            with patch.dict(
+                os.environ,
+                {"LLM_TRACE_PATH": str(trace_path)},
+                clear=False,
+            ):
+                os.environ.pop("LLM_TRACE_ENABLED", None)
+                wrapper._write_trace(
+                    call_type="text",
+                    status="ok",
+                    messages=[("human", "hello")],
+                )
+
+            self.assertFalse(trace_path.exists())
+
+    def test_trace_is_disabled_when_explicitly_false(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            trace_path = Path(directory) / "trace.jsonl"
+            wrapper = LLM()
+
+            with patch.dict(
+                os.environ,
+                {
+                    "LLM_TRACE_ENABLED": "false",
+                    "LLM_TRACE_PATH": str(trace_path),
+                },
+                clear=False,
+            ):
+                wrapper._write_trace(
+                    call_type="text",
+                    status="ok",
+                    messages=[("human", "hello")],
+                )
+
+            self.assertFalse(trace_path.exists())
+
     def test_structured_questions_answers_and_errors_append_to_one_redacted_jsonl_file(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             trace_path = Path(directory) / "qwen-trace.jsonl"
@@ -234,6 +274,7 @@ class LLMErrorHandlingTests(unittest.TestCase):
                 os.environ,
                 {
                     "QWEN_API_KEY": "super-secret-key",
+                    "LLM_TRACE_ENABLED": "true",
                     "LLM_TRACE_PATH": str(trace_path),
                 },
                 clear=False,
@@ -262,6 +303,7 @@ class LLMErrorHandlingTests(unittest.TestCase):
                     "QWEN_API_KEY": "glm-secret-key",
                     "QWEN_MODEL": "glm-5.3",
                     "QWEN_BASE_URL": "https://open.bigmodel.cn/api/paas/v4",
+                    "LLM_TRACE_ENABLED": "true",
                     "LLM_TRACE_PATH": str(trace_path),
                 },
                 clear=False,

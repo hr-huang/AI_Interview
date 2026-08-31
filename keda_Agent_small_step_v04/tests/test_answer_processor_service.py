@@ -130,12 +130,293 @@ class AnswerProcessorServiceTest(unittest.TestCase):
         self,
         requirement_id: str,
         status: str = "sufficient",
+        missing_evidence_tags: list[str] | None = None,
     ) -> RequirementAssessment:
         return RequirementAssessment(
             requirement_id=requirement_id,
             recommended_status=status,
             rationale="回答提供了充分证据。",
+            missing_evidence_tags=missing_evidence_tags or [],
         )
+
+    def test_primary_in_progress_persists_only_allowed_gap_tags(self) -> None:
+        fake_llm = FakeLLM(
+            self.assessment(
+                drafts=[self.draft(requirements=[REQ_01])],
+                requirements=[
+                    self.requirement(
+                        REQ_01,
+                        status="in_progress",
+                        missing_evidence_tags=[" Memory ", "删除"],
+                    )
+                ],
+            )
+        )
+
+        result = process_answer(
+            self.plan,
+            self.runtime,
+            self.turn,
+            [],
+            allowed_gap_tags=["Memory", "删除", "RAG", "版本", "引用"],
+            llm_client=fake_llm,
+        )
+
+        self.assertEqual(
+            result.runtime_state.requirement_progress[REQ_01].latest_gap_tags,
+            ["Memory", "删除"],
+        )
+        self.assertEqual(len(fake_llm.calls), 1)
+
+    def test_primary_contradictory_may_preserve_allowed_gap_tags(self) -> None:
+        fake_llm = FakeLLM(
+            self.assessment(
+                drafts=[
+                    self.draft(
+                        requirements=[REQ_01],
+                        polarity="contradicting",
+                    )
+                ],
+                requirements=[
+                    self.requirement(
+                        REQ_01,
+                        status="contradictory",
+                        missing_evidence_tags=["版本"],
+                    )
+                ],
+            )
+        )
+
+        result = process_answer(
+            self.plan,
+            self.runtime,
+            self.turn,
+            [],
+            allowed_gap_tags=["Memory", "版本"],
+            llm_client=fake_llm,
+        )
+
+        progress = result.runtime_state.requirement_progress[REQ_01]
+        self.assertEqual(progress.status, "contradictory")
+        self.assertEqual(progress.latest_gap_tags, ["版本"])
+
+    def test_unknown_gap_tag_uses_existing_semantic_retry(self) -> None:
+        invalid = self.assessment(
+            drafts=[self.draft(requirements=[REQ_01])],
+            requirements=[
+                self.requirement(
+                    REQ_01,
+                    status="in_progress",
+                    missing_evidence_tags=["请求注入"],
+                )
+            ],
+        )
+        valid = self.assessment(
+            drafts=[self.draft(requirements=[REQ_01])],
+            requirements=[
+                self.requirement(
+                    REQ_01,
+                    status="in_progress",
+                    missing_evidence_tags=["Memory"],
+                )
+            ],
+        )
+        fake_llm = SequencedFakeLLM([invalid, valid])
+
+        result = process_answer(
+            self.plan,
+            self.runtime,
+            self.turn,
+            [],
+            allowed_gap_tags=["Memory", "删除"],
+            llm_client=fake_llm,
+        )
+
+        self.assertEqual(len(fake_llm.calls), 2)
+        self.assertIn("请求注入", fake_llm.calls[1][0][-1][1])
+        self.assertEqual(
+            result.runtime_state.requirement_progress[REQ_01].latest_gap_tags,
+            ["Memory"],
+        )
+
+    def test_duplicate_gap_tag_uses_existing_semantic_retry(self) -> None:
+        invalid = self.assessment(
+            drafts=[self.draft(requirements=[REQ_01])],
+            requirements=[
+                self.requirement(
+                    REQ_01,
+                    status="in_progress",
+                    missing_evidence_tags=["Memory", " Memory "],
+                )
+            ],
+        )
+        valid = self.assessment(
+            drafts=[self.draft(requirements=[REQ_01])],
+            requirements=[
+                self.requirement(
+                    REQ_01,
+                    status="in_progress",
+                    missing_evidence_tags=["Memory"],
+                )
+            ],
+        )
+        fake_llm = SequencedFakeLLM([invalid, valid])
+
+        result = process_answer(
+            self.plan,
+            self.runtime,
+            self.turn,
+            [],
+            allowed_gap_tags=["Memory", "删除"],
+            llm_client=fake_llm,
+        )
+
+        self.assertEqual(len(fake_llm.calls), 2)
+        self.assertIn("重复", fake_llm.calls[1][0][-1][1])
+        self.assertEqual(
+            result.runtime_state.requirement_progress[REQ_01].latest_gap_tags,
+            ["Memory"],
+        )
+
+    def test_sufficient_assessment_retries_non_empty_gap_then_persists_empty(self) -> None:
+        invalid = self.assessment(
+            drafts=[self.draft(requirements=[REQ_01])],
+            requirements=[
+                self.requirement(
+                    REQ_01,
+                    status="sufficient",
+                    missing_evidence_tags=["Memory"],
+                )
+            ],
+        )
+        valid = self.assessment(
+            drafts=[self.draft(requirements=[REQ_01])],
+            requirements=[self.requirement(REQ_01, status="sufficient")],
+        )
+        fake_llm = SequencedFakeLLM([invalid, valid])
+
+        result = process_answer(
+            self.plan,
+            self.runtime,
+            self.turn,
+            [],
+            allowed_gap_tags=["Memory"],
+            llm_client=fake_llm,
+        )
+
+        self.assertEqual(len(fake_llm.calls), 2)
+        self.assertIn("sufficient", fake_llm.calls[1][0][-1][1])
+        self.assertEqual(
+            result.runtime_state.requirement_progress[REQ_01].latest_gap_tags,
+            [],
+        )
+
+    def test_empty_allowlist_retries_non_empty_gap_then_accepts_empty(self) -> None:
+        invalid = self.assessment(
+            drafts=[self.draft(requirements=[REQ_01])],
+            requirements=[
+                self.requirement(
+                    REQ_01,
+                    status="in_progress",
+                    missing_evidence_tags=["Memory"],
+                )
+            ],
+        )
+        valid = self.assessment(
+            drafts=[self.draft(requirements=[REQ_01])],
+            requirements=[self.requirement(REQ_01, status="in_progress")],
+        )
+        fake_llm = SequencedFakeLLM([invalid, valid])
+
+        result = process_answer(
+            self.plan,
+            self.runtime,
+            self.turn,
+            [],
+            allowed_gap_tags=[],
+            llm_client=fake_llm,
+        )
+
+        self.assertEqual(len(fake_llm.calls), 2)
+        self.assertIn("allowlist", fake_llm.calls[1][0][-1][1])
+        self.assertEqual(
+            result.runtime_state.requirement_progress[REQ_01].latest_gap_tags,
+            [],
+        )
+
+    def test_non_primary_requirement_retries_gap_but_still_updates_evidence_and_status(self) -> None:
+        invalid = self.assessment(
+            drafts=[self.draft(requirements=[REQ_01, REQ_02])],
+            requirements=[
+                self.requirement(
+                    REQ_01,
+                    status="in_progress",
+                    missing_evidence_tags=["Memory"],
+                ),
+                self.requirement(
+                    REQ_02,
+                    status="in_progress",
+                    missing_evidence_tags=["删除"],
+                ),
+            ],
+        )
+        valid = self.assessment(
+            drafts=[self.draft(requirements=[REQ_01, REQ_02])],
+            requirements=[
+                self.requirement(
+                    REQ_01,
+                    status="in_progress",
+                    missing_evidence_tags=["Memory"],
+                ),
+                self.requirement(REQ_02, status="in_progress"),
+            ],
+        )
+        fake_llm = SequencedFakeLLM([invalid, valid])
+
+        result = process_answer(
+            self.plan,
+            self.runtime,
+            self.turn,
+            [],
+            allowed_gap_tags=["Memory", "删除"],
+            llm_client=fake_llm,
+        )
+
+        self.assertEqual(len(fake_llm.calls), 2)
+        self.assertIn("非 Primary Requirement", fake_llm.calls[1][0][-1][1])
+        primary = result.runtime_state.requirement_progress[REQ_01]
+        secondary = result.runtime_state.requirement_progress[REQ_02]
+        self.assertEqual(primary.latest_gap_tags, ["Memory"])
+        self.assertEqual(secondary.status, "in_progress")
+        self.assertEqual(secondary.supporting_evidence_ids, ["evidence_001"])
+        self.assertEqual(secondary.latest_gap_tags, [])
+
+    def test_prompt_includes_gap_allowlist_and_primary_requirement(self) -> None:
+        fake_llm = FakeLLM(
+            self.assessment(
+                drafts=[self.draft(requirements=[REQ_01])],
+                requirements=[
+                    self.requirement(
+                        REQ_01,
+                        status="in_progress",
+                        missing_evidence_tags=["Memory"],
+                    )
+                ],
+            )
+        )
+
+        process_answer(
+            self.plan,
+            self.runtime,
+            self.turn,
+            [],
+            allowed_gap_tags=["Memory", "删除"],
+            llm_client=fake_llm,
+        )
+
+        prompt = "\n".join(content for _, content in fake_llm.calls[0][0])
+        self.assertIn('Allowed missing_evidence_tags JSON:\n["Memory", "删除"]', prompt)
+        self.assertIn(f"Primary Requirement ID:\n{REQ_01}", prompt)
 
     def test_success_calls_structured_once_and_updates_runtime(self) -> None:
         fake_llm = FakeLLM(

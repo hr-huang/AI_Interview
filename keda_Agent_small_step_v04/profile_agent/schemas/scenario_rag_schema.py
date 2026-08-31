@@ -11,11 +11,16 @@ from __future__ import annotations
 from collections.abc import Mapping
 from datetime import date
 from math import isfinite
+import re
 from typing import Any, Literal
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import AnyHttpUrl, AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from profile_agent.schemas.interview_schema import QuestionMode, TargetType
+from profile_agent.schemas.interview_schema import (
+    QuestionMode,
+    TargetType,
+    normalize_candidate_focus,
+)
 from profile_agent.schemas.question_rag_schema import QuestionDifficulty
 
 
@@ -68,6 +73,39 @@ def _clean_list(values: Any, field_name: str) -> list[str]:
     return result
 
 
+def normalize_candidate_brief(value: Any) -> str | None:
+    """Normalize reviewed one-or-two-sentence candidate copy."""
+
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise TypeError("candidate_brief must be a string or null")
+    if any(character.isspace() and character != " " for character in value):
+        raise ValueError("candidate_brief must contain only ordinary spaces")
+    brief = value.strip()
+    if not brief:
+        return None
+    if "\r" in brief or "\n" in brief:
+        raise ValueError("candidate_brief must be a single line")
+    if "?" in brief or "？" in brief:
+        raise ValueError("candidate_brief must not contain question marks")
+    if len(brief) > 240:
+        raise ValueError("candidate_brief must be at most 240 characters")
+    if not re.fullmatch(r"[^。！!?\r\n]+[。！!](?:[^。！!?\r\n]+[。！!])?", brief):
+        raise ValueError("candidate_brief must contain one or two complete sentences")
+    return brief
+
+
+def _finite_float(value: Any, field_name: str) -> float | None:
+    """Normalize an optional numeric diagnostic while rejecting NaN/infinity."""
+
+    if value is not None and (
+        not isinstance(value, (int, float)) or not isfinite(float(value))
+    ):
+        raise ValueError(f"{field_name} must be finite")
+    return None if value is None else float(value)
+
+
 class _ScenarioBase(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -80,6 +118,7 @@ class ScenarioCard(_ScenarioBase):
     role_family: Literal["ai_application_engineering"] = SCENARIO_ROLE_FAMILY
     role_profile_version: Literal["2026-H2"] = SCENARIO_ROLE_PROFILE_VERSION
     business_goal: str = Field(min_length=1)
+    candidate_brief: str | None = Field(default=None, max_length=240)
     actors: list[str] = Field(default_factory=list)
     tools: list[str] = Field(default_factory=list)
     base_constraints: list[str] = Field(default_factory=list)
@@ -103,6 +142,11 @@ class ScenarioCard(_ScenarioBase):
     @classmethod
     def validate_text(cls, value: str, info: Any) -> str:
         return _non_blank(value, info.field_name)
+
+    @field_validator("candidate_brief", mode="before")
+    @classmethod
+    def validate_candidate_brief(cls, value: Any) -> str | None:
+        return normalize_candidate_brief(value)
 
     @field_validator("actors", "tools", "base_constraints", "modules", "source_ids", "source_refs", mode="before")
     @classmethod
@@ -270,6 +314,42 @@ class ScenarioConstraint(_ScenarioBase):
         return self.evidence_gap_tags
 
 
+class ScenarioConstraintProjection(_ScenarioBase):
+    """Candidate-safe fact for the currently selected constraint only."""
+
+    fact: str = Field(min_length=1)
+
+    @field_validator("fact", mode="before")
+    @classmethod
+    def validate_text(cls, value: Any, info: Any) -> str:
+        return _non_blank(value, info.field_name)
+
+    @classmethod
+    def from_constraint(
+        cls,
+        constraint: ScenarioConstraint | "ScenarioConstraintProjection",
+    ) -> "ScenarioConstraintProjection":
+        if isinstance(constraint, cls):
+            return constraint
+        return cls(
+            fact=constraint.fact or constraint.description,
+        )
+
+    @classmethod
+    def from_value(cls, value: Any) -> "ScenarioConstraintProjection":
+        """Normalize canonical/legacy input without retaining its metadata."""
+
+        if isinstance(value, cls):
+            return value
+        if isinstance(value, ScenarioConstraint):
+            return cls.from_constraint(value)
+        if isinstance(value, Mapping):
+            return cls(
+                fact=value.get("fact") or value.get("description"),
+            )
+        raise TypeError("selected_constraint must be a mapping or ScenarioConstraint")
+
+
 class ScenarioRetrievalUnit(_ScenarioBase):
     """The index projection for one ScenarioModule."""
 
@@ -360,6 +440,8 @@ class ScenarioCandidate(_ScenarioBase):
     score: float | None = None
     dense_score: float | None = None
     lexical_score: float | None = None
+    raw_reranker_score: float | None = None
+    normalized_reranker_score: float | None = None
     index_version: str | None = None
 
     @field_validator("retrieval_unit_id", mode="before")
@@ -367,12 +449,16 @@ class ScenarioCandidate(_ScenarioBase):
     def validate_unit_id(cls, value: str) -> str:
         return _non_blank(value, "retrieval_unit_id")
 
-    @field_validator("score", "dense_score", "lexical_score")
+    @field_validator(
+        "score",
+        "dense_score",
+        "lexical_score",
+        "raw_reranker_score",
+        "normalized_reranker_score",
+    )
     @classmethod
-    def validate_score(cls, value: float | None) -> float | None:
-        if value is not None and (not isinstance(value, (int, float)) or not isfinite(float(value))):
-            raise ValueError("candidate score must be finite")
-        return None if value is None else float(value)
+    def validate_score(cls, value: float | None, info: Any) -> float | None:
+        return _finite_float(value, f"candidate {info.field_name}")
 
     @model_validator(mode="after")
     def complete_identity(self) -> "ScenarioCandidate":
@@ -395,7 +481,13 @@ class ScenarioCandidateSet(_ScenarioBase):
         validation_alias=AliasChoices("candidates", "hits", "results"),
     )
     index_version: str | None = None
+    top1_margin: float | None = None
     hard_filter: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("top1_margin")
+    @classmethod
+    def validate_top1_margin(cls, value: float | None) -> float | None:
+        return _finite_float(value, "top1_margin")
 
     @model_validator(mode="after")
     def validate_status(self) -> "ScenarioCandidateSet":
@@ -403,6 +495,12 @@ class ScenarioCandidateSet(_ScenarioBase):
             raise ValueError("hit candidate set requires candidates")
         if self.status != "hit" and self.candidates:
             raise ValueError("non-hit candidate set must not contain candidates")
+        if self.top1_margin is not None and (
+            self.status != "hit"
+            or len(self.candidates) < 2
+            or any(candidate.score is None for candidate in self.candidates[:2])
+        ):
+            raise ValueError("top1_margin requires two scored hit candidates")
         return self
 
 class ScenarioSelection(_ScenarioBase):
@@ -514,27 +612,78 @@ class LockedScenarioContext(_ScenarioBase):
     scenario_id: str = Field(min_length=1)
     module_id: str = Field(min_length=1)
     retrieval_unit_id: str = Field(min_length=1)
+    primary_dimension_id: OfficialDimensionId
     business_goal: str = Field(min_length=1)
-    opening_goal: str = Field(min_length=1)
-    selected_constraint: ScenarioConstraint | None = None
+    candidate_brief: str | None = Field(default=None, max_length=240)
+    candidate_focus: str | None = Field(default=None, max_length=40)
+    selected_constraint: ScenarioConstraintProjection | None = None
     revealed_constraint_ids: list[str] = Field(default_factory=list)
     retrieval_status: ScenarioRetrievalStatus
     fallback_reason: str | None = None
-    scenario: ScenarioCard | None = None
-    module: ScenarioModule | None = None
     provenance: QuestionProvenance | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def discard_legacy_canonical_objects(cls, value: Any) -> Any:
+        """Drop full objects from old checkpoints before strict validation."""
+
+        if not isinstance(value, Mapping):
+            return value
+        payload = dict(value)
+        legacy_module = payload.get("module")
+        if payload.get("primary_dimension_id") is None:
+            dimension = (
+                legacy_module.get("primary_dimension_id")
+                if isinstance(legacy_module, Mapping)
+                else getattr(legacy_module, "primary_dimension_id", None)
+            )
+            if dimension is not None:
+                payload["primary_dimension_id"] = dimension
+        payload.pop("scenario", None)
+        payload.pop("module", None)
+        payload.pop("opening_goal", None)
+
+        # Older contexts kept the dimension only inside private provenance.
+        # Copy that scalar before validation; never retain the discarded
+        # canonical objects in the candidate-safe context.
+        if payload.get("primary_dimension_id") is None:
+            provenance = payload.get("provenance")
+            dimension = (
+                provenance.get("primary_dimension_id")
+                if isinstance(provenance, Mapping)
+                else getattr(provenance, "primary_dimension_id", None)
+            )
+            if dimension is not None:
+                payload["primary_dimension_id"] = dimension
+        return payload
 
     @field_validator(
         "scenario_id",
         "module_id",
         "retrieval_unit_id",
         "business_goal",
-        "opening_goal",
         mode="before",
     )
     @classmethod
     def validate_text(cls, value: str, info: Any) -> str:
         return _non_blank(value, info.field_name)
+
+    @field_validator("candidate_brief", mode="before")
+    @classmethod
+    def validate_candidate_brief(cls, value: Any) -> str | None:
+        return normalize_candidate_brief(value)
+
+    @field_validator("candidate_focus", mode="before")
+    @classmethod
+    def validate_candidate_focus(cls, value: Any) -> str | None:
+        return normalize_candidate_focus(value)
+
+    @field_validator("selected_constraint", mode="before")
+    @classmethod
+    def project_selected_constraint(cls, value: Any) -> ScenarioConstraintProjection | None:
+        if value is None:
+            return None
+        return ScenarioConstraintProjection.from_value(value)
 
     @field_validator("revealed_constraint_ids", mode="before")
     @classmethod
@@ -545,15 +694,13 @@ class LockedScenarioContext(_ScenarioBase):
     def validate_context(self) -> "LockedScenarioContext":
         if self.retrieval_unit_id != f"{self.scenario_id}::{self.module_id}":
             raise ValueError("retrieval_unit_id does not match scenario/module")
-        if self.selected_constraint is not None and self.selected_constraint.constraint_id not in self.revealed_constraint_ids:
-            raise ValueError("selected constraint must be present in revealed_constraint_ids")
         if self.retrieval_status == "fallback" and not (self.fallback_reason or "").strip():
             raise ValueError("fallback context requires fallback_reason")
         return self
 
     @property
     def selected_constraint_id(self) -> str | None:
-        return self.selected_constraint.constraint_id if self.selected_constraint else None
+        return self.provenance.selected_constraint_id if self.provenance else None
 
 
 class ScenarioBankManifest(_ScenarioBase):
@@ -583,20 +730,37 @@ class ScenarioSourceRecord(_ScenarioBase):
     title: str = ""
     source_type: str = "internal_review"
     status: ScenarioLifecycleStatus = "active"
-    source_url: str | None = None
-    notes: str = ""
+    publisher: str = Field(min_length=1)
+    source_url: AnyHttpUrl | None = None
+    published_at: date
+    retrieved_at: date
+    supports_dimension_ids: list[OfficialDimensionId] = Field(min_length=1)
+    notes: str | None = None
 
-    @field_validator("source_id", mode="before")
+    @field_validator("source_id", "publisher", mode="before")
     @classmethod
-    def validate_source_id(cls, value: str) -> str:
-        return _non_blank(value, "source_id")
+    def validate_required_text(cls, value: str, info: Any) -> str:
+        return _non_blank(value, info.field_name)
 
-    @field_validator("title", "source_type", "notes", "source_url", mode="before")
+    @field_validator("title", "source_type", mode="before")
     @classmethod
-    def normalize_optional_text(cls, value: Any, info: Any) -> Any:
+    def normalize_text(cls, value: Any) -> str:
         if value is None:
-            return None if info.field_name == "source_url" else ""
+            return ""
         return str(value).strip()
+
+    @field_validator("notes", mode="before")
+    @classmethod
+    def normalize_notes(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value).strip()
+        return normalized or None
+
+    @field_validator("supports_dimension_ids", mode="before")
+    @classmethod
+    def validate_supported_dimensions(cls, value: Any) -> list[str]:
+        return _clean_list(value, "supports_dimension_ids")
 
 
 class ScenarioSourceRegistry(_ScenarioBase):
@@ -621,6 +785,7 @@ __all__ = [
     "ScenarioCandidateSet",
     "ScenarioCard",
     "ScenarioConstraint",
+    "ScenarioConstraintProjection",
     "ScenarioLifecycleStatus",
     "ScenarioModule",
     "ScenarioRetrievalRequest",

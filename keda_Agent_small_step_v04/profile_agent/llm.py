@@ -171,6 +171,14 @@ class LLM:
         response=None,
         error: BaseException | None = None,
     ) -> None:
+        if os.getenv("LLM_TRACE_ENABLED", "false").strip().lower() not in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }:
+            return
+
         trace_path = Path(
             os.getenv("LLM_TRACE_PATH", "").strip() or _DEFAULT_TRACE_PATH
         )

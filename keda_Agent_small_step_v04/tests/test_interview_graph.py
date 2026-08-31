@@ -3,7 +3,10 @@ import unittest
 
 from langgraph.types import Command
 
-from profile_agent.graphs.interview import build_interview_graph
+from profile_agent.graphs.interview import (
+    _active_constraint_gap_tags,
+    build_interview_graph,
+)
 from profile_agent.schemas.claim_schema import ClaimRegistry
 from tests.report_test_helpers import make_test_report
 from profile_agent.schemas.interview_schema import (
@@ -35,6 +38,30 @@ class InterviewGraphTest(unittest.TestCase):
         self.answer_calls: list[InterviewTurn] = []
         self.events: list[str] = []
         self.report_calls: list[dict] = []
+
+    def test_missing_scenario_provenance_returns_empty_gap_allowlist(self) -> None:
+        self.assertEqual(_active_constraint_gap_tags(None, None), ())
+        self.assertEqual(_active_constraint_gap_tags(None, "legacy::module"), ())
+
+        class UnusedCatalog:
+            def resolve(self, retrieval_unit_id: str):
+                raise AssertionError("resolve must not run for missing provenance")
+
+        catalog = UnusedCatalog()
+        self.assertEqual(_active_constraint_gap_tags(catalog, None), ())
+        self.assertEqual(_active_constraint_gap_tags(catalog, ""), ())
+
+    def test_unknown_scenario_provenance_fails_with_retrieval_unit_id(self) -> None:
+        class BrokenCatalog:
+            def resolve(self, retrieval_unit_id: str):
+                raise KeyError(retrieval_unit_id)
+
+        retrieval_unit_id = "unknown::module"
+        with self.assertRaises(ValueError) as context:
+            _active_constraint_gap_tags(BrokenCatalog(), retrieval_unit_id)
+
+        self.assertIn(retrieval_unit_id, str(context.exception))
+        self.assertIsInstance(context.exception.__cause__, KeyError)
 
     def make_plan(self) -> InterviewPlan:
         return InterviewPlan(

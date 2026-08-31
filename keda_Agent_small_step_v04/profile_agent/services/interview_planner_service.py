@@ -368,6 +368,7 @@ def finalize_interview_plan(
             requirement = EvidenceRequirement(
                 id=requirement_id,
                 description=req_draft.description,
+                candidate_focus=req_draft.candidate_focus,
                 planned_role_dimension_id=(
                     req_draft.planned_role_dimension_id
                 ),
@@ -526,6 +527,7 @@ def build_interview_plan(
       "evidence_requirements": [
         {
           "description": "字符串",
+          "candidate_focus": "短名词短语或 null",
           "planned_role_dimension_id": "role_dim_01",
           "requires_transfer_validation": false
         }
@@ -539,8 +541,11 @@ def build_interview_plan(
   ]
 }
 
-重要: evidence_requirements 必须是对象数组, 每个对象必须包含 description、
+重要: evidence_requirements 必须是对象数组, 每个对象必须包含 description、candidate_focus、
 planned_role_dimension_id 和 requires_transfer_validation，不能是字符串数组!
+
+candidate_focus 只能填写供候选人理解的短名词短语，例如“任务路由边界”或“失败恢复策略”。
+它不是问题/答案/评分信号；不要写完整问句、标准答案、评分标准或内部校验信息。
 
 重要: TargetType 与 QuestionMode 是两套完全不同的枚举:
 

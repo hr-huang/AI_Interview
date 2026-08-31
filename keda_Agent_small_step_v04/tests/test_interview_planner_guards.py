@@ -97,6 +97,7 @@ class InterviewPlannerGuardTest(unittest.TestCase):
         draft.targets[0].evidence_requirements = [
             EvidenceRequirementDraft(
                 description="将方法迁移到受监管新场景",
+                candidate_focus="  迁移适配边界  ",
                 planned_role_dimension_id="role_dim_gate",
                 requires_transfer_validation=True,
             )
@@ -107,6 +108,91 @@ class InterviewPlannerGuardTest(unittest.TestCase):
         requirement = plan.targets[0].evidence_requirements[0]
         self.assertEqual(requirement.planned_role_dimension_id, "role_dim_gate")
         self.assertTrue(requirement.requires_transfer_validation)
+        self.assertEqual(requirement.candidate_focus, "迁移适配边界")
+
+    def test_candidate_focus_is_optional_and_legacy_payload_defaults_to_none(self) -> None:
+        legacy = EvidenceRequirementDraft.model_validate(
+            {"description": "验证状态管理"}
+        )
+        self.assertIsNone(legacy.candidate_focus)
+
+        normalized = EvidenceRequirementDraft(
+            description="验证状态管理",
+            candidate_focus="  状态一致性设计  ",
+        )
+        self.assertEqual(normalized.candidate_focus, "状态一致性设计")
+
+    def test_candidate_focus_rejects_non_plain_whitespace_and_answer_statements(self) -> None:
+        unsafe_values = (
+            "状态\n一致性设计",
+            "状态\t一致性设计",
+            "状态\v一致性设计",
+            "状态\f一致性设计",
+            "状态\u2028一致性设计",
+            "状态\u2029一致性设计",
+            "状态，一致性设计",
+            "如何完成状态一致性设计",
+            "退款实际已经执行成功，只是接口响应超时",
+            "退款成功但响应超时",
+            "必须直接退款策略",
+            "直接调用人工审核流程",
+            "采用幂等键保证一致性策略",
+        )
+        for value in unsafe_values:
+            with self.subTest(value=value):
+                requirement = EvidenceRequirementDraft(
+                    description="验证状态管理",
+                    candidate_focus=value,
+                )
+                self.assertIsNone(requirement.candidate_focus)
+
+    def test_candidate_focus_allows_reviewed_neutral_noun_phrases(self) -> None:
+        safe_values = (
+            "幂等控制",
+            "故障恢复",
+            "工具调用",
+            "上下文压缩",
+            "成本监控",
+            "权限校验",
+            "人工升级",
+        )
+        for value in safe_values:
+            with self.subTest(value=value):
+                requirement = EvidenceRequirementDraft(
+                    description="验证状态管理",
+                    candidate_focus=value,
+                )
+                self.assertEqual(requirement.candidate_focus, value)
+
+    def test_planner_uses_one_structured_call_and_propagates_candidate_focus(self) -> None:
+        captured_messages = []
+        draft = make_timed_draft(10)
+        draft.targets[0].evidence_requirements[0].candidate_focus = "任务迁移边界"
+
+        def fake_structured(messages, _schema):
+            captured_messages.append(messages)
+            return draft
+
+        with patch.object(
+            interview_planner_service.llm,
+            "structured",
+            side_effect=fake_structured,
+        ):
+            plan = interview_planner_service.build_interview_plan(
+                competency_model=CompetencyModel(),
+                claim_registry=ClaimRegistry(),
+                duration_minutes=30,
+                role_profile=make_role_profile(),
+            )
+
+        self.assertEqual(len(captured_messages), 1)
+        system_prompt = captured_messages[0][0][1]
+        self.assertIn("短名词短语", system_prompt)
+        self.assertIn("不是问题/答案/评分信号", system_prompt)
+        self.assertEqual(
+            plan.targets[0].evidence_requirements[0].candidate_focus,
+            "任务迁移边界",
+        )
 
     def test_gating_role_dimensions_must_have_prioritized_requirements(self) -> None:
         draft = make_timed_draft(10)

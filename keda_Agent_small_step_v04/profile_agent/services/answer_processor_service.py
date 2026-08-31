@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 import json
 import re
 
@@ -80,12 +81,32 @@ def _evidences_json(evidences: list[Evidence]) -> str:
     )
 
 
+def _normalize_allowed_gap_tags(values: Sequence[str]) -> list[str]:
+    if isinstance(values, (str, bytes, bytearray)):
+        raise TypeError("allowed_gap_tags 必须是字符串序列")
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if not isinstance(value, str):
+            raise TypeError("allowed_gap_tags 必须全部是字符串")
+        tag = value.strip()
+        if not tag:
+            raise ValueError("allowed_gap_tags 不能包含空 tag")
+        if tag in seen:
+            raise ValueError(f"allowed_gap_tags 包含重复 tag: {tag}")
+        seen.add(tag)
+        normalized.append(tag)
+    return normalized
+
+
 def _build_messages(
     plan: InterviewPlan,
     runtime_state: InterviewRuntimeState,
     turn: InterviewTurn,
     existing_evidences: list[Evidence],
     claim_registry: ClaimRegistry | None,
+    allowed_gap_tags: Sequence[str],
 ) -> list[tuple[str, str]]:
     claim_registry_json = (
         claim_registry.model_dump_json()
@@ -114,8 +135,12 @@ contradictory；即使强反向证据存在，也可以根据整体评估返回 
 - EvidenceDraft 字段只能是 requirement_ids、related_claim_ids、polarity、strength、observation、source_excerpt；
 - source_excerpt 必须逐字复制回答中的一段连续原文；禁止使用省略号、改写或拼接不同片段；
 - polarity 只能是 supporting、contradicting；strength 只能是 weak、medium、strong；
-- RequirementAssessment 字段只能是 requirement_id、recommended_status、rationale；
+- RequirementAssessment 字段只能是 requirement_id、recommended_status、rationale、missing_evidence_tags；
 - 注意两个相近枚举不要混淆：EvidenceDraft.polarity 使用 contradicting；recommended_status 必须使用 contradictory，绝不能使用 contradicting；
+- 只有 Primary Requirement 且 recommended_status 为 in_progress 或 contradictory 时，missing_evidence_tags 才可以从给定 allowlist 中选择；
+- recommended_status 为 sufficient 时，missing_evidence_tags 必须是空数组；
+- 非 Primary Requirement 的 missing_evidence_tags 必须是空数组，即使它属于当前 Target；
+- allowlist 为空时，所有 missing_evidence_tags 都必须是空数组；
 - 无法归属到任何 requirement 时，evidence_drafts 和 requirement_assessments 都返回空数组；这也适用于只重复与当前要求无关经历的回答。绝不能生成 requirement_ids 为空的 EvidenceDraft，也不要用 not_started 作为 recommended_status；
 - 不要生成 evidence_id、content、status、coverage_notes、overall_notes，也不要增加外层包装。
 """.strip(),
@@ -129,6 +154,9 @@ contradictory；即使强反向证据存在，也可以根据整体评估返回 
                     f"Current InterviewTurn:\n{turn.model_dump_json()}",
                     f"Existing Evidences:\n{_evidences_json(existing_evidences)}",
                     f"ClaimRegistry:\n{claim_registry_json}",
+                    "Allowed missing_evidence_tags JSON:\n"
+                    + json.dumps(list(allowed_gap_tags), ensure_ascii=False),
+                    f"Primary Requirement ID:\n{turn.primary_requirement_id}",
                     "请返回 TurnAssessment。",
                 ]
             ),
@@ -142,7 +170,9 @@ def _validate_assessment(
     allowed_requirement_ids: set[str],
     known_claim_ids: set[str],
     answer_text: str,
-) -> None:
+    primary_requirement_id: str,
+    allowed_gap_tags: Sequence[str],
+) -> dict[str, list[str]]:
     for draft in assessment.evidence_drafts:
         if draft.source_excerpt not in answer_text:
             raise ValueError(
@@ -193,12 +223,61 @@ def _validate_assessment(
                 f"{requirement_id}"
             )
 
+    allowlist = {tag: tag for tag in allowed_gap_tags}
+    validated_gap_tags: dict[str, list[str]] = {}
+    for requirement_assessment in assessment.requirement_assessments:
+        requirement_id = requirement_assessment.requirement_id
+        raw_tags = requirement_assessment.missing_evidence_tags
+        if requirement_id != primary_requirement_id:
+            if raw_tags:
+                raise ValueError(
+                    "非 Primary Requirement 的 missing_evidence_tags 必须是 []: "
+                    f"{requirement_id}"
+                )
+            validated_gap_tags[requirement_id] = []
+            continue
+        if requirement_assessment.recommended_status == "sufficient":
+            if raw_tags:
+                raise ValueError(
+                    "recommended_status=sufficient 时 missing_evidence_tags 必须是 []"
+                )
+            validated_gap_tags[requirement_id] = []
+            continue
+
+        normalized_tags: list[str] = []
+        seen_tags: set[str] = set()
+        for raw_tag in raw_tags:
+            normalized_tag = raw_tag.strip()
+            if normalized_tag in seen_tags:
+                raise ValueError(
+                    "missing_evidence_tags 包含重复 tag: "
+                    f"{normalized_tag}"
+                )
+            seen_tags.add(normalized_tag)
+            if normalized_tag not in allowlist:
+                if not allowlist:
+                    raise ValueError(
+                        "allowed_gap_tags allowlist 为空时 "
+                        "missing_evidence_tags 必须是 []"
+                    )
+                raise ValueError(
+                    "missing_evidence_tags 包含 allowlist 外的 tag: "
+                    f"{normalized_tag}"
+                )
+            normalized_tags.append(allowlist[normalized_tag])
+        validated_gap_tags[requirement_id] = normalized_tags
+
+    return validated_gap_tags
+
+
 def process_answer(
     plan: InterviewPlan,
     runtime_state: InterviewRuntimeState,
     turn: InterviewTurn,
     existing_evidences: list[Evidence],
     claim_registry: ClaimRegistry | None = None,
+    *,
+    allowed_gap_tags: Sequence[str] = (),
     llm_client=llm,
 ) -> AnswerProcessingResult:
     """Process one answered turn with one structured LLM call.
@@ -218,6 +297,9 @@ def process_answer(
             "InterviewTurn 引用了不存在的 requirement_id: "
             f"{turn.primary_requirement_id}"
         )
+    normalized_allowed_gap_tags = _normalize_allowed_gap_tags(
+        allowed_gap_tags
+    )
 
     messages = _build_messages(
         plan=plan,
@@ -225,6 +307,7 @@ def process_answer(
         turn=turn,
         existing_evidences=existing_evidences,
         claim_registry=claim_registry,
+        allowed_gap_tags=normalized_allowed_gap_tags,
     )
     known_claim_ids = _known_claim_ids(plan, claim_registry)
     correction: ValueError | None = None
@@ -243,12 +326,14 @@ def process_answer(
         raw_assessment = llm_client.structured(attempt_messages, TurnAssessment)
         assessment = TurnAssessment.model_validate(raw_assessment)
         try:
-            _validate_assessment(
+            validated_gap_tags = _validate_assessment(
                 assessment=assessment,
                 requirement_ids=requirement_ids,
                 allowed_requirement_ids=allowed_requirement_ids,
                 known_claim_ids=known_claim_ids,
                 answer_text=turn.answer,
+                primary_requirement_id=turn.primary_requirement_id,
+                allowed_gap_tags=normalized_allowed_gap_tags,
             )
         except ValueError as error:
             if semantic_attempt == 1:
@@ -296,6 +381,7 @@ def process_answer(
             supporting_evidence_ids=supporting_ids,
             contradicting_evidence_ids=contradicting_ids,
             known_evidence_ids=known_evidence_ids,
+            latest_gap_tags=validated_gap_tags[requirement_id],
         )
 
     return AnswerProcessingResult(
