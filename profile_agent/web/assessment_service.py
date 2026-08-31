@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import secrets
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
 from profile_agent.llm import LLMProviderError
+from profile_agent.model_runtime import ModelRuntimeRegistry
 from profile_agent.schemas.interview_schema import InterviewPlan
 from profile_agent.services.plan_review_service import (
     PlanOverrideSet,
@@ -49,8 +51,6 @@ class AssessmentConflictError(ValueError):
 
 
 def jsonable(value: Any) -> Any:
-    """Serialize graph output without storing non-JSON Pydantic objects."""
-
     if isinstance(value, BaseModel):
         return value.model_dump(mode="json")
     if isinstance(value, dict):
@@ -68,6 +68,7 @@ def request_fingerprint(
     jd_text: str,
     resume_text: str,
     interview_duration_minutes: int = 45,
+    model_session_id: str | None = None,
 ) -> str:
     payload = "\x1f".join(
         (
@@ -75,6 +76,7 @@ def request_fingerprint(
             jd_text.strip(),
             resume_text.strip(),
             str(interview_duration_minutes),
+            (model_session_id or "").strip(),
         )
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
@@ -84,6 +86,12 @@ class AssessmentService:
     def __init__(self, container: WebContainer) -> None:
         self.container = container
         self.repository: SqliteAssessmentRepository = container.repository
+
+    def _model_context(self, assessment_id: str):
+        registry = getattr(self.container, "model_runtime_registry", None)
+        if isinstance(registry, ModelRuntimeRegistry):
+            return registry.use_for_assessment(assessment_id)
+        return nullcontext()
 
     def analyze(self, assessment_id: str) -> AssessmentRecord:
         record = self.repository.get(assessment_id)
@@ -105,7 +113,8 @@ class AssessmentService:
             "interview_duration_minutes": analyzing.interview_duration_minutes,
         }
         try:
-            output = self.container.pre_interview_graph.invoke(state)
+            with self._model_context(assessment_id):
+                output = self.container.pre_interview_graph.invoke(state)
             if not isinstance(output, dict):
                 raise ValueError("Pre-Interview Graph 未返回有效 State")
             plan = InterviewPlan.model_validate(output.get("interview_plan"))
@@ -210,8 +219,6 @@ class AssessmentService:
             self.container.role_profile,
         )
 
-        # Generate and hash the candidate URL only after every plan/blueprint
-        # validation has succeeded. The raw token is returned exactly once.
         raw_token = secrets.token_urlsafe(32)
         token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
         final_dump = final_plan.model_dump(mode="json")
