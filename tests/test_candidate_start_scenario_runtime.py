@@ -1,13 +1,16 @@
 import hashlib
+import os
 import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 from langgraph.checkpoint.sqlite import SqliteSaver
 
 from profile_agent.graphs.interview import build_interview_graph
+from profile_agent.llm import llm
 from profile_agent.schemas.claim_schema import ClaimRegistry
 from profile_agent.schemas.interview_schema import (
     AssessmentTarget,
@@ -111,6 +114,16 @@ class CandidateStartScenarioRuntimeTest(unittest.TestCase):
         )
         self.repository.create(record)
 
+    def _container(self, graph) -> WebContainer:
+        return WebContainer.for_test(
+            repository=self.repository,
+            pre_interview_graph=object(),
+            dispatcher=InlineDispatcher(),
+            interview_graph=graph,
+            scenario_catalog=ScenarioCatalog.load(),
+            checkpoint_connection=self.checkpoint_connection,
+        )
+
     def test_candidate_start_survives_no_compatible_reviewed_scenario_module(self) -> None:
         plan = self._unsupported_hard_filter_plan()
         self._create_ready_assessment(plan)
@@ -124,14 +137,7 @@ class CandidateStartScenarioRuntimeTest(unittest.TestCase):
             scenario_catalog=ScenarioCatalog.load(),
             scenario_retriever=None,
         )
-        container = WebContainer.for_test(
-            repository=self.repository,
-            pre_interview_graph=object(),
-            dispatcher=InlineDispatcher(),
-            interview_graph=graph,
-            scenario_catalog=ScenarioCatalog.load(),
-            checkpoint_connection=self.checkpoint_connection,
-        )
+        container = self._container(graph)
 
         # Keep server exceptions as HTTP responses so this test verifies the
         # same browser-visible contract that failed in the real manual run.
@@ -146,6 +152,36 @@ class CandidateStartScenarioRuntimeTest(unittest.TestCase):
         self.assertEqual(
             self.repository.get(self.assessment_id).status,
             AssessmentStatus.IN_PROGRESS,
+        )
+
+    def test_candidate_start_without_default_model_config_is_not_http_500(self) -> None:
+        plan = self._unsupported_hard_filter_plan()
+        self._create_ready_assessment(plan)
+        graph = build_interview_graph(
+            checkpointer=SqliteSaver(self.checkpoint_connection),
+            scenario_catalog=ScenarioCatalog.load(),
+            scenario_retriever=None,
+        )
+        container = self._container(graph)
+
+        # The unsupported ScenarioModule combination intentionally falls back
+        # to the real QuestionGenerator.  With no assessment BYOK session and
+        # no server QWEN_API_KEY, this must be classified as an operational
+        # model configuration outage rather than leaking out as HTTP 500.
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch.object(llm, "_model", None),
+            TestClient(create_app(container), raise_server_exceptions=False) as client,
+        ):
+            response = client.post(f"/api/interviews/{self.token}/start")
+
+        self.assertEqual(response.status_code, 503, response.text)
+        payload = response.json()
+        self.assertIn("模型服务暂时不可用", payload["detail"])
+        self.assertNotIn("QWEN_API_KEY", response.text)
+        self.assertEqual(
+            self.repository.get(self.assessment_id).status,
+            AssessmentStatus.READY,
         )
 
 
