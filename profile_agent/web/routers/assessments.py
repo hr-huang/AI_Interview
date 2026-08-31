@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
+from profile_agent.model_runtime import ModelRuntimeRegistry
 from profile_agent.schemas.report_schema import AssessmentReport
 from profile_agent.services.plan_review_service import PlanOverrideSet
 from profile_agent.web.assessment_service import (
@@ -74,6 +75,7 @@ async def create_assessment(
     resume_file: UploadFile | None = File(default=None),
     idempotency_key: str = Form(...),
     interview_duration_minutes: int = Form(default=45),
+    model_session_id: str | None = Form(default=None),
 ) -> dict[str, Any]:
     if not target_role.strip() or not jd_text.strip():
         raise HTTPException(status_code=422, detail="岗位和 JD 不能为空")
@@ -91,6 +93,16 @@ async def create_assessment(
         )
 
     container = _container(request)
+    registry = getattr(container, "model_runtime_registry", None)
+    clean_model_session_id = (model_session_id or "").strip() or None
+    if clean_model_session_id:
+        if not isinstance(registry, ModelRuntimeRegistry):
+            raise HTTPException(status_code=503, detail="模型配置服务不可用")
+        try:
+            registry.public_session(clean_model_session_id)
+        except KeyError as error:
+            raise HTTPException(status_code=422, detail="模型配置会话不存在或已失效") from error
+
     if has_resume_file:
         assert resume_file is not None
         try:
@@ -109,6 +121,7 @@ async def create_assessment(
         jd_text=jd_text,
         resume_text=cleaned_resume,
         interview_duration_minutes=interview_duration_minutes,
+        model_session_id=clean_model_session_id,
     )
     repository = container.repository
     key = idempotency_key.strip()
@@ -135,6 +148,9 @@ async def create_assessment(
             "assessment_id": existing_id,
             "status": repository.get(existing_id).status.value,
         }
+
+    if clean_model_session_id and isinstance(registry, ModelRuntimeRegistry):
+        registry.bind_assessment(record.id, clean_model_session_id)
 
     service = AssessmentService(container)
     container.dispatcher.submit(service.analyze, record.id)
@@ -188,14 +204,8 @@ def get_report(assessment_id: str, request: Request) -> ReportViewModel:
     turns = values.get("interview_turns")
     evidences = values.get("evidences")
     if not isinstance(turns, list) or not turns:
-        # A completed report without its graph history cannot satisfy the
-        # evidence-traceability contract.  Do not return a silently degraded
-        # report view.
         raise HTTPException(status_code=409, detail="报告证据链尚未可读")
     if not isinstance(evidences, list):
-        # The checkpoint must explicitly contain the evidence collection.  An
-        # empty collection is valid (the transcript remains unverified), but
-        # a missing or malformed collection indicates a damaged checkpoint.
         raise HTTPException(status_code=409, detail="报告证据链尚未可读")
 
     try:
