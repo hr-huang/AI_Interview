@@ -66,20 +66,25 @@ class LLM:
     """项目级 LLM Wrapper；业务层不感知具体 provider。"""
 
     def __init__(self) -> None:
-        self._env_model: ChatOpenAI | None = None
+        # Keep the historical attribute name because tests and injected fakes
+        # deliberately replace it. Runtime BYOK clients never overwrite it.
+        self._model: ChatOpenAI | None = None
 
-    @staticmethod
-    def _build_model(config: ModelRuntimeConfig) -> ChatOpenAI:
+    def _build_model(
+        self,
+        config: ModelRuntimeConfig | None = None,
+    ) -> ChatOpenAI:
+        resolved = _env_config() if config is None else config
         kwargs = dict(
-            model=config.model,
-            api_key=config.api_key.get_secret_value(),
-            base_url=config.base_url,
-            temperature=config.temperature,
-            max_tokens=config.max_tokens,
-            top_p=config.top_p,
-            timeout=config.timeout_seconds,
+            model=resolved.model,
+            api_key=resolved.api_key.get_secret_value(),
+            base_url=resolved.base_url,
+            temperature=resolved.temperature,
+            max_tokens=resolved.max_tokens,
+            top_p=resolved.top_p,
+            timeout=resolved.timeout_seconds,
         )
-        extra_body = _extra_body(config)
+        extra_body = _extra_body(resolved)
         if extra_body is not None:
             kwargs["extra_body"] = extra_body
         return ChatOpenAI(**kwargs)
@@ -88,20 +93,30 @@ class LLM:
     def model(self) -> ChatOpenAI:
         runtime_config = current_model_runtime_config()
         if runtime_config is not None:
-            # BYOK configuration is scoped by ContextVar and must never reuse
-            # another assessment's provider client.
+            # BYOK configuration is scoped by ContextVar and never reuses a
+            # different assessment's cached provider client.
             return self._build_model(runtime_config)
-        if self._env_model is None:
-            self._env_model = self._build_model(_env_config())
-        return self._env_model
+        if self._model is None:
+            self._model = self._build_model()
+        return self._model
 
     def invoke(self, messages):
         try:
             response = self._invoke_provider(lambda: self.model.invoke(messages))
         except BaseException as error:
-            self._write_trace(call_type="text", status="error", messages=messages, error=error)
+            self._write_trace(
+                call_type="text",
+                status="error",
+                messages=messages,
+                error=error,
+            )
             raise
-        self._write_trace(call_type="text", status="ok", messages=messages, response=response)
+        self._write_trace(
+            call_type="text",
+            status="ok",
+            messages=messages,
+            response=response,
+        )
         return response
 
     @staticmethod
@@ -123,7 +138,9 @@ class LLM:
                         "模型 API 余额不足或无可用资源包（业务码 1113）。请充值或绑定可用资源包后重试。"
                     ) from exc
                 if exc.status_code == 402:
-                    raise LLMProviderError("模型 API 余额不足（HTTP 402），请检查账户余额或资源包。") from exc
+                    raise LLMProviderError(
+                        "模型 API 余额不足（HTTP 402）。请检查账户余额、资源包或当前 QWEN_API_KEY / 自定义 API Key。"
+                    ) from exc
                 if exc.status_code != 429 or attempt == len(retry_delays):
                     raise
                 time.sleep(retry_delays[attempt])
@@ -155,7 +172,11 @@ class LLM:
             )
         base_url = os.getenv("QWEN_BASE_URL", "").strip()
         provider = "glm" if "open.bigmodel.cn" in base_url.casefold() else "qwen"
-        return provider, os.getenv("QWEN_MODEL", "").strip() or _DEFAULT_QWEN_MODEL, os.getenv("QWEN_API_KEY", "").strip() or None
+        return (
+            provider,
+            os.getenv("QWEN_MODEL", "").strip() or _DEFAULT_QWEN_MODEL,
+            os.getenv("QWEN_API_KEY", "").strip() or None,
+        )
 
     def _write_trace(
         self,
@@ -168,9 +189,16 @@ class LLM:
         response=None,
         error: BaseException | None = None,
     ) -> None:
-        if os.getenv("LLM_TRACE_ENABLED", "false").strip().lower() not in {"1", "true", "yes", "on"}:
+        if os.getenv("LLM_TRACE_ENABLED", "false").strip().lower() not in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }:
             return
-        trace_path = Path(os.getenv("LLM_TRACE_PATH", "").strip() or _DEFAULT_TRACE_PATH)
+        trace_path = Path(
+            os.getenv("LLM_TRACE_PATH", "").strip() or _DEFAULT_TRACE_PATH
+        )
         provider, model, runtime_secret = self._trace_identity()
         record = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -188,7 +216,10 @@ class LLM:
         }
         line = json.dumps(record, ensure_ascii=False, default=str)
         secrets_to_redact = [runtime_secret]
-        secrets_to_redact.extend(os.getenv(name, "").strip() for name in ("QWEN_API_KEY", "MIMO_API_KEY", "DEEPSEEK_API_KEY"))
+        secrets_to_redact.extend(
+            os.getenv(name, "").strip()
+            for name in ("QWEN_API_KEY", "MIMO_API_KEY", "DEEPSEEK_API_KEY")
+        )
         for secret in secrets_to_redact:
             if secret:
                 line = line.replace(secret, "[REDACTED]")
@@ -202,27 +233,66 @@ class LLM:
         if messages and messages[0][0] == "system":
             messages[0] = (
                 messages[0][0],
-                messages[0][1] + "\n\n请严格按以下 JSON 结构输出，字段名和类型必须完全匹配。",
+                messages[0][1]
+                + "\n\n请严格按以下 JSON 结构输出，字段名和类型必须完全匹配。",
             )
-        structured_model = self.model.with_structured_output(schema, method="json_mode")
+        structured_model = self.model.with_structured_output(
+            schema,
+            method="json_mode",
+        )
         retry_messages = messages
         for attempt in range(2):
             try:
-                result = self._invoke_provider(lambda: structured_model.invoke(retry_messages))
+                result = self._invoke_provider(
+                    lambda: structured_model.invoke(retry_messages)
+                )
             except OutputParserException as error:
-                self._write_trace(call_type="structured", status="parse_error", messages=retry_messages, schema=schema, attempt=attempt + 1, error=error)
+                self._write_trace(
+                    call_type="structured",
+                    status="parse_error",
+                    messages=retry_messages,
+                    schema=schema,
+                    attempt=attempt + 1,
+                    error=error,
+                )
                 if attempt == 1:
                     raise
-                retry_messages = messages + [("human", "上一轮输出未通过结构校验。请重新生成，只返回严格符合目标 Schema 的 JSON，不要解释。")]
+                retry_messages = messages + [
+                    (
+                        "human",
+                        "上一轮输出未通过结构校验。请重新生成，只返回严格符合目标 Schema 的 JSON，不要解释。",
+                    )
+                ]
             except (APIConnectionError, APITimeoutError) as error:
-                self._write_trace(call_type="structured", status="error", messages=retry_messages, schema=schema, attempt=attempt + 1, error=error)
+                self._write_trace(
+                    call_type="structured",
+                    status="error",
+                    messages=retry_messages,
+                    schema=schema,
+                    attempt=attempt + 1,
+                    error=error,
+                )
                 if attempt == 1:
                     raise
             except BaseException as error:
-                self._write_trace(call_type="structured", status="error", messages=retry_messages, schema=schema, attempt=attempt + 1, error=error)
+                self._write_trace(
+                    call_type="structured",
+                    status="error",
+                    messages=retry_messages,
+                    schema=schema,
+                    attempt=attempt + 1,
+                    error=error,
+                )
                 raise
             else:
-                self._write_trace(call_type="structured", status="ok", messages=retry_messages, schema=schema, attempt=attempt + 1, response=result)
+                self._write_trace(
+                    call_type="structured",
+                    status="ok",
+                    messages=retry_messages,
+                    schema=schema,
+                    attempt=attempt + 1,
+                    response=result,
+                )
                 return result
         raise AssertionError("结构化输出重试循环意外结束")
 
