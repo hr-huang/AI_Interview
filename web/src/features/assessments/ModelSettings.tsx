@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useMemo, useState } from 'react'
 import { api } from '../../api/client'
 import type { ModelProvider, ModelSessionResponse } from '../../api/types'
 
@@ -40,7 +40,6 @@ export function ModelSettings({
 }) {
   const [open, setOpen] = useState(false)
   const [provider, setProvider] = useState<ModelProvider>('qwen')
-  const preset = PRESETS[provider]
   const [baseUrl, setBaseUrl] = useState(PRESETS.qwen.baseUrl)
   const [model, setModel] = useState(PRESETS.qwen.model)
   const [apiKey, setApiKey] = useState('')
@@ -60,10 +59,13 @@ export function ModelSettings({
     onChange(null)
   }
 
-  async function testAndUse(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
+  async function testAndUse() {
     if (!apiKey.trim()) {
       setError('请填写 API Key。')
+      return
+    }
+    if (!baseUrl.trim() || !model.trim()) {
+      setError('请填写 Base URL 与模型名称。')
       return
     }
     setTesting(true)
@@ -104,7 +106,7 @@ export function ModelSettings({
       </div>
 
       {open ? (
-        <form className="model-settings-form" onSubmit={testAndUse}>
+        <div className="model-settings-form">
           <label>
             Provider
             <select
@@ -145,13 +147,13 @@ export function ModelSettings({
             />
           </label>
           {error ? <p className="form-feedback error-feedback" role="alert">{error}</p> : null}
-          <button type="submit" disabled={testing}>
+          <button type="button" onClick={() => void testAndUse()} disabled={testing}>
             {testing ? '正在测试结构化输出…' : '测试连接并使用'}
           </button>
           <p className="field-hint">
             测试不仅检查网络连接，还会验证本项目依赖的 JSON Structured Output。
           </p>
-        </form>
+        </div>
       ) : null}
     </div>
   )
