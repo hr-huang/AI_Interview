@@ -5,6 +5,7 @@ import unittest
 from profile_agent.model_runtime import (
     ModelRuntimeConfig,
     ModelRuntimeRegistry,
+    ModelRuntimeUnavailableError,
     ModelScopedGraph,
     current_model_runtime_config,
 )
@@ -86,6 +87,19 @@ class ModelRuntimeTests(unittest.TestCase):
 
         self.assertEqual(inner.seen, ["model-a", "model-b", None])
         self.assertIsNone(current_model_runtime_config())
+
+    def test_missing_required_byok_config_fails_closed(self) -> None:
+        inner = RecordingGraph()
+        graph = ModelScopedGraph(
+            inner,
+            ModelRuntimeRegistry(),
+            requires_custom_config=lambda assessment_id: assessment_id == "ast-byok",
+        )
+
+        with self.assertRaises(ModelRuntimeUnavailableError):
+            graph.invoke({}, {"configurable": {"thread_id": "ast-byok"}})
+
+        self.assertEqual(inner.seen, [])
 
     def test_terminal_report_releases_assessment_secret(self) -> None:
         registry = ModelRuntimeRegistry()
