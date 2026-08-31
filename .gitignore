@@ -1,6 +1,9 @@
 .env
 __pycache__/
 *.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
 .venv/
 venv/
 .idea/
@@ -15,3 +18,6 @@ web/node_modules/
 web/dist/
 web/playwright-report/
 web/test-results/
+
+# Local environment left from the pre-flattened repository layout.
+keda_Agent_small_step_v04/

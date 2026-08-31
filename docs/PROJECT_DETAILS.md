@@ -204,7 +204,7 @@ pnpm --dir web build
 <details>
 <summary>查看本地配置变量与费用边界</summary>
 
-配置模板见 [`.env.example`](.env.example)。真实值只应保存在本机 `.env` 或进程环境中，不要写入仓库、题库、日志或命令输出。
+配置模板见 [`.env.example`](../.env.example)。真实值只应保存在本机 `.env` 或进程环境中，不要写入仓库、题库、日志或命令输出。
 
 | 变量 | 用途 |
 | --- | --- |
@@ -218,7 +218,7 @@ pnpm --dir web build
 
 基础启动与内置演示不要求配置 provider key。真实评估的计划生成、问题生成、回答处理和报告文案可能使用真实 LLM；启用 embedding 或 reranker 也可能产生 provider 费用。Scenario RAG 的可选服务失败时，会使用 reviewed JSON scenario fallback。
 
-完整变量名与默认值请以 [`.env.example`](.env.example)、[`pyproject.toml`](pyproject.toml) 和运行时代码为准；README 不复制任何 key 值或类似真实 Secret 的示例。
+完整变量名与默认值请以 [`.env.example`](../.env.example)、[`pyproject.toml`](../pyproject.toml) 和运行时代码为准；README 不复制任何 key 值或类似真实 Secret 的示例。
 
 </details>
 
@@ -238,7 +238,7 @@ pnpm --dir web build
 <summary>展开项目结构</summary>
 
 ```text
-keda_Agent_small_step_v04/
+AI_Interview/
 ├─ profile_agent/
 │  ├─ graphs/                 # PreInterviewGraph 与 InterviewGraph
 │  ├─ nodes/                  # 输入、理解、能力建模、Planner、评分蓝图节点
@@ -299,7 +299,7 @@ keda_Agent_small_step_v04/
 - **已实现流程**：JD/简历输入、可审核计划、计划冻结、后端动态面试运行时、Scenario Module RAG、Evidence 处理、确定性评分与可追溯报告。
 - **明确边界**：候选人 Web 问答页目前仍是入口骨架；本项目也不声称已实现多个岗位族、生产部署、发布镜像或持久化云端 checkpointer。
 
-绑定设计与实施依据见 [`2026-08-31-competition-first-readme-design.md`](docs/superpowers/specs/2026-08-31-competition-first-readme-design.md) 和 [`2026-08-31-competition-first-readme.md`](docs/superpowers/plans/2026-08-31-competition-first-readme.md)。
+绑定设计与实施依据见 [`2026-08-31-competition-first-readme-design.md`](superpowers/specs/2026-08-31-competition-first-readme-design.md) 和 [`2026-08-31-competition-first-readme.md`](superpowers/plans/2026-08-31-competition-first-readme.md)。
 
 ## 许可证与容器镜像
 

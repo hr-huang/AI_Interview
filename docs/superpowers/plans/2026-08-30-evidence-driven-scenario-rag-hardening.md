@@ -586,7 +586,7 @@ Replace `scenario: ScenarioCard | None` and `module: ScenarioModule | None` with
 
 - [ ] **Step 4: Add CI**
 
-Create a Windows or Ubuntu workflow that runs from `keda_Agent_small_step_v04`:
+Create a Windows or Ubuntu workflow that runs from the Git repository root:
 
 ```yaml
 - uses: astral-sh/setup-uv@v6

@@ -32,10 +32,10 @@ flowchart LR
 
 ```powershell
 git clone https://github.com/hr-huang/AI_Interview.git
-Set-Location AI_Interview\keda_Agent_small_step_v04
+Set-Location AI_Interview
 ```
 
-下面两条路径任选其一。后端与前端需要分别在两个终端运行，两个终端都应位于 `keda_Agent_small_step_v04`。
+下面两条路径任选其一。后端与前端需要分别在两个终端运行，两个终端都应位于仓库根目录。
 
 ### 路径 1：`uv`（最快）
 
@@ -153,11 +153,11 @@ uv run python run_scenario_bank.py evaluate
 
 ## 文档导航
 
-- [完整项目说明](keda_Agent_small_step_v04/README.md)
-- [环境变量模板](keda_Agent_small_step_v04/.env.example)
-- [README 设计说明](keda_Agent_small_step_v04/docs/superpowers/specs/2026-08-31-competition-first-readme-design.md)
-- [README 实施说明](keda_Agent_small_step_v04/docs/superpowers/plans/2026-08-31-competition-first-readme.md)
-- [代码结构导览](keda_Agent_small_step_v04/CODE_WALKTHROUGH.md)
+- [完整项目说明](docs/PROJECT_DETAILS.md)
+- [环境变量模板](.env.example)
+- [README 设计说明](docs/superpowers/specs/2026-08-31-competition-first-readme-design.md)
+- [README 实施说明](docs/superpowers/plans/2026-08-31-competition-first-readme.md)
+- [代码结构导览](docs/CODE_WALKTHROUGH.md)
 
 ## 许可证与容器镜像
 

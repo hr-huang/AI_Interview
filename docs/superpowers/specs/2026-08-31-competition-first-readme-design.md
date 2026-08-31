@@ -44,12 +44,12 @@ The initial badge bar may include only facts currently backed by the repository:
 - React `19`
 - FastAPI `0.116+`
 
-Do not add License or Docker Pulls badges because the repository currently contains neither a license file nor a published Docker image. The workflow file is nested below the outer Git repository root, so do not present it as an active GitHub Actions status badge. Do not invent coverage, stars, downloads, or deployment status.
+Do not add License or Docker Pulls badges because the repository currently contains neither a license file nor a published Docker image. The workflow file now lives at the Git repository root and is eligible to run in GitHub Actions. Do not invent coverage, stars, downloads, or deployment status.
 
 ## Verified Project Facts
 
 - GitHub repository: `https://github.com/hr-huang/AI_Interview`
-- The checked-out Git repository root is one level above `keda_Agent_small_step_v04`; the GitHub landing README must therefore exist at the outer root.
+- The application is stored directly at the checked-out Git repository root; the GitHub landing README and runtime manifests live at that same level.
 - Backend package: `keda-profile-agent`
 - Backend application factory: `profile_agent.web.app:create_app`
 - Backend development port: `8000`

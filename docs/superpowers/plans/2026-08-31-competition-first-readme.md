@@ -26,8 +26,8 @@
 ### Task 1: Rewrite and verify the public README
 
 **Files:**
-- Modify: `keda_Agent_small_step_v04/README.md`
-- Create: `README.md` at the outer Git repository root
+- Modify: `docs/PROJECT_DETAILS.md` (the original detailed project README)
+- Modify: `README.md` at the Git repository root
 - Reference: `docs/superpowers/specs/2026-08-31-competition-first-readme-design.md`
 - Reference: `pyproject.toml`
 - Reference: `.env.example`
