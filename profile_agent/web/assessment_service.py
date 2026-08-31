@@ -87,10 +87,21 @@ class AssessmentService:
         self.container = container
         self.repository: SqliteAssessmentRepository = container.repository
 
-    def _model_context(self, assessment_id: str):
+    def _model_context(self, record: AssessmentRecord):
         registry = getattr(self.container, "model_runtime_registry", None)
+        if record.model_session_id is not None:
+            if not isinstance(registry, ModelRuntimeRegistry):
+                raise LLMProviderError(
+                    "该评估使用了自定义模型，但当前模型会话已经失效。请重新创建评估并配置模型。"
+                )
+            config = registry.config_for_assessment(record.id)
+            if config is None:
+                raise LLMProviderError(
+                    "该评估使用了自定义模型，但当前模型会话已经失效（服务可能已重启）。请重新创建评估并配置模型。"
+                )
+            return registry.use_for_assessment(record.id)
         if isinstance(registry, ModelRuntimeRegistry):
-            return registry.use_for_assessment(assessment_id)
+            return registry.use_for_assessment(record.id)
         return nullcontext()
 
     def analyze(self, assessment_id: str) -> AssessmentRecord:
@@ -113,7 +124,7 @@ class AssessmentService:
             "interview_duration_minutes": analyzing.interview_duration_minutes,
         }
         try:
-            with self._model_context(assessment_id):
+            with self._model_context(analyzing):
                 output = self.container.pre_interview_graph.invoke(state)
             if not isinstance(output, dict):
                 raise ValueError("Pre-Interview Graph 未返回有效 State")
