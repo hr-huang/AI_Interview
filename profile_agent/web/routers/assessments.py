@@ -131,6 +131,7 @@ async def create_assessment(
         jd_text=jd_text,
         resume_text=cleaned_resume,
         interview_duration_minutes=interview_duration_minutes,
+        model_session_id=clean_model_session_id,
     )
     created, binding = repository.create_with_request(
         record,
