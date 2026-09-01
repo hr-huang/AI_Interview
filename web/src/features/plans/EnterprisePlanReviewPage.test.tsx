@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { api } from '../../api/client'
@@ -44,13 +44,17 @@ function renderPage() {
 }
 
 afterEach(() => {
-  vi.useRealTimers()
+  vi.restoreAllMocks()
   vi.clearAllMocks()
 })
 
 describe('EnterprisePlanReviewPage', () => {
   test('polls candidate progress from ready to complete and exposes the report', async () => {
-    vi.useFakeTimers()
+    let scheduledRefresh: (() => void) | undefined
+    vi.spyOn(window, 'setTimeout').mockImplementation((handler: TimerHandler) => {
+      if (typeof handler === 'function') scheduledRefresh = handler as () => void
+      return 1
+    })
     vi.mocked(api.getAssessment)
       .mockResolvedValueOnce(status('READY'))
       .mockResolvedValueOnce(status('COMPLETE'))
@@ -59,8 +63,12 @@ describe('EnterprisePlanReviewPage', () => {
 
     expect(await screen.findByText('等待候选人开始')).toBeVisible()
     expect(screen.queryByRole('link', { name: '查看评估报告' })).not.toBeInTheDocument()
+    expect(scheduledRefresh).toBeTypeOf('function')
 
-    await vi.advanceTimersByTimeAsync(3000)
+    await act(async () => {
+      scheduledRefresh?.()
+      await Promise.resolve()
+    })
 
     expect(await screen.findByText('面试已完成')).toBeVisible()
     expect(screen.getByRole('link', { name: '查看评估报告' })).toHaveAttribute(
