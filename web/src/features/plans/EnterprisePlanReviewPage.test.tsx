@@ -43,34 +43,39 @@ function renderPage() {
   )
 }
 
+async function flushAsyncWork() {
+  await act(async () => {
+    await Promise.resolve()
+    await Promise.resolve()
+  })
+}
+
 afterEach(() => {
+  vi.useRealTimers()
   vi.restoreAllMocks()
   vi.clearAllMocks()
 })
 
 describe('EnterprisePlanReviewPage', () => {
   test('polls candidate progress from ready to complete and exposes the report', async () => {
-    let scheduledRefresh: (() => void) | undefined
-    vi.spyOn(window, 'setTimeout').mockImplementation((handler: TimerHandler) => {
-      if (typeof handler === 'function') scheduledRefresh = handler as () => void
-      return 1
-    })
+    vi.useFakeTimers()
     vi.mocked(api.getAssessment)
       .mockResolvedValueOnce(status('READY'))
       .mockResolvedValueOnce(status('COMPLETE'))
 
     renderPage()
+    await flushAsyncWork()
 
-    expect(await screen.findByText('等待候选人开始')).toBeVisible()
+    expect(screen.getByText('等待候选人开始')).toBeVisible()
     expect(screen.queryByRole('link', { name: '查看评估报告' })).not.toBeInTheDocument()
-    expect(scheduledRefresh).toBeTypeOf('function')
 
     await act(async () => {
-      scheduledRefresh?.()
+      await vi.advanceTimersByTimeAsync(3000)
+      await Promise.resolve()
       await Promise.resolve()
     })
 
-    expect(await screen.findByText('面试已完成')).toBeVisible()
+    expect(screen.getByText('面试已完成')).toBeVisible()
     expect(screen.getByRole('link', { name: '查看评估报告' })).toHaveAttribute(
       'href',
       '/assessments/ast_001/report',
