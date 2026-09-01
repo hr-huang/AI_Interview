@@ -21,7 +21,7 @@ from profile_agent.schemas.interview_schema import (
 from profile_agent.schemas.report_schema import ScoringBlueprint
 from profile_agent.services.scenario_bank_service import ScenarioCatalog
 from profile_agent.web.app import create_app
-from profile_agent.web.container import WebContainer
+from profile_agent.web.container import LazyScenarioRetriever, WebContainer
 from profile_agent.web.repository import SqliteAssessmentRepository
 from profile_agent.web.schemas import AssessmentRecord, AssessmentStatus
 
@@ -141,6 +141,46 @@ class CandidateStartScenarioRuntimeTest(unittest.TestCase):
 
         # Keep server exceptions as HTTP responses so this test verifies the
         # same browser-visible contract that failed in the real manual run.
+        with TestClient(create_app(container), raise_server_exceptions=False) as client:
+            response = client.post(f"/api/interviews/{self.token}/start")
+
+        self.assertEqual(response.status_code, 200, response.text)
+        payload = response.json()
+        self.assertEqual(payload["state"], "waiting_for_answer")
+        self.assertEqual(payload["turn"]["id"], "turn_001")
+        self.assertIn("工作流编排", payload["turn"]["question"])
+        self.assertEqual(
+            self.repository.get(self.assessment_id).status,
+            AssessmentStatus.IN_PROGRESS,
+        )
+
+    def test_candidate_start_survives_lazy_retriever_fallback_without_compatible_module(self) -> None:
+        plan = self._unsupported_hard_filter_plan()
+        self._create_ready_assessment(plan)
+        catalog = ScenarioCatalog.load()
+
+        def unavailable_retriever_factory():
+            raise RuntimeError("vector index unavailable")
+
+        lazy_retriever = LazyScenarioRetriever(
+            unavailable_retriever_factory,
+            catalog=catalog,
+        )
+
+        def question_generator(**_kwargs) -> GeneratedQuestion:
+            return GeneratedQuestion(text="请结合一次真实经历说明你的 Agent 工作流编排职责。")
+
+        graph = build_interview_graph(
+            question_generator=question_generator,
+            checkpointer=SqliteSaver(self.checkpoint_connection),
+            scenario_catalog=catalog,
+            scenario_retriever=lazy_retriever,
+        )
+        container = self._container(graph)
+
+        # This is the exact production-shaped path from the manual traceback:
+        # LazyScenarioRetriever -> reviewed JSON fallback -> zero compatible
+        # modules.  It must degrade to an ungrounded question instead of 500.
         with TestClient(create_app(container), raise_server_exceptions=False) as client:
             response = client.post(f"/api/interviews/{self.token}/start")
 
