@@ -1,0 +1,151 @@
+.enterprise-interview-monitor {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 20;
+  width: min(380px, calc(100vw - 48px));
+  padding: 18px 20px;
+  border: 1px solid rgba(20, 48, 76, 0.18);
+  border-radius: 14px;
+  background: rgba(250, 249, 245, 0.98);
+  box-shadow: 0 18px 50px rgba(20, 48, 76, 0.16);
+  color: #17324f;
+  backdrop-filter: blur(12px);
+}
+
+.enterprise-monitor-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.enterprise-monitor-heading > div {
+  display: grid;
+  gap: 4px;
+}
+
+.enterprise-monitor-eyebrow {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  color: #6d7e8f;
+}
+
+.enterprise-monitor-heading strong {
+  font-size: 17px;
+  line-height: 1.35;
+}
+
+.enterprise-monitor-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #4d8b78;
+  box-shadow: 0 0 0 5px rgba(77, 139, 120, 0.12);
+  flex: 0 0 auto;
+}
+
+.enterprise-interview-monitor.status-reporting .enterprise-monitor-dot {
+  background: #c47b34;
+  box-shadow: 0 0 0 5px rgba(196, 123, 52, 0.12);
+}
+
+.enterprise-interview-monitor.status-complete {
+  border-color: rgba(52, 123, 98, 0.3);
+}
+
+.enterprise-interview-monitor.status-failed {
+  border-color: rgba(181, 76, 62, 0.28);
+}
+
+.enterprise-interview-monitor.status-failed .enterprise-monitor-dot {
+  background: #b54c3e;
+  box-shadow: 0 0 0 5px rgba(181, 76, 62, 0.12);
+}
+
+.enterprise-interview-monitor p {
+  margin: 12px 0 14px;
+  color: #53677a;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.enterprise-monitor-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.enterprise-monitor-steps li {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  color: #9aa5ae;
+  font-size: 10px;
+  text-align: center;
+}
+
+.enterprise-monitor-steps li span {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid #ccd4da;
+  border-radius: 50%;
+  background: #fff;
+  font-size: 10px;
+}
+
+.enterprise-monitor-steps li.done,
+.enterprise-monitor-steps li.current {
+  color: #294b62;
+}
+
+.enterprise-monitor-steps li.done span,
+.enterprise-monitor-steps li.current span {
+  border-color: #4d8b78;
+  color: #fff;
+  background: #4d8b78;
+}
+
+.enterprise-monitor-steps li.current span {
+  box-shadow: 0 0 0 4px rgba(77, 139, 120, 0.12);
+}
+
+.enterprise-report-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  margin-top: 16px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: #17324f;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.enterprise-report-link:hover {
+  background: #214766;
+}
+
+.enterprise-monitor-error {
+  display: block;
+  margin-top: 10px;
+  color: #9c4c42;
+  line-height: 1.5;
+}
+
+@media (max-width: 720px) {
+  .enterprise-interview-monitor {
+    right: 12px;
+    bottom: 12px;
+    width: calc(100vw - 24px);
+    padding: 16px;
+  }
+}
