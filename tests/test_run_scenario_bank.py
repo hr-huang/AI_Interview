@@ -3,6 +3,7 @@ from __future__ import annotations
 from unittest import TestCase
 from unittest.mock import patch
 from contextlib import redirect_stdout
+from datetime import date
 from io import StringIO
 import json
 from pathlib import Path
@@ -11,6 +12,7 @@ from tempfile import TemporaryDirectory
 import run_scenario_bank
 from profile_agent.schemas.scenario_calibration_schema import ScenarioCalibrationReport
 from profile_agent.schemas.scenario_rag_schema import ScenarioCandidateSet
+from profile_agent.services.scenario_bank_service import ScenarioCatalog
 
 
 class RunScenarioBankTests(TestCase):
@@ -86,6 +88,7 @@ class RunScenarioBankTests(TestCase):
             def close(self) -> None:
                 pass
 
+        fixed_catalog = ScenarioCatalog.load(as_of=date(2026, 8, 31))
         with TemporaryDirectory() as directory:
             artifact_root = Path(directory)
             output = StringIO()
@@ -94,6 +97,11 @@ class RunScenarioBankTests(TestCase):
                     run_scenario_bank.os.environ,
                     {"SCENARIO_RAG_INDEX_PATH": "fake-index"},
                     clear=True,
+                ),
+                patch.object(
+                    run_scenario_bank.ScenarioCatalog,
+                    "load",
+                    return_value=fixed_catalog,
                 ),
                 patch.object(run_scenario_bank, "SCENARIO_CALIBRATION_ARTIFACT_ROOT", artifact_root),
                 patch.object(run_scenario_bank, "load_dotenv"),
