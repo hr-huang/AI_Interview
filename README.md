@@ -1,38 +1,310 @@
-# 衡鉴 Evidence Hiring
+# 衡鉴 · Evidence Hiring
 
-面向企业招聘的 AI Agent 胜任力评估：`JD + resume → reviewable plan → adaptive interview → traceable competency report`
+> **把 JD 与简历变成可审核的验证计划，让候选人接受动态 AI 面试，再把每个能力结论追溯到真实回答证据。**
 
-衡鉴把岗位描述与候选人简历转成可审核的面试计划，根据候选人的真实回答动态调整追问，并让能力结论、岗位匹配判断与原始 Evidence 相互可追溯。当前版本聚焦 `ai_application_engineering / 2026-H2`，不冒充尚未实现的多岗位平台。
+[![CI](https://github.com/hr-huang/AI_Interview/actions/workflows/ci.yml/badge.svg)](https://github.com/hr-huang/AI_Interview/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.116%2B-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![LangGraph](https://img.shields.io/badge/LangGraph-Stateful%20Agent-1f6feb)](https://langchain-ai.github.io/langgraph/)
+[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=20232a)](https://react.dev/)
 
-[![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/) [![LangGraph 0.2+](https://img.shields.io/badge/LangGraph-0.2%2B-1f6feb)](https://langchain-ai.github.io/langgraph/) [![React 19](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=20232a)](https://react.dev/) [![FastAPI](https://img.shields.io/badge/FastAPI-0.116%2B-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+**衡鉴（Evidence Hiring）** 是一个面向企业招聘场景的 AI Agent 胜任力评估系统。当前版本聚焦 **AI Agent / AI 应用工程师（`ai_application_engineering / 2026-H2`）**，完成了从企业创建评估、计划审核、候选人动态面试，到 Evidence 驱动评分与企业报告的完整闭环。
 
-## 从企业材料到证据化报告
+它不是“让 LLM 随机出几道题”，也不是把固定题库套上一层聊天 UI。系统把 **考什么、怎么追问、场景怎么选、证据怎么形成、谁可以打分** 分成独立边界，并把关键决策留在可测试的确定性代码里。
+
+---
+
+## 30 秒看懂这个项目
+
+| 角色 | 实际操作 | 系统结果 |
+| --- | --- | --- |
+| **企业 / 面试官** | 输入 JD + 候选人简历 → 审核 InterviewPlan → 冻结 → 发送专属链接 | 实时看到 `等待开始 → 面试中 → 生成报告 → 已完成`，最终进入企业评估报告 |
+| **候选人** | 打开专属 `/interviews/{token}` → 一次只回答一道题 | 后续问题会根据上一轮 Evidence 动态变化；候选人看不到 Rubric、分数和内部约束 |
+| **AI 面试系统** | Supervisor 决定当前验证目标，Scenario RAG 提供业务场景，AnswerProcessor 提取证据 | Evidence / Claim / Requirement 状态持续更新，ScoreEngine 最后统一评分 |
+
+```mermaid
+sequenceDiagram
+    participant HR as 企业 / 面试官
+    participant API as 衡鉴服务端
+    participant C as 候选人
+    participant G as LangGraph Interview Agent
+
+    HR->>API: JD + Resume
+    API-->>HR: 可审核 InterviewPlan
+    HR->>API: Freeze Plan
+    API-->>HR: Candidate Access URL
+    HR-->>C: 发送专属面试链接
+    C->>API: Start Interview
+    API->>G: 恢复 Assessment Runtime
+    G-->>C: 第 1 题
+    loop 动态验证
+        C->>API: turn_id + answer
+        API->>G: AnswerProcessor → Evidence
+        G->>G: Supervisor 判断缺口 / 矛盾 / 覆盖率
+        G-->>C: 追问或下一验证题
+    end
+    G->>API: ScoreEngine + AssessmentReport
+    API-->>HR: COMPLETE + 企业报告
+```
+
+---
+
+## 真实运行页面
+
+下面不是设计稿，而是本地完整链路实际运行后，候选人完成整场面试时的页面：
+
+![候选人完成动态面试后的真实页面](docs/assets/candidate-interview-complete.png)
+
+候选人端只承担三件事：**显示当前问题、提交当前回答、显示完成状态**。计划、Evidence Requirement、Constraint、评分权重和最终企业结论都不会暴露给候选人。
+
+企业端在计划冻结后会持续读取同一个 Assessment 的状态；候选人开始、作答、完成后，企业侧会依次看到：
+
+```text
+等待候选人开始
+        ↓
+候选人面试中
+        ↓
+正在生成评估报告
+        ↓
+面试已完成
+        ↓
+[查看评估报告]
+```
+
+因此候选人的回答不需要“再传回企业电脑”：企业浏览器和候选人浏览器始终访问同一个 FastAPI + Assessment 数据源，候选人的每一次提交都会立即进入对应 Assessment 的 LangGraph Runtime。
+
+---
+
+## 为什么它不只是“LLM 面试机器人”
+
+### 1. 企业先审核，再允许 AI 面试
+
+```text
+JD + Resume
+   ↓
+Resume / Job Understanding
+   ↓
+Competency Modeling
+   ↓
+InterviewPlan
+   ↓
+企业审核 / 调整
+   ↓
+Freeze
+   ↓
+候选人才能开始
+```
+
+Planner 可以提出 Target、Evidence Requirement、优先级和推荐题型，但不会绕过企业直接开始评估。
+
+### 2. 动态追问由 Evidence 缺口驱动
+
+候选人回答后，不是简单地进入预先写好的“第 N 题”：
 
 ```mermaid
 flowchart LR
-    A["JD + 候选人简历"] --> B["岗位与简历理解"]
-    B --> C["可审核 InterviewPlan"]
-    C --> D["企业调整并冻结计划"]
-    D --> E["候选人 Web 动态面试"]
-    E --> F["Evidence + Claim 核验"]
-    F --> G["能力雷达与岗位匹配报告"]
+    A[候选人回答] --> B[AnswerProcessor]
+    B --> C[Evidence / Contradiction / Missing Tags]
+    C --> D[RequirementProgress]
+    D --> E[Supervisor]
+    E -->|继续当前能力| F[Follow-up]
+    E -->|切换能力| G[Next Requirement]
+    E -->|覆盖充分| H[Finish]
+    F --> I[下一题]
+    G --> I
 ```
 
-- **Planner 决定考什么**：把岗位能力和简历声明整理成 Target、Evidence Requirement、优先级与推荐题型。
-- **企业先审核再开考**：计划调整受角色标准与最低验证要求约束，冻结后生成候选人面试链接。
-- **Supervisor 决定下一步验证什么**：依据已有 Evidence、矛盾、缺口、剩余时间和题数预算动态推进。
-- **Scenario Module RAG 提供业务场景**：从 10 个场景、35 个检索模块和 38 个隐藏约束中选择合适上下文；QuestionGenerator 只负责把已锁定的考点表达成自然问题。
-- **ScoreEngine 只按证据评分**：未验证维度保留 `UNVERIFIED`，覆盖率或门槛不足时不强行发布岗位匹配分。
+例如候选人已经证明“长期记忆可以存储和检索”，但没有说明更新、删除或版本处理，系统可以继续围绕这个 Evidence gap 追问，而不是重新问一个无关知识点。
 
-## 快速开始
+### 3. RAG 不决定考什么，只决定“放在哪个业务场景里考”
 
-前置条件：Git、Python 3.11+、Node.js `^20.19.0` 或 `>=22.12.0`、`uv`、`pnpm@11.19.0`。
+当前 Scenario Bank 冻结为：
+
+| 资产 | 数量 | 用途 |
+| --- | ---: | --- |
+| Reviewed enterprise scenarios | **10** | 企业级 Agent 业务世界 |
+| Scenario × primary-capability modules | **35** | RAG 的原子检索单元 |
+| Reviewed constraints | **38** | Follow-up 可暴露的审核约束 |
+| Role dimensions | **6** | 最终能力雷达维度 |
+
+核心边界：
+
+> **Supervisor 决定考什么；RAG 决定放在哪个业务场景里考；Constraint Selector 决定本轮允许暴露哪个审核过的约束；QuestionGenerator 只负责把锁定内容问自然。**
+
+如果向量检索不可用，系统可以回退到 reviewed JSON；如果当前 Requirement 根本不存在兼容的 reviewed ScenarioModule，则直接无场景出题，而不是硬塞一个错误业务场景导致候选人会话崩溃。
+
+### 4. LLM 不能直接决定最终分数
+
+```text
+Interview Turns
+      ↓
+Evidence
+      ↓
+Requirement Evidence Assessment
+      ↓
+Claim Verification
+      ↓
+ScoringBlueprint
+      ↓
+ScoreEngine  ← 唯一数值权威
+      ↓
+AssessmentReport
+```
+
+未获得足够证据的维度可以保持 `UNVERIFIED`。报告不会把“没有验证到”偷换成“能力差”，前端雷达图也不会二次计算分数。
+
+---
+
+## 一次评估的系统执行链
+
+```mermaid
+flowchart TD
+    subgraph PRE[Pre-Interview]
+        A[JD + Resume] --> B[Input Processing]
+        B --> C[Resume Understanding]
+        B --> D[Job Understanding]
+        C --> E[Competency Modeling]
+        D --> E
+        E --> F[Interview Planner]
+        F --> P[InterviewPlan]
+    end
+
+    subgraph REVIEW[Enterprise Review]
+        P --> R[Plan Review]
+        R --> Z[Freeze]
+        Z --> URL[Candidate Token URL]
+    end
+
+    subgraph INTERVIEW[Adaptive Interview]
+        URL --> S[InterviewRuntimeState]
+        S --> SUP[Supervisor]
+        SUP --> CTX[PrepareQuestionContext]
+        BANK[Reviewed Scenario JSON] --> CTX
+        QD[Qdrant + Embedding + Reranker] -. optional .-> CTX
+        CTX --> Q[QuestionGenerator / Safe Opening]
+        Q --> TURN[InterviewTurn]
+        TURN --> ANS[Candidate Answer]
+        ANS --> AP[AnswerProcessor]
+        AP --> EV[Evidence + RequirementProgress]
+        EV --> SUP
+    end
+
+    subgraph POST[Evidence-based Report]
+        EV --> SB[ScoringBlueprint]
+        SB --> RV[Requirement / Claim Verification]
+        RV --> SE[Deterministic ScoreEngine]
+        SE --> RW[ReportWriter]
+        RW --> REPORT[AssessmentReport]
+    end
+```
+
+### 静态与动态状态严格分离
+
+- `InterviewPlan`：整场面试的静态验证计划，Freeze 后不随候选人回答任意漂移。
+- `InterviewRuntimeState`：当前已问什么、还缺什么 Evidence、活跃场景、剩余预算等运行时状态。
+- `Evidence`：报告和评分的事实源。
+- `Qdrant`：可重建的派生索引，不是事实源，也不参与评分。
+
+---
+
+## 可复核数据
+
+### Scenario RAG 冻结校准
+
+校准集包含 **24 个 reviewed cases**：
+
+| 指标 | 冻结结果 | Acceptance 含义 |
+| --- | ---: | --- |
+| Top-1 acceptable | **24 / 24** | 最终 Top-1 全部属于可接受模块 |
+| Top-3 recall | **24 / 24** | 可接受模块全部进入 Top-3 |
+| Forbidden Top-1 | **0** | 没有错误业务世界成为最终选择 |
+| Fallback | **0** | 冻结校准没有触发 fallback |
+| Top-3 forbidden diagnostics | **7** | 邻近业务世界仍有诊断命中，但不进入最终 Top-1 acceptance |
+
+### 当前自动化验证快照（2026-09-01）
+
+| 验证层 | 结果 |
+| --- | ---: |
+| Backend pytest | **883 passed** |
+| Backend subtests | **831 passed** |
+| Frontend Vitest | **43 / 43 passed** |
+| Frontend test files | **12 / 12 passed** |
+| TypeScript + Vite production build | **PASS** |
+
+CI 同时覆盖后端测试、前端交互测试和生产构建。尤其包含真实生产形状的候选人 `/start` 回归：`ScenarioCatalog + LazyScenarioRetriever + reviewed fallback + LangGraph checkpoint + HTTP API`，防止“单元测试全绿、真实候选人一点击开始却 500”的问题重新出现。
+
+---
+
+## 企业端与候选人端
+
+### 企业侧
+
+企业创建 Assessment 后可以：
+
+1. 输入目标岗位、JD、候选人简历；
+2. 查看 Planner 生成的候选人画像、Claim、能力维度与 Target；
+3. 调整允许开放给业务方的有限参数并 Freeze；
+4. 获得候选人专属一次性访问 URL；
+5. 查看候选人 `READY → IN_PROGRESS → REPORTING → COMPLETE` 状态；
+6. 完成后进入能力雷达、Evidence 引用、Claim 核验与岗位匹配报告。
+
+### 候选人侧
+
+候选人只通过专属 token 访问：
+
+```text
+/interviews/{candidateToken}
+```
+
+每轮只提交：
+
+```text
+turn_id + answer + idempotency_key
+```
+
+不会收到内部 Requirement、Constraint、Rubric、Evidence score 或企业报告。
+
+> 本地开发生成的是 `http://localhost:5173/interviews/...`，只能本机模拟。真正交付企业使用时，React/FastAPI/数据库部署到公网域名后，企业把 `https://your-domain/interviews/...` 发给候选人即可。
+
+---
+
+## 模型与 RAG 配置边界
+
+创建评估页支持推理模型配置：**Qwen、DeepSeek、GLM、OpenAI-compatible**。自定义配置会先做真实 Structured Output 探测，成功后才创建临时 Model Session。
+
+- API Key 仅保存在当前服务进程内存，不写入 Assessment 数据库；
+- 服务重启后自定义会话显式失效，不静默切换模型；
+- 不同 Assessment 通过运行时上下文隔离模型配置；
+- 普通用户不能切换 Scenario RAG 的 Embedding/Reranker/Qdrant contract；
+- 自定义 Base URL 只接受 HTTPS，并拒绝直接 localhost / 私有 / 链路本地 IP；
+- 当前 BYOK 是单实例实现，生产多实例需要外部 Secret Store / Session Store。
+
+Scenario RAG 的 canonical source 是版本化 JSON Bank，Qdrant 只是可重建索引：
+
+```text
+Reviewed JSON
+    ↓ rebuild
+Embedding → Qdrant
+              ↓
+Runtime Query → Top-K → optional Reranker
+              ↓
+重新回读 JSON 做身份 / hard-filter 校验
+              ↓
+LockedScenarioContext
+```
+
+---
+
+## 快速运行
+
+前置：Git、Python 3.11+、Node.js `^20.19.0` 或 `>=22.12.0`、`uv`、`pnpm@11.19.0`。
 
 ```powershell
 git clone https://github.com/hr-huang/AI_Interview.git
 Set-Location AI_Interview
 uv sync --frozen --dev
 if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+pnpm --dir web install
 ```
 
 终端 A：
@@ -44,78 +316,48 @@ uv run uvicorn profile_agent.web.app:create_app --factory --host 127.0.0.1 --por
 终端 B：
 
 ```powershell
-pnpm --dir web install
 pnpm --dir web dev
 ```
 
-启动后可访问：
+浏览器打开：
 
-| 入口 | 地址 | 用途 |
-| --- | --- | --- |
-| 真实评估 | <http://127.0.0.1:5173/assessments/new> | 输入 JD、简历，可选配置自己的推理模型，生成并审核面试计划。 |
-| 候选人面试 | `/interviews/{candidateToken}` | 冻结计划后生成；候选人逐题回答，后端根据 Evidence 动态追问。 |
-| 演示示例 | <http://127.0.0.1:5173/demo/assessment> | 不调用模型，直接查看冻结的完整评估报告。 |
-| 演示 API | <http://127.0.0.1:8000/api/demo/assessment> | 查看演示报告的后端 JSON。 |
-
-真实评估有两种模型配置方式：服务器 `.env` 默认配置，或创建评估页里的“模型设置”。自定义模型会先进行真实 Structured Output 兼容性测试，通过后才生成临时模型会话。API Key 只保存在当前服务进程内存，不写入评估数据库；服务重启后自定义模型会话会显式失效，不会静默切换到服务器默认模型。Embedding、Reranker 与 Qdrant 仍由系统固定管理，避免查询向量与索引向量不兼容。
-
-## 动态面试如何工作
-
-```mermaid
-flowchart TD
-    PRE["PreInterviewGraph"] --> PLAN["InterviewPlan + ClaimRegistry"]
-    PLAN --> REVIEW["企业审核与冻结"]
-    REVIEW --> WEB["Candidate Interview Web"]
-    WEB --> SUP["Supervisor"]
-    SUP --> RAG["Scenario Module RAG"]
-    BANK["Reviewed JSON Scenario Bank"] --> RAG
-    RAG --> QG["QuestionGenerator"]
-    QG --> WEB
-    WEB --> AP["AnswerProcessor"]
-    AP --> E["Evidence + RequirementAssessment"]
-    E --> SUP
-    E --> SCORE["Claim verification + ScoreEngine"]
-    SCORE --> REPORT["Traceable AssessmentReport"]
-    QDRANT["Qdrant + optional reranker"] -. "不可用时回退" .-> BANK
+```text
+http://127.0.0.1:5173/assessments/new
 ```
 
-1. `Planner` 生成整场静态验证计划。
-2. `Supervisor` 每轮只决定当前 Requirement、题型和是否结束。
-3. `ScenarioRetriever` 用维度、题型、难度与 Evidence gap 检索 `场景 × 能力` 模块；Qdrant 只是可重建索引，JSON Bank 才是事实源。
-4. `QuestionGenerator` 不自由选择考点，只把已锁定上下文写成候选人可理解的问题。
-5. 候选人页面每次只提交当前 `turn_id + answer + idempotency_key`，不暴露 Requirement、Constraint、Score 等内部状态。
-6. `AnswerProcessor` 提取支持、限制、矛盾和缺失 Evidence；Python 再确定性更新 Runtime。
-7. 报告阶段由 `ScoreEngine` 唯一生成数值，前端雷达图不重新计算分数。
+推荐完整演示路径：
 
-## 模型配置边界
-
-创建评估页当前开放的是**推理/生成模型**：Qwen、DeepSeek、GLM 与高级 OpenAI-compatible 入口。不同评估的 Key/Base URL/Model 通过独立的运行时上下文隔离，不通过修改全局环境变量切换，因此并发请求不会共享当前模型配置。
-
-场景检索的 Embedding/Reranker/Qdrant 不开放给普通用户切换。原因是现有 Scenario Module 索引由固定 embedding contract 构建；任意切换 embedding 模型会让查询向量与库内向量失去可比性。
-
-公开自定义 Base URL 仅接受 HTTPS，并拒绝 localhost 与直接私有/链路本地 IP。当前实现仍属于本机/单实例 BYOK 方案；生产级多实例部署需要外部 Secret Store/会话存储，而不是把 API Key 明文持久化到数据库。
-
-## 校准与可复现性
-
-冻结的 Scenario Module RAG 校准集包含 24 个 reviewed cases：
-
-| 指标 | 结果 | 说明 |
-| --- | --- | --- |
-| Top-1 acceptable | `24/24` | 运行时采用的 Top-1 全部位于可接受模块集合。 |
-| Top-3 recall | `24/24` | 可接受模块全部进入 Top-3。 |
-| forbidden Top-1 | `0` | 没有错误业务世界成为最终选择。 |
-| fallback | `0` | 本次冻结校准没有回退。 |
-| Top-3 forbidden diagnostics | `7` | 相邻业务世界仍有七个诊断命中；它们不参与 acceptance gate，但需要持续治理。 |
-
-设计冻结时的后端快照为 `868 passed, 6 warnings, 827 subtests passed`；前端为 `38 passed`，并通过 TypeScript + Vite 生产构建。数字是可复核的历史快照，不作为永久徽章。当前 CI 会同时执行后端 pytest、前端 Vitest 和 TypeScript/Vite 生产构建。
-
-```powershell
-uv run pytest -q
-pnpm --dir web test
-pnpm --dir web build
+```text
+模型连接测试
+  ↓
+输入 JD + 简历
+  ↓
+生成 InterviewPlan
+  ↓
+企业审核并 Freeze
+  ↓
+打开 Candidate URL
+  ↓
+连续回答并观察动态追问
+  ↓
+候选人完成
+  ↓
+回到企业 Plan 页查看 COMPLETE
+  ↓
+查看 Assessment Report
 ```
 
-Scenario Bank 的离线校验和预览不会调用 provider：
+如果只想快速看完整企业报告而不调用模型：
+
+```text
+http://127.0.0.1:5173/demo/assessment
+```
+
+---
+
+## Scenario Bank 运维
+
+纯离线校验与预览不会调用 Provider：
 
 ```powershell
 uv run python run_scenario_bank.py validate
@@ -123,30 +365,47 @@ uv run python run_scenario_bank.py rebuild-index
 uv run python run_scenario_bank.py evaluate
 ```
 
-只有显式使用 `--apply` 才会执行真实 embedding、Qdrant 写入或检索校准，并可能产生费用。
+只有显式 `--apply` 才会执行真实 Embedding、Qdrant 写入或 Retrieval Calibration，并可能产生 API 费用：
+
+```powershell
+uv run python run_scenario_bank.py rebuild-index --apply
+uv run python run_scenario_bank.py evaluate --apply
+```
+
+---
 
 ## 当前交付边界
 
-| 已实现 | 尚未声称完成 |
+| 已实现并可运行 | 当前没有冒充完成 |
 | --- | --- |
-| JD/简历输入与文档解析 | 多岗位 Role Pack |
-| 可审核、可冻结的 InterviewPlan | 生产级云端多实例部署 |
-| 候选人 Web 动态问答页与幂等提交 | 持久化 BYOK Secret Store |
-| 后端动态面试 Runtime 与 API | 语音/虚拟人面试 |
-| Scenario Module RAG 与 reviewed fallback | 已发布 Docker 镜像 |
-| Evidence、Claim 核验与确定性评分 | 对外承诺的通用招聘决策系统 |
-| 企业报告、雷达图与证据追溯 | LICENSE（当前仓库尚未选择许可证） |
+| JD / 简历输入与文档解析 | 多岗位 Role Pack |
+| 可审核、可冻结 InterviewPlan | 生产级多租户企业权限系统 |
+| Candidate Token Web Interview | 生产级云端多实例部署 |
+| Evidence 驱动动态追问 | 持久化 BYOK Secret Store |
+| Enterprise Status Monitor | 语音 / 虚拟人面试 |
+| Scenario Module RAG + reviewed fallback | 已发布 Docker Hub 镜像 |
+| Claim Verification + deterministic ScoreEngine | 全自动录用 / 淘汰决策 |
+| 企业雷达图、报告与 Evidence Trace | LICENSE（当前仓库尚未选择许可证） |
 
-报告用于辅助企业招聘判断，不自动输出录用或淘汰结论。
+**系统定位是招聘辅助决策工具，不自动输出录用/淘汰决定。**
 
-## 文档导航
+---
 
-- [完整项目说明](docs/PROJECT_DETAILS.md)
-- [环境变量模板](.env.example)
-- [README 设计说明](docs/superpowers/specs/2026-08-31-competition-first-readme-design.md)
-- [README 实施说明](docs/superpowers/plans/2026-08-31-competition-first-readme.md)
-- [代码结构导览](docs/CODE_WALKTHROUGH.md)
+## 代码与文档导航
 
-## 许可证与容器镜像
+| 路径 | 内容 |
+| --- | --- |
+| `profile_agent/graphs/` | Pre-Interview / Interview LangGraph |
+| `profile_agent/services/` | Planner、RAG、Evidence、Scoring、Report 等核心服务 |
+| `profile_agent/web/` | FastAPI、Assessment 生命周期、模型运行时、Persistence |
+| `web/src/features/` | 企业创建/审核/报告与候选人面试页面 |
+| `profile_agent/knowledge/scenario_banks/` | Scenario Bank canonical JSON |
+| [`docs/PROJECT_DETAILS.md`](docs/PROJECT_DETAILS.md) | 完整项目说明 |
+| [`docs/CODE_WALKTHROUGH.md`](docs/CODE_WALKTHROUGH.md) | 代码结构与执行链导览 |
+| [`.env.example`](.env.example) | 本地环境变量模板 |
 
-当前仓库尚未提供 `LICENSE`，也没有发布到 Docker Hub 的镜像，因此暂不展示 License 或 Docker Pulls 徽章。后续只有在许可证文件和公开镜像真实存在后才会补充相应徽章与使用说明。
+---
+
+## License
+
+当前仓库尚未提供 `LICENSE`，也没有发布 Docker Hub 镜像，因此暂不展示虚假的 License / Docker Pulls 徽章。只有在真实发布后才补充对应声明。
