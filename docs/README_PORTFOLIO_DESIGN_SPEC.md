@@ -550,6 +550,82 @@ Avoid defensive wording throughout the README. State boundaries once, clearly, n
 
 ---
 
+## 4.10 后期计划
+
+Roadmap 放在交付边界之后。开头先明确当前版本已经完成：
+
+```text
+JD / Resume → InterviewPlan → Plan Review → Dynamic Interview → Evidence → Deterministic Scoring → Enterprise Report
+```
+
+后续计划使用未完成复选框，并按以下三个部分组织。完成并经过验证的项目从 Roadmap 删除，移动到已实现能力或 Release，不在 README 中长期堆放已勾选事项。
+
+### Agent 能力
+
+- [ ] **长期记忆（Long-term Memory）**
+
+  在当前单次面试 Runtime 之外增加跨场次记忆，并明确区分：
+
+  - **语义记忆（Semantic Memory）**：候选人的稳定事实、项目背景、已确认技能与岗位相关信息；
+  - **情景记忆（Episodic Memory）**：历史面试中的问题、回答、Evidence、矛盾点和未完成验证项；
+  - **程序性记忆（Procedural Memory）**：经过测试证明有效的提问、追问和验证策略。
+
+  重点解决记忆的写入时机、检索范围、来源追溯、冲突更新、删除和过期问题，并避免不同候选人或不同企业之间发生记忆串线。
+
+  程序性记忆可以影响提问和验证策略，但不能自动修改 Role Pack、Rubric、评分权重等确定性规则。
+
+- [ ] **场景库持续更新（Continuous Scenario Intelligence）**
+
+  定期从公开岗位 JD、官方技术文档、工程案例和面试方向中发现新的候选场景，而不是长期依赖一套静态 Scenario Bank。
+
+  更新链路为：
+
+  `公网检索 → 来源归一化 → 去重 → 时效性检查 → Candidate Scenario → 人工 Review → Retrieval Calibration → Versioned Scenario Bank`
+
+  未经审核的网页内容不能直接进入正式 RAG。新版本发布前继续验证 Top-1、Top-3、Forbidden Result、Fallback 等固定检索指标，并保留数据来源和版本信息。
+
+- [ ] **Agent 可观测性与回放（Observability & Replay）**
+
+  为每一轮面试记录完整的 Agent 决策链，包括 Supervisor 的选择原因、Evidence Gap、Scenario RAG 结果、Constraint 选择、最终问题、AnswerProcessor Evidence、RequirementProgress 变化、路由结果，以及每轮 LLM 的耗时、Token 和费用。
+
+  最终支持按 Turn 回放整条决策路径，用于调试错误追问、错误检索和异常评分来源。
+
+- [ ] **外部证据验证工具（Evidence Tools）**
+
+  只在候选人声明能够通过外部系统验证时引入有限 Tool Calling，例如 Git Repository / GitHub 项目检查、项目目录与依赖读取、受限 Sandbox 代码执行，以及测试、日志和提交记录核验。
+
+  工具只提供外部事实，结果仍进入统一 Evidence Pipeline。Tool 本身不能直接决定分数，也不为了展示 Function Calling 而加入无关工具。
+
+### 产品能力
+
+- [ ] **企业工作台（Enterprise Workspace）**
+
+  增加候选人与 Assessment 列表、等待面试 / 面试中 / 已完成状态、邀请链接管理、报告归档、历史评估检索，以及基础搜索和筛选。
+
+- [ ] **Role Pack 扩展**
+
+  在当前 `ai_application_engineering / 2026-H2` 之外逐步支持更多技术岗位。每个岗位独立维护 Competency Dimensions、Evidence Requirements、Rubric、Scenario Bank、Calibration Cases 和 Profile Version，同时复用同一套 Interview Engine。
+
+- [ ] **语音与虚拟数字人面试**
+
+  在现有文字面试基础上增加：
+
+  `STT → Interview Runtime → Question → TTS → Avatar`
+
+  支持语音转文字、文字转语音、实时字幕和虚拟面试官交互，并继续复用现有 Supervisor、Evidence、Runtime 和 ScoreEngine。
+
+  多模态能力只作为交互层，不根据候选人的外貌、声音特征或表情进行能力评分。
+
+### 部署与安全
+
+- [ ] **企业认证与租户隔离**：增加企业账号、Organization / Tenant 和 Assessment Ownership，确保不同企业只能访问自己的候选人和报告。
+- [ ] **候选人邀请链接治理**：为 Candidate Token 增加过期、撤销、重新生成和访问控制，不长期依赖永久 Bearer Link。
+- [ ] **模型密钥持久化**：将 BYOK Secret 从单个服务进程内存迁移到专门的 Secret Store，支持服务重启和多实例部署。
+- [ ] **生产数据基础设施**：从单机开发环境逐步迁移到正式数据库、数据库迁移机制和多实例共享状态。
+- [ ] **公开演示与部署**：保留无需 API Key 的冻结 Demo，并进一步部署可公开访问的产品版本，方便评审和技术面试官直接体验完整产品链路。
+
+---
+
 ## 5. Visual asset specification
 
 All README assets live under:
