@@ -85,7 +85,7 @@ pnpm --dir web dev
 
 1. `PreInterviewGraph` 解析材料，建立岗位能力、待核验 Claim 和初始 `InterviewPlan`。
 2. 招聘方在 `/assessments/:assessmentId/plan` 审核计划；需要时调整受控字段，再冻结计划。
-3. 后端通过 `/interviews/:candidateToken` 驱动候选人面试并在开始时初始化时间与运行状态；当前 React 候选人面试页仍是入口骨架，完整问答交互界面尚待补齐。
+3. 后端通过 `/interviews/:candidateToken` 驱动候选人面试并在开始时初始化时间与运行状态；候选人在 React 页面逐题查看当前问题、提交回答，并通过同一 Candidate Token 继续面试。
 4. 面试结束后，`/assessments/:assessmentId/report` 读取服务端保存的报告、面试路径和证据链。
 
 计划审核把岗位标准与候选人实际面试分开：候选人看不到内部 rubric、隐藏约束或排名诊断，招聘方可以在面试开始前确认考察范围。
