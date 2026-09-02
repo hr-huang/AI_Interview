@@ -12,6 +12,8 @@ dist/
 *.egg-info/
 artifacts/calibration/
 artifacts/scenario_rag/
+artifacts/question_corpus/
+artifacts/runs/
 .superpowers/
 data/
 web/node_modules/
