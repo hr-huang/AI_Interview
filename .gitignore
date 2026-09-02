@@ -12,7 +12,8 @@ dist/
 *.egg-info/
 artifacts/calibration/
 artifacts/scenario_rag/
-artifacts/question_corpus/
+artifacts/question_corpus/*
+!artifacts/question_corpus/task6_source_evidence_fixture.json
 artifacts/runs/
 .superpowers/
 data/
