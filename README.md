@@ -7,7 +7,7 @@
 从 JD 与候选人简历生成可审核的面试计划，根据实时回答动态追问，  
 并让最终能力判断能够回溯到具体 Evidence 与原始回答。
 
-[产品流程](#产品流程) · [核心能力](#核心能力) · [关键工程设计](#关键工程设计) · [系统架构](#系统架构) · [快速运行](#快速运行)
+[产品流程](#产品流程) · [核心能力](#核心能力) · [关键工程设计](#关键工程设计) · [系统架构](#系统架构) · [快速运行](#快速运行) · [后续计划](#后续计划)
 
 [![CI](https://github.com/hr-huang/AI_Interview/actions/workflows/ci.yml/badge.svg)](https://github.com/hr-huang/AI_Interview/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
@@ -182,6 +182,31 @@ pnpm --dir web dev
 **已实现**：JD / Resume 解析、InterviewPlan 审核与冻结、Candidate Link、Evidence Gap 动态面试、Scenario Module RAG、Claim Verification、确定性 ScoreEngine、企业报告 / Radar / Transcript / Evidence Trace。
 
 **当前边界**：单一 `ai_application_engineering / 2026-H2` Role Pack、单机 SQLite / Checkpoint、BYOK Secret 仅内存保存；尚未完成企业多租户认证、语音 / 虚拟数字人和公开生产部署。
+
+## 后续计划
+
+后续不会为了增加技术名词继续堆 Agent Node，而是沿着**长期状态、动态知识、外部证据、产品体验和生产化**继续演进。
+
+### Agent 能力
+
+- [ ] **长期记忆（Long-term Memory）**：增加跨场次的语义记忆、情景记忆和程序性记忆，处理来源追溯、冲突更新、删除/过期以及不同候选人之间的隔离。
+- [ ] **场景库持续更新（Continuous Scenario Intelligence）**：定期从公开岗位 JD、官方技术资料和工程案例中发现新场景，经过去重、时效检查、人工 Review 与 Retrieval Calibration 后发布新的版本化 Scenario Bank，而不是把原始网页直接写入正式 RAG。
+- [ ] **Agent 可观测性与回放（Observability & Replay）**：记录 Supervisor 决策、Evidence Gap、RAG、Constraint、Question / Answer Processing、RequirementProgress、耗时、Token 与模型费用，并支持按 Turn 回放。
+- [ ] **外部证据验证工具（Evidence Tools）**：在确有验证价值时加入 Git Repository 检查、项目文档/测试读取和受限 Sandbox 代码执行；工具结果统一进入 Evidence Pipeline，不能直接决定分数。
+
+### 产品与交互
+
+- [ ] **企业工作台与 Web 体验**：从单次 Assessment 扩展到候选人列表、任务状态、邀请链接、报告归档、历史检索与更完整的企业侧工作流。
+- [ ] **更多岗位 Role Pack**：复用同一 Interview Engine，为不同技术岗位独立维护 Competency、Evidence Requirement、Rubric、Scenario Bank 与 Calibration 数据。
+- [ ] **语音与虚拟数字人面试**：增加 STT、TTS、实时字幕和 Avatar；数字人只负责交互层，继续复用现有 Runtime、Evidence 与 ScoreEngine，不根据外貌、表情或声音特征评分。
+
+### 部署与安全
+
+- [ ] 企业账号、Organization / Tenant 与 Assessment Ownership；
+- [ ] Candidate Token 过期、撤销、重新生成和访问控制；
+- [ ] BYOK Secret 持久化、正式数据库、多实例共享状态与公开部署。
+
+完整设计、边界和维护规则见 [Roadmap](docs/ROADMAP.md)。
 
 ## Documentation
 
