@@ -9,6 +9,7 @@ import type {
   ReportViewModel,
   ReinterviewFocusView,
 } from '../../api/types'
+import { CandidateGrowthPlan } from './CandidateGrowthPlan'
 import { EvidenceDrawer, type EvidenceDrawerGroup } from './EvidenceDrawer'
 import { InterviewTranscript, type TranscriptFocusRequest } from './InterviewTranscript'
 import { RadarChart } from './RadarChart'
@@ -446,6 +447,7 @@ function ReportView({ report, demo = report.demo }: { report: ReportViewModel; d
       </div>
 
       <ReinterviewPlan items={enterprise.reinterview_plan} />
+      <CandidateGrowthPlan items={enterprise.reinterview_plan} />
 
       <InterviewTranscript
         turns={transcript}
