@@ -160,7 +160,7 @@ afterEach(() => {
 })
 
 describe('ReportPage', () => {
-  test('presents an enterprise decision and opens grounded excerpts from a radar dimension', async () => {
+  test('presents an enterprise decision, candidate growth advice, and grounded radar excerpts', async () => {
     vi.mocked(api.getReport).mockResolvedValue(report())
     const user = userEvent.setup()
     renderEnterprisePage()
@@ -170,10 +170,12 @@ describe('ReportPage', () => {
     expect(screen.getByText('有条件进入结构化复试')).toBeVisible()
     expect(screen.getByRole('heading', { name: '候选人总评' })).toBeVisible()
     expect(screen.getByRole('heading', { name: '企业复试计划' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: '候选人成长建议' })).toBeVisible()
+    expect(screen.getByText(/用一个真实项目、课程项目或可复现实验完成这项任务/)).toBeVisible()
+    expect(screen.getByText('验收标准')).toBeVisible()
     expect(screen.getByRole('heading', { name: '能力雷达' })).toBeVisible()
     expect(screen.getByText('当前证据覆盖有限。')).toBeVisible()
     expect(screen.queryByText('展开查看为什么得到这个评价')).not.toBeInTheDocument()
-    expect(screen.queryByText('候选人成长建议')).not.toBeInTheDocument()
     expect(screen.queryByText(/RubricMatch|Requirement|d03_min_02|ev_/)).not.toBeInTheDocument()
 
     const radarTable = screen.getByRole('table')
@@ -297,6 +299,8 @@ describe('ReportPage', () => {
     expect(screen.getByRole('heading', { name: '候选人概览' })).toBeVisible()
     expect(screen.getByRole('heading', { name: '候选人总评' })).toBeVisible()
     expect(screen.getByRole('heading', { name: '企业复试计划' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: '候选人成长建议' })).toBeVisible()
+    expect(screen.getByText('当前没有足够证据生成针对性的成长任务；未验证不等于能力不足。')).toBeVisible()
     expect(screen.getByText('服务端没有返回能力维度。')).toBeVisible()
     expect(screen.getByText('当前没有需要额外安排的结构化复试重点。')).toBeVisible()
     await userEvent.setup().click(screen.getByText('展开查看面试过程回顾'))
@@ -392,5 +396,6 @@ describe('DemoReportPage', () => {
     expect(api.getDemoAssessment).toHaveBeenCalledTimes(1)
     expect(api.getReport).not.toHaveBeenCalled()
     await waitFor(() => expect(screen.getByRole('heading', { name: '岗位胜任力报告' })).toBeVisible())
+    expect(screen.getByRole('heading', { name: '候选人成长建议' })).toBeVisible()
   })
 })
