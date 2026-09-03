@@ -142,9 +142,10 @@ flowchart TB
     end
 
     subgraph POST["POST · 评价与报告"]
-        E -->|ScoringBlueprint| M["Rubric Matcher"]
+        S -->|FinishAction| M["Rubric Matcher"]
+        E -->|ScoringBlueprint| M
         R --> M
-        K -->|FinishAction| M
+        K -. Evidence .-> M
         M --> N["Requirement Evidence Assessment"]
         N --> V["Claim Verification"]
         C -. ClaimRegistry .-> V
