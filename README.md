@@ -116,53 +116,60 @@ LLM 负责需要理解和生成的部分；停止条件、评分和关键约束�
 
 ## 系统架构
 
+### 整体评估链路
+
 ```mermaid
 flowchart TB
-    subgraph PRE["PRE · 建模与计划"]
-        A["JD + Resume"] --> B["Resume / Job Understanding"]
-        B --> C["Dynamic CompetencyModel<br/>+ ClaimRegistry"]
-        R["Role Pack 2026-H2<br/>6 fixed dimensions"] --> D["Interview Planner"]
-        C --> D
-        D --> E["Enterprise Review & Freeze"]
-    end
+    A["JD + Resume"] --> B["Resume / Job Understanding"]
+    B --> C["CompetencyModel + ClaimRegistry"]
 
-    subgraph RUN["INTERVIEW · 动态验证"]
-        E -->|InterviewPlan| S["Supervisor<br/>Requirement + QuestionMode + Finish?"]
-        S -->|AskAction| X["PrepareQuestionContext<br/>按题型准备上下文"]
-        X -->|foundation / project_deep_dive| P["Plan / Resume / Claim Context"]
-        X -->|scenario / system_design / coding| G["Scenario RAG<br/>optional grounding"]
-        X -->|follow_up| U["Previous Turn + Evidence Gap<br/>复用 active Scenario / Constraint（如有）"]
-        P --> Q["QuestionGenerator"]
-        G --> Q
-        U --> Q
-        Q --> I["Candidate Answer"]
-        I --> J["AnswerProcessor"]
-        J --> K["Evidence + RequirementProgress"]
-        K -->|Gap remains / Next Requirement| S
-    end
+    R["Role Pack 2026-H2<br/>固定六维评价标准"] --> D["Interview Planner"]
+    C --> D
+    D --> E["Enterprise Review & Freeze"]
 
-    subgraph POST["POST · 评价与报告"]
-        S -->|FinishAction| M["Rubric Matcher"]
-        E -->|ScoringBlueprint| M
-        R --> M
-        K -. Evidence .-> M
-        M --> N["Requirement Evidence Assessment"]
-        N --> V["Claim Verification"]
-        C -. ClaimRegistry .-> V
-        V --> O["ScoreEngine<br/>6D ScoreSnapshot + Job Match"]
-        O --> W["Report Writer"]
-        W --> Z["Enterprise Report<br/>Radar + Evidence Trace"]
-    end
+    E -->|InterviewPlan| F["Dynamic Interview Runtime"]
+    F --> G["Evidence + RequirementProgress"]
+
+    E -->|ScoringBlueprint| H["Rubric Match + Assessment"]
+    R --> H
+    G --> H
+    C -. ClaimRegistry .-> H
+
+    H --> I["ScoreEngine<br/>6D ScoreSnapshot + Job Match"]
+    I --> J["Enterprise Report<br/>Radar + Evidence Trace"]
 ```
 
 这里刻意区分两套能力结构：
 
 - **Dynamic CompetencyModel**：由当前 JD + Resume 联合生成，回答“这场面试具体要验证什么”，会随岗位和候选人变化；
-- **Role Pack `2026-H2`**：固定六维评价标准——**Agent 架构与任务编排、业务理解与任务建模、Context/RAG/Memory 与工具工程、AI 协作开发与生产交付、评测/可观测性与安全治理、成本/性能与持续优化**。Planner 将 Evidence Requirement 绑定到对应 Role Dimension，Freeze 后生成 `ScoringBlueprint`，最终评分仍回到同一组六维标准。
+- **Role Pack `2026-H2`**：固定六维评价标准。Planner 将 Evidence Requirement 绑定到 Role Dimension，企业 Freeze 后生成 `ScoringBlueprint`，最终评分仍回到同一套六维标准。
 
-Supervisor 当前可选择六种验证方式：`foundation`、`project_deep_dive`、`scenario`、`system_design`、`coding`、`follow_up`。其中 Scenario RAG 只为需要外部业务上下文的题型提供 grounding；Foundation / Project Deep Dive 主要依赖 Plan、Resume 与 Claim，Follow-up 则围绕上一轮回答和当前 Evidence Gap 继续验证，并在已有场景时复用该场景与 reviewed constraint。
+六维分别是：**Agent 架构与任务编排 · 业务理解与任务建模 · Context/RAG/Memory 与工具工程 · AI 协作开发与生产交付 · 评测/可观测性与安全治理 · 成本/性能与持续优化**。
 
-因此真正的闭环是：**固定评价标准约束计划 → 多题型动态验证 → Evidence Gap 驱动下一轮 → Evidence 回到同一套六维 Rubric / ScoreEngine 完成评分**。
+### 动态面试 Runtime
+
+```mermaid
+flowchart TB
+    A["InterviewPlan + RuntimeState"] --> B["Supervisor"]
+    B -->|AskAction| C["选择 Requirement + QuestionMode"]
+    C --> D["PrepareQuestionContext"]
+    D --> E["QuestionGenerator"]
+    E --> F["Candidate Answer"]
+    F --> G["AnswerProcessor"]
+    G --> H["Evidence + RequirementProgress"]
+    H -->|Gap remains / Next Requirement| B
+    B -->|FinishAction| I["Assessment & Report"]
+```
+
+Supervisor 支持六种验证方式，但不同题型并不共享同一条检索路径：
+
+| QuestionMode | 主要上下文来源 |
+| --- | --- |
+| `foundation` / `project_deep_dive` | `InterviewPlan + Resume + Claim`，不要求 Scenario RAG |
+| `scenario` / `system_design` / `coding` | 可使用 reviewed Scenario RAG 提供业务 grounding |
+| `follow_up` | 上一轮回答 + 当前 Evidence Gap；已有 active Scenario 时复用该场景，并按缺口选择 reviewed constraint |
+
+因此真正的闭环是：**固定评价标准约束计划 → Supervisor 选择 Requirement 与题型 → AnswerProcessor 更新 Evidence / Gap → Supervisor 决定继续、切换或结束 → Evidence 回到同一套六维 Rubric / ScoreEngine 完成评分**。
 
 ## Tech Stack
 
