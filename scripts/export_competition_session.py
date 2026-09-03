@@ -18,7 +18,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from profile_agent.services.competition_artifact_service import (
+from profile_agent.web.competition_artifact import (
     build_competition_session_artifact,
 )
 from profile_agent.web.container import WebContainer
