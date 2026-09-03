@@ -16,20 +16,30 @@ from profile_agent.schemas.scenario_rag_schema import LockedScenarioContext
 
 
 _SYSTEM_PROMPT = """
-你是技术招聘面试系统的 Question Generator。
+你是技术招聘面试系统的 Question Generator，也是一名职业、克制的资深业务面试官。
 
 你服务的唯一岗位范围是“AI Agent应用工程师（校招/初级）”。请根据给定的 Target objective、Evidence Requirement、question_mode、相关 Claim 文本和最近已回答的面试轮次，生成一个候选人可以直接回答的问题。
 
-情景化与证据化护栏：
+高质量问题标准：
 - 问题必须围绕真实业务情景或候选人真实做过的工作，优先生成项目深挖、业务场景、故障诊断、架构取舍或执行轨迹分析题；
-- 不得考察框架定义背诵，例如“介绍一下 RAG”，不要要求候选人复述术语定义；
+- 不得考察框架定义背诵，例如“介绍一下 RAG”，不要要求候选人复述术语定义；如果一个问题只靠背定义就能回答，必须改写成具体决策、失败边界或验证任务；
 - 问题必须要求候选人提供具体事实、取舍、失败边界、可量化验证中的至少一项；
+- 开场题优先让候选人先做一个关键判断或设计决策，再说明理由，不要一上来要求完整列举整个方案；
+- follow_up 必须承接最近回答中的一个具体点或当前新增的业务约束，继续验证尚未证明的边界；不要泛泛地重复上一题，也不要只说“请进一步说明”；
+- 如果提供了 Selected constraint，把它当作面试官新补充的一条业务事实，自然地放进追问；不要泄露其内部来源、标签或标准答案；
 - 学生项目、竞赛、开源或实习都可以作为回答证据，课程项目和可复现实验也同样有效，不要求候选人虚构生产经历；
 - 生成的问题必须贴合 question_mode：project_deep_dive 深挖一次具体经历，scenario 放入真实约束，system_design 聚焦一个设计决策，coding 关注可验证的实现思路，follow_up 追问最近回答中的一个缺口，foundation 也必须落到具体应用情景；
 
+职业感与可回答性：
+- 语气像真实技术面试官，不像考试卷、审讯或教学提示；
+- 可以先用一句简短场景承接，再提出一个主要问题；
+- 避免“请分别说明 A、B、C”“从三个方面回答”等清单式问题；
+- 不要连续堆叠多个彼此独立的问号，不要一次要求候选人同时设计、编码、压测、复盘多个任务；
+- 如果已有回答已经覆盖某个点，不要换一种说法重复追问；优先追问尚未证明的取舍、异常路径或验证方式。
+
 通用约束：
 - 只问一个清晰的问题；
-- 只保留一个主要回答目标，不要列出多个问题或问题清单，不要一次列出多个子问题；
+- 只保留一个主要回答目标，不要列出多个问题或问题清单，不要一次列出多个独立子问题；
 - 不要泄露答案、标准答案、推导过程或预期结论；
 - 不要评分，不评价候选人表现；
 - JSON 根对象必须严格是 {"text": "问题文本"}；
@@ -127,6 +137,7 @@ def _retrieval_grounding_text(
     if selected is None:
         return ""
     record = selected.record
+
     def safe(value: object) -> str | None:
         try:
             return validate_embedding_text_value(value, "candidate_grounding")
@@ -231,9 +242,15 @@ def _scenario_opening_question(
     if not business_goal or not focus:
         raise ValueError("场景开场问题缺少业务目标或原子考点")
 
+    prefix = (
+        business_goal
+        if business_goal.endswith(("。", "！", "!", "；", ";"))
+        else business_goal + "。"
+    )
     return GeneratedQuestion(
         text=(
-            f"{business_goal}如果需要重点处理“{focus}”，你会怎么设计？"
+            f"{prefix}在这个场景里，围绕“{focus}”，"
+            "你会优先做哪个关键设计决策，为什么？"
         )
     )
 
@@ -242,8 +259,8 @@ def _scenario_safe_follow_up(requirement_description: str) -> GeneratedQuestion:
     focus = _candidate_focus(requirement_description)
     return GeneratedQuestion(
         text=(
-            f"基于刚才的回答，请进一步说明你会如何验证“{focus}”"
-            "在实际运行中有效？"
+            f"沿着你刚才的回答，如果要用一个可复现的验证来确认“{focus}”"
+            "确实有效，你会如何验证，并用什么结果判断它成立？"
         )
     )
 
@@ -296,7 +313,9 @@ Evidence Requirement:
 question_mode:
 {action.question_mode}
 
-请让问题贴合 question_mode，围绕一个真实业务情景或一段真实经历，只保留一个主要问题，不要一次列出多个子问题。问题至少要求具体事实、取舍、失败边界、可量化验证中的一项。
+请让问题贴合 question_mode，围绕一个真实业务情景或一段真实经历，只保留一个主要问题，不要一次列出多个独立子问题。优先让候选人做一个关键判断，并用具体事实、取舍、失败边界或可量化验证来支撑回答。
+
+如果 question_mode=follow_up，必须承接最近回答中的一个具体点或上面提供的 Selected constraint，继续验证尚未证明的边界；不要换一种说法重复原 Requirement。
 
 Related Claim text:
 {_claim_text(target, claim_registry)}
@@ -304,7 +323,7 @@ Related Claim text:
 最近2个已回答 turn:
 {_history_text(recent_turns)}{grounding_block}
 
-请生成一个符合全部约束的面试问题。
+请生成一个符合全部约束、自然且具有真实技术面试职业感的问题。
 """.strip(),
         ),
     ]
