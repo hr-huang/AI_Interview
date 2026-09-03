@@ -14,7 +14,7 @@ def test_scenario_opening_asks_for_one_key_decision_and_reason() -> None:
         primary_dimension_id="role_dim_03",
         retrieval_unit_id="enterprise_knowledge_assistant::knowledge_rag_memory",
         business_goal="企业希望用知识助手回答最新制度问题",
-        candidate_brief="你正在设计一个企业制度知识助手",
+        candidate_brief="你正在设计一个企业制度知识助手。",
         candidate_focus="知识版本与引用边界",
         retrieval_status="hit",
     )
